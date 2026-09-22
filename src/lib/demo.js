@@ -60,8 +60,13 @@ export const DEMO_EVENTS = [
   },
   {
     id: 'demo-f1-1', leagueId: 'f1', kind: 'event', state: 'in',
-    statusText: 'Tour 34 / 70', clock: '', startsAt: null,
+    statusText: 'Tour 34 / 70', clock: '', startsAt: null, session: 'Course',
     title: 'GP du Canada',
+    top3: [
+      { pos: 1, name: 'K. Antonelli' },
+      { pos: 2, name: 'G. Russell' },
+      { pos: 3, name: 'M. Verstappen' },
+    ],
   },
 ];
 

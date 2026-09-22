@@ -1,25 +1,49 @@
-// Pastille d'équipe : logo distant si disponible, sinon monogramme coloré.
-// Aucun attribut `onerror` en ligne — la CSP de Tauri les bloquerait.
+// Pastille d'équipe : logo ESPN pour fond sombre, sinon logo normal, sinon
+// monogramme coloré. Aucun attribut `onerror` en ligne — la CSP de Tauri les
+// bloquerait.
+
+/**
+ * Version « fond sombre » d'un logo ESPN, quand elle existe.
+ * ESPN range ses logos sous …/500/… et leurs variantes sombres sous
+ * …/500-dark/… (vu dans la réponse réelle de …/nhl/teams).
+ */
+export function darkLogo(url) {
+  if (!url || !url.includes('a.espncdn.com/') || !url.includes('/500/')) return '';
+  return url.replace('/500/', '/500-dark/');
+}
 
 export function crestHtml(team, cls = 'crest') {
   const color = team.color || '#3b4150';
   const abbr = team.abbr || '?';
-  if (team.logo) {
-    return `<img class="${cls}" src="${team.logo}" alt=""
-      data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
-  }
-  return `<span class="${cls}" style="background:${color}">${abbr}</span>`;
+  if (!team.logo) return `<span class="${cls}" style="background:${color}">${abbr}</span>`;
+
+  const dark = darkLogo(team.logo);
+  // Premier essai : logo sombre. En repli : logo normal, marqué --light pour
+  // recevoir le halo qui le garde lisible sur le fond sombre du widget.
+  return dark
+    ? `<img class="${cls}" src="${dark}" alt="" data-next="${team.logo}"
+        data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`
+    : `<img class="${cls} ${cls}--light" src="${team.logo}" alt=""
+        data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
 }
 
-/** À rappeler après chaque innerHTML : branche le repli sur les logos. */
+/** À rappeler après chaque innerHTML : branche les replis successifs. */
 export function bindCrests(root) {
   root.querySelectorAll('img[data-abbr]').forEach((img) => {
-    img.addEventListener('error', () => {
+    img.addEventListener('error', function fallback() {
+      const next = img.dataset.next;
+      if (next) {
+        delete img.dataset.next;
+        img.classList.add(`${img.dataset.cls || 'crest'}--light`);
+        img.src = next;
+        return; // l'écouteur reste branché pour l'étape suivante
+      }
+      img.removeEventListener('error', fallback);
       const span = document.createElement('span');
       span.className = img.dataset.cls || 'crest';
       span.style.background = img.dataset.color;
       span.textContent = img.dataset.abbr;
       img.replaceWith(span);
-    }, { once: true });
+    });
   });
 }

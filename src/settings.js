@@ -93,14 +93,55 @@ function renderTeams() {
   });
 }
 
+function forgetFavorite(key) {
+  delete prefs.favInfo[key];
+  if (prefs.theme === key) prefs.theme = '';
+}
+
 function toggleTeam(id) {
   const key = `${current}:${id}`;
   const i = prefs.favorites.indexOf(key);
-  if (i === -1) prefs.favorites.push(key);
-  else prefs.favorites.splice(i, 1);
+  if (i === -1) {
+    prefs.favorites.push(key);
+    // Nom et couleurs gardés maintenant : le widget en a besoin pour se
+    // colorer, sans redemander la liste des équipes à ESPN.
+    const t = teams.find((x) => x.id === id);
+    if (t) prefs.favInfo[key] = { name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null };
+  } else {
+    prefs.favorites.splice(i, 1);
+    forgetFavorite(key);
+  }
   savePrefs(prefs);
   renderLeagues();
   renderTeams();
+  renderThemeOptions();
+}
+
+/**
+ * Favoris cochés avant l'arrivée des couleurs d'équipe : on complète leur
+ * nom et leurs couleurs dès que la liste de leur ligue est chargée.
+ */
+function backfillFavInfo(leagueId, list) {
+  let changed = false;
+  for (const key of prefs.favorites) {
+    if (!key.startsWith(`${leagueId}:`) || prefs.favInfo[key]) continue;
+    const t = list.find((x) => `${leagueId}:${x.id}` === key);
+    if (!t) continue;
+    prefs.favInfo[key] = { name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null };
+    changed = true;
+  }
+  if (changed) { savePrefs(prefs); renderThemeOptions(); }
+}
+
+function renderThemeOptions() {
+  const select = document.getElementById('optTheme');
+  const favs = prefs.favorites.filter((k) => prefs.favInfo[k]?.color);
+  select.innerHTML = [
+    `<option value="">Aucune (neutre)</option>`,
+    ...favs.map((k) => `<option value="${k}">${prefs.favInfo[k].name}</option>`),
+  ].join('');
+  select.value = favs.includes(prefs.theme) ? prefs.theme : '';
+  select.disabled = !favs.length;
 }
 
 function toggleLeague() {
@@ -126,6 +167,7 @@ async function selectLeague() {
   try {
     teams = await fetchTeams(current);
     cache.set(current, teams);
+    backfillFavInfo(current, teams);
     renderTeams();
   } catch (err) {
     teams = [];
@@ -161,14 +203,46 @@ function bindOptions() {
     savePrefs(prefs);
   });
   opacity.addEventListener('input', () => { prefs.opacity = Number(opacity.value) / 100; savePrefs(prefs); });
+
+  const theme = document.getElementById('optTheme');
+  renderThemeOptions();
+  theme.addEventListener('change', () => { prefs.theme = theme.value; savePrefs(prefs); });
+
+  const fullscreen = document.getElementById('optHideFullscreen');
+  fullscreen.checked = prefs.hideFullscreen !== false;
+  fullscreen.addEventListener('change', () => { prefs.hideFullscreen = fullscreen.checked; savePrefs(prefs); });
+
+  bindAutostart();
+}
+
+/** L'état du démarrage automatique vit dans Windows, pas dans nos préférences. */
+async function bindAutostart() {
+  const box = document.getElementById('optAutostart');
+  if (!inTauri()) { box.disabled = true; return; }
+  const { invoke } = window.__TAURI__.core;
+  try {
+    box.checked = await invoke('get_autostart');
+  } catch {
+    box.disabled = true;
+    return;
+  }
+  box.addEventListener('change', async () => {
+    try {
+      await invoke('set_autostart', { enabled: box.checked });
+    } catch {
+      box.checked = !box.checked; // Windows a refusé : on remet l'état réel
+    }
+  });
 }
 
 document.getElementById('btnClear').addEventListener('click', () => {
+  prefs.favorites.filter((f) => f.startsWith(`${current}:`)).forEach(forgetFavorite);
   prefs.favorites = prefs.favorites.filter((f) => !f.startsWith(`${current}:`));
   prefs.leagues = prefs.leagues.filter((l) => l !== current);
   savePrefs(prefs);
   renderLeagues();
   renderTeams();
+  renderThemeOptions();
 });
 
 document.getElementById('btnReveal').addEventListener('click', async () => {

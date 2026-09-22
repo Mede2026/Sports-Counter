@@ -19,6 +19,11 @@ const TYPES = {
 function serve() {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
+      if (req.url === '/__bureau.html') {
+        res.writeHead(200, { 'Content-Type': TYPES['.html'] });
+        res.end(DESKTOP);
+        return;
+      }
       const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
       const file = path.join(ROOT, rel);
       if (!file.startsWith(ROOT) || !fs.existsSync(file)) {
@@ -43,7 +48,7 @@ const DESKTOP = `
         linear-gradient(150deg, #10131c 0%, #1a1f30 45%, #0c0e15 100%);
     }
     iframe{position:absolute;border:0;background:transparent;}
-    #w{top:40px;left:40px;width:300px;height:500px;}
+    #w{top:40px;left:40px;width:300px;height:600px;}
   </style>
   <iframe id="w" src="/index.html?demo"></iframe>`;
 
@@ -52,9 +57,17 @@ const DESKTOP = `
   fs.mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
 
-  // 1. Le widget posé sur un bureau
-  const page = await browser.newPage({ viewport: { width: 380, height: 540 }, deviceScaleFactor: 2 });
-  await page.setContent(DESKTOP.replace(/\/index\.html/g, `http://127.0.0.1:${port}/index.html`));
+  // 1. Le widget posé sur un bureau, aux couleurs des Canadiens
+  const page = await browser.newPage({ viewport: { width: 380, height: 650 }, deviceScaleFactor: 2 });
+  // Réglage de couleur écrit avant tout script, dans le localStorage partagé
+  // par le faux bureau et le widget (même origine).
+  await page.addInitScript(() => {
+    localStorage.setItem('sports-counter.prefs.v1', JSON.stringify({
+      theme: 'nhl:10',
+      favInfo: { 'nhl:10': { name: 'Canadiens de Montréal', abbr: 'MTL', color: '#c41230', alt: '#013a81' } },
+    }));
+  });
+  await page.goto(`http://127.0.0.1:${port}/__bureau.html`);
   await page.waitForTimeout(1200);
   await page.screenshot({ path: path.join(OUT, 'widget.png') });
   console.log('  tools/preview/widget.png');

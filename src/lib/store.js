@@ -14,6 +14,12 @@ const DEFAULTS = {
   opacity: 1,
   // Mode compact : masque la ligne de statut détaillée.
   compact: false,
+  // Nom et couleurs de chaque favori, notés au moment où on le coche.
+  favInfo: {},
+  // Favori dont le widget prend la couleur ("nhl:10"), ou '' pour aucun.
+  theme: '',
+  // Cacher le widget quand un jeu ou une vidéo passe en plein écran.
+  hideFullscreen: true,
 };
 
 export function loadPrefs() {

@@ -41,6 +41,18 @@ html, body {
   transition: opacity 160ms ease;
 }
 
+/* Couleurs de l'équipe choisie : liseré en haut, bordure teintée. */
+.widget--team {
+  border-color: color-mix(in srgb, var(--team) 55%, transparent);
+}
+
+.widget--team::before {
+  content: '';
+  display: block;
+  height: 3px;
+  background: var(--team);
+}
+
 /* Zone de déplacement : toute la barre du haut. */
 .bar {
   display: flex;
@@ -178,9 +190,14 @@ html, body {
   object-fit: contain;
 }
 
-/* Le logo s'affiche nu, sans pastille. Le halo clair l'empêche de disparaître
-   quand il est foncé (bleu marine, noir) sur le fond sombre du widget. */
+/* Logo sombre d'ESPN : dessiné pour notre fond, une ombre suffit. */
 img.crest {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+}
+
+/* Logo normal (repli), dessiné pour fond clair : un halo clair l'empêche de
+   disparaître quand il est foncé (bleu marine, noir). */
+img.crest--light {
   filter:
     drop-shadow(0 0 1px rgba(255, 255, 255, 0.55))
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
@@ -230,6 +247,39 @@ span.crest {
 
 .event { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
 .event__title { font-size: 13px; font-weight: 650; flex: 1; }
+
+/* Top 3 d'une séance de F1 */
+.podium {
+  list-style: none;
+  margin: 8px 0 0 37px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.podium li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.podium__pos {
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #16171c;
+  font-variant-numeric: tabular-nums;
+}
+
+.podium__pos--1 { background: #f2c55c; }
+.podium__pos--2 { background: #c9ced6; }
+.podium__pos--3 { background: #d0925a; }
 
 /* ---------- États ---------- */
 

@@ -1,8 +1,9 @@
-import { fetchScoreboard, demoEvents } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, demoEvents } from './lib/api.js';
 import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText } from './lib/err.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
+import { visibleTeamColor } from './lib/color.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
@@ -65,6 +66,13 @@ function statusBlock(game) {
   return `<span class="status">${text}</span>`;
 }
 
+function podiumHtml(top3) {
+  if (!top3?.length) return '';
+  return `<ol class="podium">${top3
+    .map((d) => `<li><span class="podium__pos podium__pos--${d.pos}">${d.pos}</span>${d.name}</li>`)
+    .join('')}</ol>`;
+}
+
 function gameCard(game) {
   const league = LEAGUES_BY_ID[game.leagueId];
   const head = `
@@ -78,7 +86,7 @@ function gameCard(game) {
       <div class="event">
         ${crestHtml({ logo: game.logo, abbr: league?.short ?? '?', color: league?.accent })}
         <span class="event__title">${game.title}</span>
-      </div></div>`;
+      </div>${podiumHtml(game.top3)}</div>`;
   }
 
   // Après un match terminé, on atténue le perdant.
@@ -99,7 +107,25 @@ function renderEmpty() {
   document.getElementById('btnEmptySettings')?.addEventListener('click', openSettings);
 }
 
+/** Liseré et bordure aux couleurs de l'équipe choisie dans les réglages. */
+function applyTheme() {
+  const info = prefs.favInfo?.[prefs.theme];
+  const color = info ? visibleTeamColor(info.color, info.alt) : null;
+  el.widget.classList.toggle('widget--team', !!color);
+  if (color) el.widget.style.setProperty('--team', color);
+  else el.widget.style.removeProperty('--team');
+}
+
+/** Rust surveille le plein écran ; il faut lui dire si l'option est active. */
+async function syncFullscreenOption() {
+  if (!inTauri()) return;
+  try {
+    await window.__TAURI__.core.invoke('set_hide_fullscreen', { enabled: prefs.hideFullscreen !== false });
+  } catch { /* version sans cette commande : sans conséquence */ }
+}
+
 function renderError(message) {
+  applyTheme();
   el.widget.classList.toggle('widget--compact', prefs.compact);
   el.widget.style.opacity = String(prefs.opacity ?? 1);
   el.title.textContent = 'Sports Counter';
@@ -115,6 +141,7 @@ function renderError(message) {
 }
 
 function render(games, error) {
+  applyTheme();
   el.widget.classList.toggle('widget--compact', prefs.compact);
   el.widget.style.opacity = String(prefs.opacity ?? 1);
 
@@ -181,6 +208,41 @@ function isStale(game) {
   return Date.now() - game.startsAt.getTime() > 6 * 3600 * 1000;
 }
 
+/**
+ * Pour chaque équipe favorite absente des matchs du jour, son prochain match.
+ * Sans ça, une équipe au repos aujourd'hui disparaissait complètement du widget.
+ */
+async function nextGamesForIdleFavorites(todayGames) {
+  const playing = new Set();
+  for (const g of todayGames) {
+    if (g.kind !== 'match') continue;
+    playing.add(`${g.leagueId}:${g.home.id}`);
+    playing.add(`${g.leagueId}:${g.away.id}`);
+  }
+
+  const idleByLeague = new Map();
+  for (const fav of prefs.favorites) {
+    if (playing.has(fav)) continue;
+    const [leagueId, teamId] = fav.split(':');
+    if (LEAGUES_BY_ID[leagueId]?.kind !== 'team') continue;
+    if (!idleByLeague.has(leagueId)) idleByLeague.set(leagueId, []);
+    idleByLeague.get(leagueId).push(teamId);
+  }
+
+  const results = await Promise.allSettled(
+    [...idleByLeague].map(([leagueId, ids]) => fetchNextGames(leagueId, ids)),
+  );
+  const seen = new Set(todayGames.map((g) => g.id));
+  const out = [];
+  for (const r of results) {
+    if (r.status !== 'fulfilled') continue;
+    for (const g of r.value) {
+      if (!seen.has(g.id)) { seen.add(g.id); out.push(g); }
+    }
+  }
+  return out;
+}
+
 async function refresh() {
   prefs = loadPrefs();
   const leagues = selectedLeagues();
@@ -208,8 +270,10 @@ async function refresh() {
     return;
   }
 
-  const visible = games.filter(keepGame).filter((g) => !isStale(g)).sort(sortGames)
-    .slice(0, prefs.maxGames);
+  const today = games.filter(keepGame).filter((g) => !isStale(g));
+  const upcoming = await nextGamesForIdleFavorites(today);
+
+  const visible = [...today, ...upcoming].sort(sortGames).slice(0, prefs.maxGames);
 
   render(visible, error);
   schedule(visible.some((g) => g.state === 'in'));
@@ -238,8 +302,13 @@ document.getElementById('btnHide').addEventListener('click', hideWidget);
 
 // Les réglages écrivent dans localStorage : on recharge dès qu'ils changent.
 window.addEventListener('storage', (e) => {
-  if (e.key?.startsWith('sports-counter.')) refresh();
+  if (!e.key?.startsWith('sports-counter.')) return;
+  prefs = loadPrefs();
+  syncFullscreenOption();
+  refresh();
 });
+
+syncFullscreenOption();
 
 // Mode aperçu navigateur : données de démonstration, sans réseau.
 if (!inTauri() && new URLSearchParams(location.search).has('demo')) {

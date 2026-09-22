@@ -61,6 +61,7 @@ function toTeam(t) {
     short: t.shortDisplayName ?? t.name ?? '',
     logo: t.logo ?? t.logos?.[0]?.href ?? '',
     color: t.color ? `#${t.color}` : null,
+    alt: t.alternateColor ? `#${t.alternateColor}` : null,
   };
 }
 
@@ -96,8 +97,18 @@ async function teamsFromDirectory(league) {
 /** Listes intégrées à l'app, pour les ligues dont on a une copie vérifiée. */
 const BUNDLED_TEAMS = { nhl: NHL_TEAMS };
 
-const ymd = (offsetDays) =>
-  new Date(Date.now() + offsetDays * DAY).toISOString().slice(0, 10).replaceAll('-', '');
+/**
+ * Date AAAAMMJJ, décalée de `offsetDays` jours, dans le fuseau de l'ordinateur.
+ * toISOString() donnerait la date UTC : au Québec, après 20 h, « aujourd'hui »
+ * serait déjà devenu demain.
+ */
+export function ymd(offsetDays = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}${mm}${dd}`;
+}
 
 /**
  * Secours : les équipes qui jouent autour d'aujourd'hui, tirées du calendrier.
@@ -212,6 +223,22 @@ function sessionLabel(comp) {
   return SESSION_LABELS[abbr] ?? comp?.type?.text ?? '';
 }
 
+/**
+ * Les trois premiers d'une séance. Chez ESPN, chaque pilote est un
+ * « competitor » ; `order` donne sa position. Renvoie une liste vide si la
+ * structure ne correspond pas : on n'affiche rien plutôt qu'un faux classement.
+ */
+function topThree(session) {
+  return (session?.competitors ?? [])
+    .map((c, i) => ({
+      pos: Number(c?.order ?? c?.place ?? i + 1),
+      name: c?.athlete?.shortName ?? c?.athlete?.displayName ?? c?.displayName ?? '',
+    }))
+    .filter((d) => d.name && Number.isFinite(d.pos) && d.pos > 0)
+    .sort((a, b) => a.pos - b.pos)
+    .slice(0, 3);
+}
+
 /** Séance en cours, sinon la prochaine, sinon la dernière du week-end. */
 function pickSession(event) {
   const comps = (event?.competitions ?? []).filter((c) => c?.date);
@@ -250,6 +277,8 @@ function normalizeEvent(event, leagueId) {
       kind: 'event',
       title,
       state: sState,
+      // Pas de classement avant le départ : il n'existe pas encore.
+      top3: sState === 'pre' ? [] : topThree(session),
       session: sessionLabel(session),
       statusText: session.status?.type?.shortDetail ?? base.statusText,
       startsAt: session.date ? new Date(session.date) : base.startsAt,
@@ -273,6 +302,51 @@ export async function fetchScoreboard(leagueId) {
   if (!league) return [];
   const data = await getJson(`${league.path}/scoreboard`);
   return (data?.events ?? []).map((e) => normalizeEvent(e, leagueId));
+}
+
+// Calendrier des jours à venir : il change peu, inutile de le redemander à
+// chaque rafraîchissement du widget (toutes les 25 s pendant un match).
+const LOOKAHEAD_DAYS = 10;
+const DAY_TTL = 30 * 60 * 1000;
+const dayCache = new Map(); // "ligue:AAAAMMJJ" -> { at, events }
+
+async function fetchDay(leagueId, offsetDays) {
+  const league = LEAGUES_BY_ID[leagueId];
+  const date = ymd(offsetDays);
+  const key = `${leagueId}:${date}`;
+  const hit = dayCache.get(key);
+  if (hit && Date.now() - hit.at < DAY_TTL) return hit.events;
+
+  const data = await getJson(`${league.path}/scoreboard`, `?dates=${date}`);
+  const events = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId));
+  dayCache.set(key, { at: Date.now(), events });
+  return events;
+}
+
+/**
+ * Prochain match de chacune des équipes demandées, cherché jour après jour à
+ * partir de demain. S'arrête dès que toutes les équipes sont trouvées. Un
+ * match entre deux équipes demandées n'est rendu qu'une fois.
+ */
+export async function fetchNextGames(leagueId, teamIds) {
+  const missing = new Set(teamIds.map(String));
+  const found = [];
+  for (let start = 1; start <= LOOKAHEAD_DAYS && missing.size; start += 3) {
+    const offsets = [start, start + 1, start + 2].filter((d) => d <= LOOKAHEAD_DAYS);
+    const days = await Promise.allSettled(offsets.map((d) => fetchDay(leagueId, d)));
+    // Dans l'ordre des jours : le match le plus proche l'emporte.
+    for (const day of days) {
+      if (day.status !== 'fulfilled') continue;
+      for (const game of day.value) {
+        if (game.kind !== 'match') continue;
+        const ids = [game.home.id, game.away.id].filter((id) => missing.has(id));
+        if (!ids.length) continue;
+        found.push(game);
+        ids.forEach((id) => missing.delete(id));
+      }
+    }
+  }
+  return found;
 }
 
 /** Données factices : aperçu navigateur et première ouverture hors ligne. */
