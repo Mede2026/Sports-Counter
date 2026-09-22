@@ -47,6 +47,7 @@ body {
 }
 
 .state__code {
+  white-space: pre-wrap;
   display: inline-block;
   margin: 6px 0 10px;
   padding: 5px 9px;

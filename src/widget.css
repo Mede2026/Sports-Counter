@@ -242,6 +242,7 @@ span.crest {
 }
 
 .empty__detail {
+  white-space: pre-wrap;
   display: inline-block;
   margin-top: 6px;
   font-size: 11px;

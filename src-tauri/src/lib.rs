@@ -7,7 +7,10 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-const ESPN_HOST: &str = "site.api.espn.com";
+/// Identité annoncée au serveur. Un nom d'application maison suffisait à
+/// déclencher un 403 côté ESPN.
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const ESPN_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports";
 const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
@@ -36,22 +39,34 @@ async fn espn_get(path: String) -> Result<String, String> {
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(12))
-        .user_agent("SportsCounter/0.1")
+        .user_agent(BROWSER_UA)
         .build()
         .map_err(|e| e.to_string())?;
 
     let url = format!("{ESPN_BASE}/{path}");
     let res = client
         .get(&url)
+        // Ces en-têtes sont ceux d'un navigateur ordinaire. Sans eux, le pare-feu
+        // anti-robots d'ESPN répond 403 : l'API est publique mais n'est pas
+        // documentée, et ne s'attend donc qu'à des visiteurs venant du site.
+        .header("Accept", "application/json, text/plain, */*")
+        .header("Accept-Language", "fr-CA,fr;q=0.9,en-US;q=0.8,en;q=0.7")
+        .header("Referer", "https://www.espn.com/")
         .send()
         .await
-        .map_err(|e| format!("réseau ({path}) : {e}"))?;
+        .map_err(|e| format!("réseau : {e}\n{url}"))?;
 
-    if !res.status().is_success() {
-        return Err(format!("HTTP {} sur {ESPN_HOST}/{path}", res.status()));
+    let status = res.status();
+    if !status.is_success() {
+        let hint = if status.as_u16() == 403 {
+            "\nESPN a refusé la requête : son API n'est pas officielle et peut bloquer selon le réseau ou le pays."
+        } else {
+            ""
+        };
+        return Err(format!("HTTP {status}\n{url}{hint}"));
     }
 
-    res.text().await.map_err(|e| format!("lecture ({path}) : {e}"))
+    res.text().await.map_err(|e| format!("lecture : {e}\n{url}"))
 }
 
 /// Ouvre la fenêtre de réglages, ou la ramène devant si elle existe déjà.
