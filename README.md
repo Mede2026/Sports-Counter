@@ -23,16 +23,34 @@ Les données viennent de l'API publique d'ESPN : **aucun compte, aucune clé
 d'API**. En contrepartie, c'est une API non officielle, qui peut changer sans
 préavis.
 
-## Installation pour développer
+## Obtenir l'app sans rien installer
 
-Il faut installer une fois :
+C'est la voie recommandée. **Tu n'installes aucun outil de développement.**
+
+1. Onglet **Actions** du dépôt → dernière exécution de « Compiler pour Windows »
+2. Section **Artifacts** en bas → télécharger `Sports-Counter-Windows`
+3. Décompresser, lancer l'installateur
+
+GitHub compile l'app sur une vraie machine Windows, et la taille exacte des
+fichiers produits s'affiche dans le résumé de chaque exécution.
+
+Pour obtenir un lien de téléchargement permanent, pousse une étiquette :
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+L'installateur apparaît alors dans les **Releases** du dépôt.
+
+## Compiler soi-même (facultatif)
+
+À ne faire que pour modifier le code et voir le résultat immédiatement.
+Il faut alors installer, une seule fois :
 
 1. **Rust** — https://rustup.rs
 2. **Visual Studio Build Tools** avec la charge de travail « Développement Desktop en C++ »
-3. **WebView2** — déjà présent sur Windows 11 et sur Windows 10 à jour
-4. **Node.js** — https://nodejs.org
-
-Ensuite :
+3. **Node.js** — https://nodejs.org
 
 ```bash
 npm install
@@ -40,10 +58,13 @@ npm run dev      # lance l'app en mode développement
 npm run build    # produit l'installateur dans src-tauri/target/release/bundle/
 ```
 
-> **Note sur le poids** : l'outillage ci-dessus est volumineux, mais il ne sert
-> qu'à compiler. L'app produite, elle, pèse quelques mégaoctets, parce que
-> Tauri réutilise le moteur WebView2 déjà installé dans Windows au lieu
-> d'embarquer son propre navigateur.
+> **Attention** : cet outillage occupe **3 à 6 Go**, et le dossier de
+> compilation `src-tauri/target` encore **2 à 4 Go**. Ça ne concerne que la
+> machine qui compile — l'app produite, elle, reste à quelques mégaoctets.
+> Tu peux supprimer `src-tauri/target` à tout moment, il se régénère.
+>
+> Si tu ne veux pas de ça, utilise la GitHub Action ci-dessus : tu modifies le
+> code, tu pousses, et tu récupères l'installateur compilé.
 
 ## Aperçu sans compiler
 
@@ -88,3 +109,6 @@ code, donc l'interface ne peut pas rediriger les appels ailleurs.
   cours ou la prochaine, sans classement en direct.
 - Le flou acrylique nécessite Windows 10 (version 1809) ou plus récent. S'il
   n'est pas disponible, le widget reste simplement semi-transparent.
+- Le chiffrement des connexions passe par Schannel, le composant TLS de
+  Windows, plutôt que par une bibliothèque embarquée. L'app est plus légère,
+  mais elle suit le magasin de certificats du système.
