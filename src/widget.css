@@ -116,6 +116,15 @@ html, body {
 
 .game:last-child { border-bottom: none; }
 
+/* Carte cliquable : ouvre la page du match sur ESPN. */
+.game--link {
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.game--link:hover { background: rgba(255, 255, 255, 0.04); }
+.game--link:active { background: rgba(255, 255, 255, 0.07); }
+
 @keyframes rise {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: none; }

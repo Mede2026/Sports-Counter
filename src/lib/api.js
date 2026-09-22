@@ -251,6 +251,15 @@ function pickSession(event) {
   return upcoming[0] ?? comps[comps.length - 1];
 }
 
+/** Page ESPN du match (feuille de match, statistiques), si l'API la fournit. */
+function pickLink(event) {
+  const links = event?.links ?? [];
+  const withRel = (rel) => links.find((l) => Array.isArray(l?.rel) && l.rel.includes(rel) && l.href);
+  const link = withRel('summary') ?? withRel('desktop') ?? links.find((l) => l?.href);
+  const href = link?.href ?? '';
+  return href.startsWith('https://') ? href : '';
+}
+
 function normalizeEvent(event, leagueId) {
   const comp = event?.competitions?.[0];
   const status = event?.status ?? comp?.status ?? {};
@@ -262,6 +271,7 @@ function normalizeEvent(event, leagueId) {
     statusText: status?.type?.shortDetail ?? status?.type?.description ?? '',
     clock: state === 'in' ? status?.displayClock ?? '' : '',
     startsAt: event?.date ? new Date(event.date) : null,
+    link: pickLink(event),
   };
 
   const competitors = comp?.competitors ?? [];

@@ -73,8 +73,11 @@ function podiumHtml(top3) {
     .join('')}</ol>`;
 }
 
+const attr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
 function gameCard(game) {
   const league = LEAGUES_BY_ID[game.leagueId];
+  const open = game.link ? ` game--link" data-link="${attr(game.link)}" title="Ouvrir sur ESPN` : '';
   const head = `
     <div class="game__head">
       <span class="chip" style="color:${league?.accent ?? 'inherit'}">${league?.label ?? ''}</span>
@@ -82,7 +85,7 @@ function gameCard(game) {
     </div>`;
 
   if (game.kind === 'event') {
-    return `<div class="game">${head}
+    return `<div class="game${open}">${head}
       <div class="event">
         ${crestHtml({ logo: game.logo, abbr: league?.short ?? '?', color: league?.accent })}
         <span class="event__title">${game.title}</span>
@@ -91,7 +94,7 @@ function gameCard(game) {
 
   // Après un match terminé, on atténue le perdant.
   const done = game.state === 'post';
-  return `<div class="game">${head}
+  return `<div class="game${open}">${head}
     ${teamRow(game, game.away, done && game.home.winner)}
     ${teamRow(game, game.home, done && game.away.winner)}
   </div>`;
@@ -105,6 +108,19 @@ function renderEmpty() {
       <br /><button id="btnEmptySettings">Ouvrir les réglages</button>
     </div>`;
   document.getElementById('btnEmptySettings')?.addEventListener('click', openSettings);
+}
+
+/** Un clic sur un match ouvre sa page ESPN dans le navigateur. */
+function bindLinks() {
+  el.games.querySelectorAll('.game[data-link]').forEach((card) => {
+    card.addEventListener('click', async () => {
+      const url = card.dataset.link;
+      if (!inTauri()) { window.open(url, '_blank', 'noopener'); return; }
+      try {
+        await window.__TAURI__.core.invoke('open_espn', { url });
+      } catch { /* adresse refusée par Rust : rien à ouvrir */ }
+    });
+  });
 }
 
 /** Liseré et bordure aux couleurs de l'équipe choisie dans les réglages. */
@@ -152,6 +168,7 @@ function render(games, error) {
   }
 
   bindCrests(el.games);
+  bindLinks();
 
   const live = games.filter((g) => g.state === 'in').length;
   el.title.textContent = live ? `${live} match${live > 1 ? 's' : ''} en direct` : 'Sports Counter';

@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use tauri::{
@@ -7,7 +7,9 @@ use tauri::{
     AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 
 /// Identité annoncée au serveur. Un nom d'application maison suffisait à
 /// déclencher un 403 côté ESPN.
@@ -29,6 +31,19 @@ const SETTLE_DELAY: Duration = Duration::from_millis(250);
 
 /// Numéro du dernier déplacement : seul le plus récent déclenche le recadrage.
 static SETTLE_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Option « Cacher pendant les jeux plein écran », transmise par l'interface.
+static HIDE_FULLSCREEN: AtomicBool = AtomicBool::new(true);
+
+/// Vrai quand c'est nous qui avons caché le widget à cause du plein écran :
+/// on ne le réaffiche que dans ce cas, jamais s'il a été masqué à la main.
+static HIDDEN_FOR_FULLSCREEN: AtomicBool = AtomicBool::new(false);
+
+/// Intervalle de surveillance du plein écran.
+const FULLSCREEN_POLL: Duration = Duration::from_millis(1500);
+
+/// Sites où un clic sur un match a le droit d'emmener.
+const ESPN_HOSTS: [&str; 4] = ["www.espn.com", "espn.com", "www.espn.ca", "www.espn.co.uk"];
 
 /// Seuls ces caractères peuvent composer le chemin demandé par l'interface.
 /// L'hôte, lui, est codé en dur : le frontend ne peut pas rediriger l'appel ailleurs.
@@ -78,7 +93,9 @@ async fn espn_get(path: String) -> Result<String, String> {
         return Err(format!("HTTP {status}\n{url}{hint}"));
     }
 
-    res.text().await.map_err(|e| format!("lecture : {e}\n{url}"))
+    res.text()
+        .await
+        .map_err(|e| format!("lecture : {e}\n{url}"))
 }
 
 /// Ouvre la fenêtre de réglages, ou la ramène devant si elle existe déjà.
@@ -104,7 +121,6 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
 
     Ok(())
 }
-
 
 /// Rectangle de la zone de travail de l'écran du widget, et facteur d'échelle.
 /// La zone de travail exclut la barre des tâches : s'y limiter garantit que
@@ -185,7 +201,8 @@ fn fit_widget(app: AppHandle, height: f64) {
     let Some(win) = app.get_webview_window(WIDGET) else {
         return;
     };
-    let (Ok(pos), Ok(size), Ok(scale)) = (win.outer_position(), win.outer_size(), win.scale_factor())
+    let (Ok(pos), Ok(size), Ok(scale)) =
+        (win.outer_position(), win.outer_size(), win.scale_factor())
     else {
         return;
     };
@@ -205,6 +222,105 @@ fn fit_widget(app: AppHandle, height: f64) {
         let old_bottom = pos.y + size.height as i32;
         let _ = win.set_position(PhysicalPosition::new(pos.x, old_bottom - new_h as i32));
     }
+}
+
+/* ---------- 2. Démarrage avec Windows ---------- */
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> Result<bool, String> {
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let launcher = app.autolaunch();
+    let result = if enabled {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    };
+    result.map_err(|e| e.to_string())
+}
+
+/* ---------- 3. Plein écran ---------- */
+
+#[tauri::command]
+fn set_hide_fullscreen(enabled: bool) {
+    HIDE_FULLSCREEN.store(enabled, Ordering::SeqCst);
+}
+
+/// Vrai quand Windows signale une application en plein écran : jeu, vidéo,
+/// présentation. On interroge directement shell32, sans bibliothèque en plus.
+#[cfg(windows)]
+fn fullscreen_app_running() -> bool {
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHQueryUserNotificationState(pquns: *mut i32) -> i32;
+    }
+    // Valeurs de QUERY_USER_NOTIFICATION_STATE (windows-sys, Win32::UI::Shell).
+    const QUNS_BUSY: i32 = 2;
+    const QUNS_RUNNING_D3D_FULL_SCREEN: i32 = 3;
+    const QUNS_PRESENTATION_MODE: i32 = 4;
+
+    let mut state = 0i32;
+    // SAFETY : l'unique argument est un pointeur vers un i32 valide qui vit
+    // pendant tout l'appel, comme l'exige la fonction.
+    let hr = unsafe { SHQueryUserNotificationState(&mut state) };
+    hr >= 0
+        && matches!(
+            state,
+            QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE
+        )
+}
+
+#[cfg(not(windows))]
+fn fullscreen_app_running() -> bool {
+    false
+}
+
+/// Cache le widget pendant qu'une application est en plein écran, et le
+/// réaffiche ensuite — seulement si c'est cette surveillance qui l'avait caché.
+fn watch_fullscreen(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(FULLSCREEN_POLL);
+        let Some(win) = app.get_webview_window(WIDGET) else {
+            continue;
+        };
+        let busy = HIDE_FULLSCREEN.load(Ordering::SeqCst) && fullscreen_app_running();
+        let hidden_by_us = HIDDEN_FOR_FULLSCREEN.load(Ordering::SeqCst);
+
+        if busy && !hidden_by_us {
+            if win.is_visible().unwrap_or(false) {
+                let _ = win.hide();
+                HIDDEN_FOR_FULLSCREEN.store(true, Ordering::SeqCst);
+            }
+        } else if !busy && hidden_by_us {
+            let _ = win.show();
+            HIDDEN_FOR_FULLSCREEN.store(false, Ordering::SeqCst);
+        }
+    });
+}
+
+/* ---------- 8. Ouvrir la page ESPN d'un match ---------- */
+
+/// Ouvre la page d'un match dans le navigateur par défaut. Seules les
+/// adresses https d'ESPN passent : l'interface ne peut pas faire ouvrir
+/// n'importe quel site ou programme.
+#[tauri::command]
+fn open_espn(app: AppHandle, url: String) -> Result<(), String> {
+    let host = url
+        .strip_prefix("https://")
+        .and_then(|rest| {
+            rest.split(|c: char| c == '/' || c == '?' || c == '#')
+                .next()
+        })
+        .unwrap_or("");
+    if !ESPN_HOSTS.contains(&host) {
+        return Err(format!("adresse refusée : {url}"));
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 /// Affiche le widget et le met devant.
@@ -243,10 +359,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&toggle, &settings, &sep, &quit])?;
 
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .ok_or_else(|| tauri::Error::InvalidIcon(std::io::Error::other("icône par défaut absente")))?;
+    let icon = app.default_window_icon().cloned().ok_or_else(|| {
+        tauri::Error::InvalidIcon(std::io::Error::other("icône par défaut absente"))
+    })?;
 
     TrayIconBuilder::with_id("tray")
         .icon(icon)
@@ -296,6 +411,11 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_widget(app);
         }))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_opener::init())
         // Mémorise la position du widget entre deux lancements.
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -315,7 +435,11 @@ pub fn run() {
             espn_get,
             open_settings,
             reveal_widget,
-            fit_widget
+            fit_widget,
+            get_autostart,
+            set_autostart,
+            set_hide_fullscreen,
+            open_espn
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -329,12 +453,21 @@ pub fn run() {
                 .path()
                 .app_config_dir()
                 .map(|dir| dir.join(".layout-anchored-v2"));
-            let needs_anchor = layout_marker
-                .as_ref()
-                .map(|f| !f.exists())
-                .unwrap_or(true);
+            let needs_anchor = layout_marker.as_ref().map(|f| !f.exists()).unwrap_or(true);
 
             build_tray(&handle)?;
+            watch_fullscreen(handle.clone());
+
+            // Démarrage avec Windows activé une seule fois, au premier lancement
+            // de cette version ; ensuite, c'est la case des réglages qui décide.
+            if let Ok(dir) = app.path().app_config_dir() {
+                let marker = dir.join(".autostart-default");
+                if !marker.exists() {
+                    let _ = app.autolaunch().enable();
+                    let _ = std::fs::create_dir_all(&dir);
+                    let _ = std::fs::write(&marker, b"1");
+                }
+            }
 
             if let Err(err) = app.global_shortcut().register(hotkey) {
                 // Un autre logiciel occupe peut-être déjà le raccourci : ce n'est pas fatal.
