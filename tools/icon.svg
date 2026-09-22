@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5ab0ff"/>
+      <stop offset="0.55" stop-color="#4a7dff"/>
+      <stop offset="1" stop-color="#7b5cff"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="26" y="26" width="460" height="460" rx="112" fill="url(#g)"/>
+  <rect x="26" y="26" width="460" height="230" rx="112" fill="url(#sheen)"/>
+  <!-- Tableau de pointage : deux scores séparés par un tiret -->
+  <g fill="#ffffff">
+    <rect x="104" y="196" width="94" height="30" rx="15"/>
+    <rect x="104" y="252" width="62" height="30" rx="15" opacity="0.75"/>
+    <rect x="314" y="196" width="94" height="30" rx="15"/>
+    <rect x="314" y="252" width="62" height="30" rx="15" opacity="0.75"/>
+    <circle cx="256" cy="211" r="15"/>
+    <circle cx="256" cy="267" r="15"/>
+  </g>
+  <rect x="104" y="326" width="304" height="26" rx="13" fill="#ffffff" opacity="0.35"/>
+</svg>

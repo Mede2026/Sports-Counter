@@ -1,0 +1,33 @@
+[package]
+name = "sports-counter"
+version = "0.1.0"
+description = "Widget flottant de scores sportifs en direct"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "sports_counter_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-window-state = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip"] }
+
+# Flou acrylique natif de Windows derrière le widget.
+[target."cfg(windows)".dependencies]
+window-vibrancy = "0.6"
+
+# Binaire le plus petit possible : c'est une contrainte du projet.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

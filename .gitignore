@@ -1,0 +1,16 @@
+# Dépendances
+node_modules/
+
+# Build Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sports Counter — Réglages</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div class="head" data-tauri-drag-region>
+    <h1 data-tauri-drag-region>Réglages</h1>
+    <span class="sub" id="summary"></span>
+    <button class="close" id="btnClose" title="Fermer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+      </svg>
+    </button>
+  </div>
+
+  <div class="body">
+    <nav class="leagues" id="leagues"></nav>
+
+    <div class="panel">
+      <div class="toolbar">
+        <input class="search" id="search" type="search" placeholder="Rechercher une équipe…" />
+        <button class="ghost" id="btnClear">Tout décocher</button>
+      </div>
+      <div class="teams" id="teams"></div>
+      <div class="options">
+        <div class="opt">
+          <input type="checkbox" id="optCompact" />
+          <label for="optCompact">Mode compact</label>
+        </div>
+        <div class="opt">
+          <input type="checkbox" id="optHideOld" />
+          <label for="optHideOld">Cacher les matchs finis</label>
+        </div>
+        <div class="opt">
+          <label for="optMax">Matchs affichés</label>
+          <input type="number" id="optMax" min="1" max="10" />
+        </div>
+        <div class="opt">
+          <label for="optOpacity">Opacité</label>
+          <input type="range" id="optOpacity" min="30" max="100" step="5" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>
