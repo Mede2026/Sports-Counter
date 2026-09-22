@@ -92,9 +92,11 @@ Tu peux aussi ouvrir `src/index.html?demo` via n'importe quel serveur local.
 | `src-tauri/src/lib.rs` | fenêtre, zone de notification, raccourci global, relais réseau |
 | `tools/` | génération des icônes et des aperçus |
 
-Les requêtes réseau passent par Rust (commande `espn_get`) plutôt que par la
-page web : ça évite les blocages CORS, et le domaine appelé est fixé dans le
-code, donc l'interface ne peut pas rediriger les appels ailleurs.
+Les requêtes réseau partent d'abord de la page elle-même : dans l'app, elle
+tourne dans WebView2, un vrai Chromium, et le pare-feu d'ESPN accepte ce type
+de client. Si ce chemin échoue, un relais Rust (commande `espn_get`) prend le
+relais ; son domaine est fixé dans le code, donc l'interface ne peut pas
+rediriger les appels ailleurs.
 
 ## Réglages disponibles
 

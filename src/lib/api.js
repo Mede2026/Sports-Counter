@@ -1,9 +1,16 @@
 // Accès aux données ESPN.
-// Dans l'app, la requête passe par Rust (commande `espn_get`) : pas de CORS,
-// et le domaine appelé est verrouillé côté Rust.
-// Hors de l'app (aperçu navigateur), on retombe sur fetch() puis sur les données de démo.
+// Deux chemins, essayés dans l'ordre :
+//   1. fetch() depuis la page. Dans l'app, la page tourne dans WebView2, qui est
+//      Chromium : la requête est celle d'un vrai navigateur, jusqu'à la poignée
+//      de main TLS et au protocole HTTP/2. C'est ce que le pare-feu d'ESPN
+//      laisse passer.
+//   2. Le relais Rust (commande `espn_get`), si le premier chemin échoue.
+//      reqwest n'imite pas un navigateur, donc ESPN peut le refuser, mais il
+//      contourne un éventuel blocage CORS.
+// Quand les deux échouent, l'erreur rapporte le résultat de chacun.
 import { LEAGUES_BY_ID } from './leagues.js';
 import { DEMO_EVENTS } from './demo.js';
+import { errText } from './err.js';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -11,15 +18,34 @@ function inTauri() {
   return typeof window !== 'undefined' && !!window.__TAURI__;
 }
 
-async function getJson(path, query = '') {
-  const suffix = `${path}${query}`;
-  if (inTauri()) {
-    const raw = await window.__TAURI__.core.invoke('espn_get', { path: suffix });
-    return JSON.parse(raw);
-  }
-  const res = await fetch(`${BASE}/${suffix}`);
+async function viaPage(url) {
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
+}
+
+async function viaRust(suffix) {
+  const raw = await window.__TAURI__.core.invoke('espn_get', { path: suffix });
+  return JSON.parse(raw);
+}
+
+async function getJson(path, query = '') {
+  const suffix = `${path}${query}`;
+  const url = `${BASE}/${suffix}`;
+
+  let pageErr;
+  try {
+    return await viaPage(url);
+  } catch (err) {
+    pageErr = errText(err);
+    if (!inTauri()) throw new Error(pageErr);
+  }
+
+  try {
+    return await viaRust(suffix);
+  } catch (err) {
+    throw new Error(`Navigateur : ${pageErr}\nRelais : ${errText(err)}`);
+  }
 }
 
 /** Liste des équipes d'une ligue, pour l'écran de réglages. */
