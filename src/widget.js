@@ -36,12 +36,33 @@ function teamRow(game, team, dim) {
     </div>`;
 }
 
+// ESPN rédige ses statuts en anglais américain (« 9/24 - 4:30 AM EDT ») :
+// pour un match à venir, on reformule l'heure de départ à la québécoise.
+const DAY_FMT = new Intl.DateTimeFormat('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' });
+const TIME_FMT = new Intl.DateTimeFormat('fr-CA', { hour: 'numeric', minute: '2-digit' });
+
+function whenText(date) {
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const day =
+    date.toDateString() === today.toDateString() ? "Aujourd'hui"
+    : date.toDateString() === tomorrow.toDateString() ? 'Demain'
+    : DAY_FMT.format(date);
+  return `${day} · ${TIME_FMT.format(date)}`;
+}
+
 function statusBlock(game) {
   if (game.state === 'in') {
-    const text = [game.clock, game.statusText].filter(Boolean).join(' · ');
+    const text = [game.session, game.clock, game.statusText].filter(Boolean).join(' · ');
     return `<span class="status status--live"><span class="dot"></span>${text || 'En direct'}</span>`;
   }
-  return `<span class="status">${game.statusText || ''}</span>`;
+  if (game.state === 'pre' && game.startsAt instanceof Date && !isNaN(game.startsAt)) {
+    const text = [game.session, whenText(game.startsAt)].filter(Boolean).join(' · ');
+    return `<span class="status">${text}</span>`;
+  }
+  const text = [game.session, game.statusText].filter(Boolean).join(' · ');
+  return `<span class="status">${text}</span>`;
 }
 
 function gameCard(game) {
