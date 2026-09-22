@@ -1,6 +1,13 @@
 # Dépendances
 node_modules/
 
+# Le verrou npm n'est pas versionné : npm n'y inscrit que les binaires de la
+# plateforme qui l'a généré, donc un verrou fait sous Linux casse la
+# compilation Windows (npm/cli#4828). Les paquets npm ici ne sont que des
+# outils de compilation, ils n'entrent pas dans l'app. Ce qui est réellement
+# embarqué est pinné par src-tauri/Cargo.lock, lui bien versionné.
+package-lock.json
+
 # Build Rust / Tauri
 src-tauri/target/
 src-tauri/gen/

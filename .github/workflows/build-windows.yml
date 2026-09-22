@@ -44,8 +44,10 @@ jobs:
         with:
           workspaces: 'src-tauri -> target'
 
-      # `npm install` plutôt que `npm ci` : le verrou est généré sous Linux et
-      # ne contient pas les binaires Windows du CLI Tauri.
+      # `npm install` plutôt que `npm ci` : il n'y a pas de verrou npm
+      # versionné, npm ne sachant pas en produire un valable sur plusieurs
+      # plateformes à la fois. Les versions Rust, elles, sont pinnées par
+      # src-tauri/Cargo.lock.
       - name: Installer les dépendances Node
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
