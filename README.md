@@ -92,16 +92,14 @@ fois à la main.
 ### Publier une version
 
 1. Monter la version dans `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`
-   et `package.json` (par exemple `0.2.1`)
-2. Pousser une étiquette qui correspond :
+   et `package.json` (par exemple `0.2.1`), et pousser
+2. Onglet **Actions** → **Compiler pour Windows** → **Run workflow**, cocher
+   **Publier une version signée**, puis **Run workflow**
 
-```bash
-git tag v0.2.1
-git push origin v0.2.1
-```
-
-GitHub compile, signe et publie. La compilation refuse de continuer si
-l'étiquette ne correspond pas à la version, ou si le secret est absent.
+GitHub crée l'étiquette `v0.2.1`, compile, signe et publie. Pousser soi-même
+une étiquette `v0.2.1` fonctionne aussi. La publication refuse de continuer
+si le secret est absent, ou si une étiquette poussée à la main ne correspond
+pas à la version de l'app.
 
 ## Compiler soi-même (facultatif)
 

@@ -10,7 +10,15 @@ on:
     paths-ignore:
       - 'README.md'
       - 'tools/preview/**'
+  # Lancement manuel. Coché, « publier » produit une version signée à partir
+  # de la version inscrite dans tauri.conf.json, sans avoir à pousser
+  # d'étiquette : le workflow la crée lui-même.
   workflow_dispatch:
+    inputs:
+      publier:
+        description: Publier une version signée (Release) à partir de tauri.conf.json
+        type: boolean
+        default: false
 
 # Une nouvelle poussée annule la compilation précédente encore en cours.
 concurrency:
@@ -23,7 +31,7 @@ permissions:
 jobs:
   windows:
     name: Installateur Windows
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.publier }}
     runs-on: windows-latest
 
     steps:
@@ -97,20 +105,26 @@ jobs:
   # installée consulte pour se mettre à jour toute seule.
   release:
     name: Publier une version signée
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publier }}
     runs-on: windows-latest
 
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
 
-      - name: Vérifier que l'étiquette correspond à la version de l'app
+      # L'étiquette est toujours « v » + la version de l'app. Poussée à la
+      # main, elle doit correspondre, sinon l'app ne verrait pas la mise à jour.
+      - name: Déterminer l'étiquette de la version
+        id: version
         shell: pwsh
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
-          if ("v$version" -ne "${{ github.ref_name }}") {
-            throw "L'étiquette ${{ github.ref_name }} ne correspond pas à la version $version de tauri.conf.json. L'app ne verrait pas la mise à jour."
+          $tag = "v$version"
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne $tag) {
+            throw "L'étiquette ${{ github.ref_name }} ne correspond pas à la version $version de tauri.conf.json."
           }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Version publiée : $tag"
 
       - name: Vérifier la présence de la clé de signature
         shell: pwsh
@@ -147,8 +161,9 @@ jobs:
           # Clé générée sans mot de passe : la clé elle-même est le secret.
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Sports Counter ${{ github.ref_name }}
+          # Créée sur le commit courant si elle n'existe pas encore.
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: Sports Counter ${{ steps.version.outputs.tag }}
           releaseBody: Installer la version depuis les fichiers ci-dessous. Les versions déjà installées se mettent à jour toutes seules.
           releaseDraft: false
           prerelease: false
