@@ -1,9 +1,11 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -15,8 +17,18 @@ const ESPN_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports";
 const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
 
-/// Marge entre le widget et les bords de l'écran, en pixels logiques.
-const MARGIN: f64 = 12.0;
+/// Largeur du widget, en pixels logiques.
+const WIDGET_WIDTH: f64 = 300.0;
+
+/// En deçà de cette distance d'un bord (pixels logiques), le widget s'y colle.
+const SNAP: f64 = 24.0;
+
+/// Délai après le dernier déplacement avant de recadrer le widget. Recadrer
+/// pendant le glisser lutterait contre la souris et ferait trembler la fenêtre.
+const SETTLE_DELAY: Duration = Duration::from_millis(250);
+
+/// Numéro du dernier déplacement : seul le plus récent déclenche le recadrage.
+static SETTLE_GEN: AtomicU64 = AtomicU64::new(0);
 
 /// Seuls ces caractères peuvent composer le chemin demandé par l'interface.
 /// L'hôte, lui, est codé en dur : le frontend ne peut pas rediriger l'appel ailleurs.
@@ -94,45 +106,104 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
 }
 
 
-/// Coin haut-gauche autorisé pour le widget, dans la zone de travail de son
-/// écran. La zone de travail exclut la barre des tâches : le widget ne peut
-/// donc jamais passer dessous ni sortir de l'écran.
-fn allowed_bounds(win: &WebviewWindow) -> Option<(i32, i32, i32, i32)> {
+/// Rectangle de la zone de travail de l'écran du widget, et facteur d'échelle.
+/// La zone de travail exclut la barre des tâches : s'y limiter garantit que
+/// le widget ne passe jamais dessous ni hors de l'écran.
+fn work_area(win: &WebviewWindow) -> Option<(i32, i32, i32, i32, f64)> {
     let monitor = win.current_monitor().ok().flatten()?;
-    let area = monitor.work_area();
-    let size = win.outer_size().ok()?;
-    let margin = (MARGIN * monitor.scale_factor()).round() as i32;
-
-    let min_x = area.position.x + margin;
-    let min_y = area.position.y + margin;
-    // `max` évite une borne inversée si la fenêtre dépasse la taille de l'écran.
-    let max_x = (area.position.x + area.size.width as i32 - size.width as i32 - margin).max(min_x);
-    let max_y = (area.position.y + area.size.height as i32 - size.height as i32 - margin).max(min_y);
-
-    Some((min_x, min_y, max_x, max_y))
+    let a = monitor.work_area();
+    Some((
+        a.position.x,
+        a.position.y,
+        a.position.x + a.size.width as i32,
+        a.position.y + a.size.height as i32,
+        monitor.scale_factor(),
+    ))
 }
 
-/// Position de départ : en bas à gauche, juste au-dessus de la barre des tâches.
+/// Position de départ : collé en bas à gauche, juste au-dessus de la barre
+/// des tâches.
 fn place_bottom_left(win: &WebviewWindow) {
-    if let Some((min_x, _, _, max_y)) = allowed_bounds(win) {
-        let _ = win.set_position(PhysicalPosition::new(min_x, max_y));
+    let (Some((left, _, _, bottom, _)), Ok(size)) = (work_area(win), win.outer_size()) else {
+        return;
+    };
+    let _ = win.set_position(PhysicalPosition::new(left, bottom - size.height as i32));
+}
+
+/// Ramène le widget dans l'écran, et le colle au bord s'il en est tout près.
+/// Ne déplace rien quand il est déjà en place, ce qui évite de boucler sur
+/// l'évènement de déplacement que provoque `set_position`.
+fn settle(win: &WebviewWindow) {
+    let Some((left, top, right, bottom, scale)) = work_area(win) else {
+        return;
+    };
+    let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) else {
+        return;
+    };
+    let snap = (SNAP * scale).round() as i32;
+
+    // `max` évite une borne inversée si la fenêtre dépasse la taille de l'écran.
+    let max_x = (right - size.width as i32).max(left);
+    let max_y = (bottom - size.height as i32).max(top);
+
+    let mut x = pos.x.clamp(left, max_x);
+    let mut y = pos.y.clamp(top, max_y);
+    if x - left <= snap {
+        x = left;
+    } else if max_x - x <= snap {
+        x = max_x;
+    }
+    if y - top <= snap {
+        y = top;
+    } else if max_y - y <= snap {
+        y = max_y;
+    }
+
+    if x != pos.x || y != pos.y {
+        let _ = win.set_position(PhysicalPosition::new(x, y));
     }
 }
 
-/// Ramène le widget dans l'écran s'il en dépasse. Ne fait rien quand il est
-/// déjà au bon endroit, ce qui évite de boucler sur l'évènement de déplacement.
-fn keep_on_screen(win: &WebviewWindow) {
-    let Some((min_x, min_y, max_x, max_y)) = allowed_bounds(win) else {
+/// Recadre le widget une fois qu'il a cessé de bouger.
+fn settle_later(win: WebviewWindow) {
+    let gen = SETTLE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(SETTLE_DELAY).await;
+        if SETTLE_GEN.load(Ordering::SeqCst) == gen {
+            settle(&win);
+        }
+    });
+}
+
+/// Ajuste la hauteur du widget à son contenu.
+///
+/// Un widget posé dans la moitié basse de l'écran grandit et rétrécit par le
+/// haut : son bord inférieur reste collé à la barre des tâches. Sans ça, il
+/// rétrécissait par le bas et laissait un espace vide au-dessus de la barre.
+#[tauri::command]
+fn fit_widget(app: AppHandle, height: f64) {
+    let Some(win) = app.get_webview_window(WIDGET) else {
         return;
     };
-    let Ok(pos) = win.outer_position() else {
+    let (Ok(pos), Ok(size), Ok(scale)) = (win.outer_position(), win.outer_size(), win.scale_factor())
+    else {
         return;
     };
 
-    let x = pos.x.clamp(min_x, max_x);
-    let y = pos.y.clamp(min_y, max_y);
-    if x != pos.x || y != pos.y {
-        let _ = win.set_position(PhysicalPosition::new(x, y));
+    let new_w = (WIDGET_WIDTH * scale).round() as u32;
+    let new_h = (height.max(40.0) * scale).round() as u32;
+    if new_w == size.width && new_h == size.height {
+        return;
+    }
+
+    let grow_up = work_area(&win)
+        .map(|(_, top, _, bottom, _)| pos.y + size.height as i32 / 2 > (top + bottom) / 2)
+        .unwrap_or(false);
+
+    let _ = win.set_size(PhysicalSize::new(new_w, new_h));
+    if grow_up {
+        let old_bottom = pos.y + size.height as i32;
+        let _ = win.set_position(PhysicalPosition::new(pos.x, old_bottom - new_h as i32));
     }
 }
 
@@ -240,18 +311,24 @@ pub fn run() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![espn_get, open_settings, reveal_widget])
+        .invoke_handler(tauri::generate_handler![
+            espn_get,
+            open_settings,
+            reveal_widget,
+            fit_widget
+        ])
         .setup(move |app| {
             let handle = app.handle().clone();
 
             // Ancrage initial : on le pose une seule fois par utilisateur, via un
             // fichier témoin. Se fier à l'absence du fichier de position du
             // greffon ne suffirait pas — quelqu'un qui a déjà lancé une version
-            // antérieure en a un, et n'aurait jamais l'ancrage.
+            // antérieure en a un, et n'aurait jamais l'ancrage. Le suffixe v2
+            // refait l'ancrage une fois : la v1 laissait un espace sous le widget.
             let layout_marker = app
                 .path()
                 .app_config_dir()
-                .map(|dir| dir.join(".layout-anchored"));
+                .map(|dir| dir.join(".layout-anchored-v2"));
             let needs_anchor = layout_marker
                 .as_ref()
                 .map(|f| !f.exists())
@@ -283,7 +360,7 @@ pub fn run() {
                         let _ = std::fs::write(marker, b"1");
                     }
                 } else {
-                    keep_on_screen(&win);
+                    settle(&win);
                 }
             }
 
@@ -301,10 +378,10 @@ pub fn run() {
                     let _ = window.hide();
                 }
                 // Après un déplacement à la souris ou un changement de hauteur,
-                // on vérifie que le widget tient toujours dans l'écran.
+                // on recadre le widget une fois qu'il s'est immobilisé.
                 tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                     if let Some(win) = window.app_handle().get_webview_window(WIDGET) {
-                        keep_on_screen(&win);
+                        settle_later(win);
                     }
                 }
                 _ => {}

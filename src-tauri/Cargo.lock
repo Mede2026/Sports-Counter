@@ -3434,6 +3434,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-single-instance",
  "tauri-plugin-window-state",
+ "tokio",
 ]
 
 [[package]]

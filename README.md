@@ -12,7 +12,10 @@ seulement les équipes que tu choisis.
 - **Déplaçable** : tu attrapes la barre du haut, la position est retenue au prochain lancement.
 - **Impossible à perdre hors de l'écran** : le widget est ramené dans la zone
   visible s'il en dépasse, et ne passe jamais sous la barre des tâches.
-- **Placé en bas à gauche** au premier lancement, juste au-dessus de la barre des tâches.
+- **Aimanté aux bords** : lâché à moins de 24 px d'un bord, il s'y colle.
+- **Collé en bas à gauche** au premier lancement, juste au-dessus de la barre
+  des tâches. Posé dans la moitié basse de l'écran, il grandit vers le haut :
+  son bord inférieur reste collé à la barre.
 - **Activable / désactivable** : `Ctrl + Alt + S`, ou clic sur l'icône dans la zone de notification.
 - **Logos des équipes** affichés à côté de chaque score.
 - **Choix des équipes** dans une fenêtre de réglages, ligue par ligue.
@@ -25,6 +28,11 @@ LNH, NBA, NFL, MLB, Premier League, Ligue des champions, Formule 1.
 Les données viennent de l'API publique d'ESPN : **aucun compte, aucune clé
 d'API**. En contrepartie, c'est une API non officielle, qui peut changer sans
 préavis.
+
+La liste des équipes de la LNH est intégrée à l'app (`src/lib/teams-nhl.js`) :
+l'adresse d'ESPN qui la fournit est illisible depuis une application. Pour les
+autres ligues, les équipes sont retrouvées dans le calendrier des matchs, qui,
+lui, est lisible.
 
 ## Obtenir l'app sans rien installer
 

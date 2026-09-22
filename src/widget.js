@@ -142,13 +142,11 @@ function render(games, error) {
 /** Ajuste la hauteur de la fenêtre au contenu réel. */
 async function fitWindow() {
   if (!inTauri()) return;
-  const api = window.__TAURI__;
-  const { getCurrentWindow } = api.window;
-  const LogicalSize = api.window.LogicalSize ?? api.dpi?.LogicalSize;
-  if (!LogicalSize) return;
-  const h = Math.ceil(el.widget.getBoundingClientRect().height);
+  const height = Math.ceil(el.widget.getBoundingClientRect().height);
   try {
-    await getCurrentWindow().setSize(new LogicalSize(300, h));
+    // Côté Rust : un widget posé en bas grandit par le haut, pour rester
+    // collé à la barre des tâches.
+    await window.__TAURI__.core.invoke('fit_widget', { height });
   } catch { /* la fenêtre peut être en cours de fermeture */ }
 }
 

@@ -11,6 +11,7 @@
 import { LEAGUES_BY_ID } from './leagues.js';
 import { DEMO_EVENTS } from './demo.js';
 import { errText } from './err.js';
+import { NHL_TEAMS } from './teams-nhl.js';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -50,7 +51,7 @@ async function getJson(path, query = '') {
 
 const DAY = 24 * 3600 * 1000;
 const TEAMS_TTL = 7 * DAY;
-const teamsKey = (leagueId) => `sports-counter.teams.${leagueId}.v1`;
+const teamsKey = (leagueId) => `sports-counter.teams.${leagueId}.v2`;
 
 function toTeam(t) {
   return {
@@ -92,20 +93,53 @@ async function teamsFromDirectory(league) {
   return raw.map((entry) => entry.team).filter(Boolean).map(toTeam);
 }
 
-/** Secours : les équipes qui jouent dans le mois écoulé et le mois à venir. */
+/** Listes intégrées à l'app, pour les ligues dont on a une copie vérifiée. */
+const BUNDLED_TEAMS = { nhl: NHL_TEAMS };
+
+const ymd = (offsetDays) =>
+  new Date(Date.now() + offsetDays * DAY).toISOString().slice(0, 10).replaceAll('-', '');
+
+/**
+ * Secours : les équipes qui jouent autour d'aujourd'hui, tirées du calendrier.
+ * `/scoreboard` est lisible depuis l'app, contrairement à `/teams`.
+ */
 async function teamsFromSchedule(league) {
-  const ymd = (ms) => new Date(ms).toISOString().slice(0, 10).replaceAll('-', '');
-  const now = Date.now();
-  const data = await getJson(
-    `${league.path}/scoreboard`,
-    `?dates=${ymd(now - 30 * DAY)}-${ymd(now + 30 * DAY)}&limit=1000`,
-  );
   const seen = new Map();
-  for (const event of data?.events ?? []) {
-    for (const c of event?.competitions?.[0]?.competitors ?? []) {
-      if (c?.team?.id && !seen.has(String(c.team.id))) seen.set(String(c.team.id), toTeam(c.team));
+  const absorb = (data) => {
+    for (const event of data?.events ?? []) {
+      for (const c of event?.competitions?.[0]?.competitors ?? []) {
+        const id = c?.team?.id != null ? String(c.team.id) : null;
+        if (id && !seen.has(id)) seen.set(id, toTeam(c.team));
+      }
+    }
+  };
+  const target = league.teams ?? Infinity;
+  const errors = [];
+
+  // 1. Une seule requête sur trois semaines. ESPN a refusé (HTTP 400) une
+  //    plage de 60 jours avec limit=1000 : on raccourcit et on retire limit.
+  try {
+    absorb(await getJson(`${league.path}/scoreboard`, `?dates=${ymd(-7)}-${ymd(14)}`));
+  } catch (err) {
+    errors.push(`plage : ${errText(err)}`);
+  }
+
+  // 2. Jour par jour, en s'éloignant d'aujourd'hui, jusqu'à avoir toute la
+  //    ligue. `?dates=AAAAMMJJ` est le format de base de l'API.
+  const offsets = [0];
+  for (let d = 1; d <= 30; d += 1) offsets.push(d, -d);
+  for (let i = 0; i < offsets.length && seen.size < target; i += 6) {
+    const batch = offsets.slice(i, i + 6);
+    const results = await Promise.allSettled(
+      batch.map((d) => getJson(`${league.path}/scoreboard`, `?dates=${ymd(d)}`)),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') absorb(r.value);
+      else if (errors.length < 3) errors.push(`jour : ${errText(r.reason)}`);
     }
   }
+
+  if (!seen.size && errors.length) throw new Error(errors.join('\n'));
   return [...seen.values()];
 }
 
@@ -113,6 +147,8 @@ async function teamsFromSchedule(league) {
 export async function fetchTeams(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || league.kind !== 'team') return [];
+
+  if (BUNDLED_TEAMS[leagueId]) return [...BUNDLED_TEAMS[leagueId]].sort(byName);
 
   const cached = readTeamsCache(leagueId);
   if (cached) return cached;
@@ -138,7 +174,9 @@ export async function fetchTeams(leagueId) {
   if (!teams.length) throw new Error(errText(directoryErr ?? 'aucune équipe trouvée'));
 
   teams.sort(byName);
-  writeTeamsCache(leagueId, teams);
+  // Une liste incomplète (ligue hors saison, peu de matchs au calendrier) n'est
+  // pas gardée : on retentera à la prochaine ouverture des réglages.
+  if (teams.length >= (league.teams ?? 0)) writeTeamsCache(leagueId, teams);
   return teams;
 }
 
