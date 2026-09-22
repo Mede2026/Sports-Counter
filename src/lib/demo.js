@@ -37,9 +37,6 @@ const LOGOS = {
   CEL: svg(
     `<path d="M32 4l7 19 19 7-19 7-7 19-7-19-19-7 19-7z" fill="#007a33"/>`
   ),
-  F1: svg(
-    `<path d="M4 32h32l7-9h13l-7 9h7v7H28l-6 7H7l6-7H4z" fill="#ff1801"/>`
-  ),
 };
 
 export const DEMO_EVENTS = [
@@ -64,7 +61,7 @@ export const DEMO_EVENTS = [
   {
     id: 'demo-f1-1', leagueId: 'f1', kind: 'event', state: 'in',
     statusText: 'Tour 34 / 70', clock: '', startsAt: null,
-    title: 'GP du Canada', logo: LOGOS.F1,
+    title: 'GP du Canada',
   },
 ];
 

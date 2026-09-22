@@ -39,6 +39,26 @@ body {
 .head h1 { font-size: 14px; font-weight: 650; letter-spacing: -0.01em; }
 .head .sub { font-size: 11.5px; color: var(--text-faint); margin-left: auto; }
 
+.ghost--head {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  padding: 5px 10px;
+  font-size: 11.5px;
+}
+
+.state__code {
+  display: inline-block;
+  margin: 6px 0 10px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  max-width: 100%;
+  word-break: break-word;
+}
+
 .close {
   -webkit-app-region: no-drag;
   app-region: no-drag;

@@ -3,6 +3,7 @@ import { loadPrefs, savePrefs } from './lib/store.js';
 import { fetchTeams } from './lib/api.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
+import { errText } from './lib/err.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -129,8 +130,13 @@ async function selectLeague() {
   } catch (err) {
     teams = [];
     el.teams.innerHTML = `<div class="state state--err">
-      Impossible de charger les équipes.<br />${err.message}<br />
-      Vérifie ta connexion Internet, puis reviens sur cette ligue.</div>`;
+      <strong>Impossible de charger les équipes.</strong><br />
+      <code class="state__code">${errText(err)}</code><br />
+      <button class="ghost" id="btnRetryTeams">Réessayer</button></div>`;
+    document.getElementById('btnRetryTeams')?.addEventListener('click', () => {
+      cache.delete(current);
+      selectLeague();
+    });
   }
 }
 
@@ -163,6 +169,10 @@ document.getElementById('btnClear').addEventListener('click', () => {
   savePrefs(prefs);
   renderLeagues();
   renderTeams();
+});
+
+document.getElementById('btnReveal').addEventListener('click', async () => {
+  if (inTauri()) await window.__TAURI__.core.invoke('reveal_widget');
 });
 
 document.getElementById('btnClose').addEventListener('click', async () => {

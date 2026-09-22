@@ -1,6 +1,7 @@
 import { fetchScoreboard, demoEvents } from './lib/api.js';
 import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
+import { errText } from './lib/err.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
@@ -54,7 +55,7 @@ function gameCard(game) {
   if (game.kind === 'event') {
     return `<div class="game">${head}
       <div class="event">
-        ${crestHtml({ logo: game.logo, abbr: league?.label?.slice(0, 2) ?? 'F1', color: league?.accent })}
+        ${crestHtml({ logo: game.logo, abbr: league?.short ?? '?', color: league?.accent })}
         <span class="event__title">${game.title}</span>
       </div></div>`;
   }
@@ -77,6 +78,21 @@ function renderEmpty() {
   document.getElementById('btnEmptySettings')?.addEventListener('click', openSettings);
 }
 
+function renderError(message) {
+  el.widget.classList.toggle('widget--compact', prefs.compact);
+  el.widget.style.opacity = String(prefs.opacity ?? 1);
+  el.title.textContent = 'Sports Counter';
+  el.games.innerHTML = `
+    <div class="empty">
+      <strong>Scores indisponibles</strong><br />
+      <span class="empty__detail">${message}</span>
+      <br /><button id="btnRetry">Réessayer</button>
+    </div>`;
+  document.getElementById('btnRetry')?.addEventListener('click', refresh);
+  el.foot.hidden = true;
+  fitWindow();
+}
+
 function render(games, error) {
   el.widget.classList.toggle('widget--compact', prefs.compact);
   el.widget.style.opacity = String(prefs.opacity ?? 1);
@@ -94,7 +110,7 @@ function render(games, error) {
 
   if (error) {
     el.foot.hidden = false;
-    el.foot.innerHTML = `<span class="foot__err">Hors ligne — ${error}</span>`;
+    el.foot.innerHTML = `<span class="foot__err">Partiel — ${error}</span>`;
   } else {
     el.foot.hidden = true;
   }
@@ -162,12 +178,13 @@ async function refresh() {
 
   for (const r of results) {
     if (r.status === 'fulfilled') games.push(...r.value);
-    else error = r.reason?.message ?? 'requête échouée';
+    else error = errText(r.reason);
   }
 
-  // Tout a échoué : on montre au moins la démo plutôt qu'un widget vide.
+  // Tout a échoué : on le dit. Afficher des données de démonstration ferait
+  // passer de faux scores pour de vrais.
   if (!games.length && error) {
-    render(demoEvents().filter(keepGame), error);
+    renderError(error);
     schedule(false);
     return;
   }

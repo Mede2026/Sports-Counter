@@ -1,5 +1,5 @@
 :root {
-  --surface: rgba(18, 20, 27, 0.62);
+  --surface: rgba(18, 20, 27, 0.82);
   --surface-solid: #12141b;
   --border: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.16);
@@ -239,6 +239,14 @@ span.crest {
   font-size: 12px;
   line-height: 1.55;
   color: var(--text-faint);
+}
+
+.empty__detail {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #ffa07a;
+  word-break: break-word;
 }
 
 .empty button {

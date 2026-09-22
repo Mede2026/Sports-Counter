@@ -10,6 +10,9 @@ seulement les équipes que tu choisis.
 
 - **Toujours au-dessus** des autres fenêtres, sur tous les bureaux virtuels.
 - **Déplaçable** : tu attrapes la barre du haut, la position est retenue au prochain lancement.
+- **Impossible à perdre hors de l'écran** : le widget est ramené dans la zone
+  visible s'il en dépasse, et ne passe jamais sous la barre des tâches.
+- **Placé en bas à gauche** au premier lancement, juste au-dessus de la barre des tâches.
 - **Activable / désactivable** : `Ctrl + Alt + S`, ou clic sur l'icône dans la zone de notification.
 - **Logos des équipes** affichés à côté de chaque score.
 - **Choix des équipes** dans une fenêtre de réglages, ligue par ligue.
@@ -101,14 +104,25 @@ code, donc l'interface ne peut pas rediriger les appels ailleurs.
 - Opacité du widget
 - Masquage automatique des matchs terminés depuis plus de 6 h
 
+## Retrouver le widget quand il a disparu
+
+Windows range souvent les nouvelles icônes de la zone de notification derrière
+la petite flèche `^`, à côté de l'horloge. Trois façons de rappeler le widget :
+
+1. **`Ctrl + Alt + S`**
+2. **Relancer l'app** depuis le menu Démarrer : elle ne s'ouvre pas en double,
+   elle réaffiche le widget
+3. Bouton **« Afficher le widget »** dans la fenêtre de réglages
+
+Pour épingler l'icône à côté de l'horloge : *Paramètres → Personnalisation →
+Barre des tâches → Autres icônes de la barre d'état système*.
+
 ## Limites connues
 
 - L'API ESPN n'est pas officielle : si ESPN change son format, il faudra adapter
   `src/lib/api.js`.
 - La Formule 1 n'a pas de suivi tour par tour : le widget affiche la course en
   cours ou la prochaine, sans classement en direct.
-- Le flou acrylique nécessite Windows 10 (version 1809) ou plus récent. S'il
-  n'est pas disponible, le widget reste simplement semi-transparent.
 - Le chiffrement des connexions passe par Schannel, le composant TLS de
   Windows, plutôt que par une bibliothèque embarquée. L'app est plus légère,
   mais elle suit le magasin de certificats du système.

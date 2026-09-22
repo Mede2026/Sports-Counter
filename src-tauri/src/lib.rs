@@ -3,7 +3,7 @@ use std::time::Duration;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -11,6 +11,9 @@ const ESPN_HOST: &str = "site.api.espn.com";
 const ESPN_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports";
 const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
+
+/// Marge entre le widget et les bords de l'écran, en pixels logiques.
+const MARGIN: f64 = 12.0;
 
 /// Seuls ces caractères peuvent composer le chemin demandé par l'interface.
 /// L'hôte, lui, est codé en dur : le frontend ne peut pas rediriger l'appel ailleurs.
@@ -42,13 +45,13 @@ async fn espn_get(path: String) -> Result<String, String> {
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("réseau : {e}"))?;
+        .map_err(|e| format!("réseau ({path}) : {e}"))?;
 
     if !res.status().is_success() {
-        return Err(format!("HTTP {} depuis {ESPN_HOST}", res.status()));
+        return Err(format!("HTTP {} sur {ESPN_HOST}/{path}", res.status()));
     }
 
-    res.text().await.map_err(|e| format!("lecture : {e}"))
+    res.text().await.map_err(|e| format!("lecture ({path}) : {e}"))
 }
 
 /// Ouvre la fenêtre de réglages, ou la ramène devant si elle existe déjà.
@@ -73,6 +76,65 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+
+/// Coin haut-gauche autorisé pour le widget, dans la zone de travail de son
+/// écran. La zone de travail exclut la barre des tâches : le widget ne peut
+/// donc jamais passer dessous ni sortir de l'écran.
+fn allowed_bounds(win: &WebviewWindow) -> Option<(i32, i32, i32, i32)> {
+    let monitor = win.current_monitor().ok().flatten()?;
+    let area = monitor.work_area();
+    let size = win.outer_size().ok()?;
+    let margin = (MARGIN * monitor.scale_factor()).round() as i32;
+
+    let min_x = area.position.x + margin;
+    let min_y = area.position.y + margin;
+    // `max` évite une borne inversée si la fenêtre dépasse la taille de l'écran.
+    let max_x = (area.position.x + area.size.width as i32 - size.width as i32 - margin).max(min_x);
+    let max_y = (area.position.y + area.size.height as i32 - size.height as i32 - margin).max(min_y);
+
+    Some((min_x, min_y, max_x, max_y))
+}
+
+/// Position de départ : en bas à gauche, juste au-dessus de la barre des tâches.
+fn place_bottom_left(win: &WebviewWindow) {
+    if let Some((min_x, _, _, max_y)) = allowed_bounds(win) {
+        let _ = win.set_position(PhysicalPosition::new(min_x, max_y));
+    }
+}
+
+/// Ramène le widget dans l'écran s'il en dépasse. Ne fait rien quand il est
+/// déjà au bon endroit, ce qui évite de boucler sur l'évènement de déplacement.
+fn keep_on_screen(win: &WebviewWindow) {
+    let Some((min_x, min_y, max_x, max_y)) = allowed_bounds(win) else {
+        return;
+    };
+    let Ok(pos) = win.outer_position() else {
+        return;
+    };
+
+    let x = pos.x.clamp(min_x, max_x);
+    let y = pos.y.clamp(min_y, max_y);
+    if x != pos.x || y != pos.y {
+        let _ = win.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
+/// Affiche le widget et le met devant.
+fn show_widget(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window(WIDGET) {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_always_on_top(true);
+        let _ = win.set_focus();
+    }
+}
+
+/// Version appelable depuis l'interface.
+#[tauri::command]
+fn reveal_widget(app: AppHandle) {
+    show_widget(&app);
 }
 
 /// Affiche ou masque le widget.
@@ -118,13 +180,16 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                toggle_widget(tray.app_handle());
+            match event {
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => toggle_widget(tray.app_handle()),
+                // Le double-clic affiche toujours, sans jamais masquer : c'est le
+                // geste de secours quand on ne retrouve plus le widget.
+                TrayIconEvent::DoubleClick { .. } => show_widget(tray.app_handle()),
+                _ => {}
             }
         })
         .build(app)?;
@@ -138,6 +203,13 @@ pub fn run() {
     let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyS);
 
     tauri::Builder::default()
+        // Relancer l'app alors qu'elle tourne déjà ne crée pas un second
+        // exemplaire : ça réaffiche le widget. C'est le moyen le plus simple de
+        // le retrouver quand l'icône de la zone de notification est masquée par
+        // Windows.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_widget(app);
+        }))
         // Mémorise la position du widget entre deux lancements.
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -153,9 +225,18 @@ pub fn run() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![espn_get, open_settings])
+        .invoke_handler(tauri::generate_handler![espn_get, open_settings, reveal_widget])
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            // Le greffon de position écrit ce fichier en quittant. Son absence
+            // signifie donc que l'app n'a encore jamais été lancée ici.
+            let first_run = app
+                .path()
+                .app_config_dir()
+                .map(|dir| !dir.join(".window-state.json").exists())
+                .unwrap_or(true);
+
             build_tray(&handle)?;
 
             if let Err(err) = app.global_shortcut().register(hotkey) {
@@ -169,24 +250,38 @@ pub fn run() {
                 let _ = win.set_always_on_top(true);
                 let _ = win.set_skip_taskbar(true);
 
-                // Flou acrylique de Windows derrière le widget. Indisponible sur
-                // certaines versions : on continue sans, le fond CSS suffit.
-                #[cfg(windows)]
-                if let Err(err) = window_vibrancy::apply_acrylic(&win, Some((16, 18, 27, 120))) {
-                    eprintln!("flou acrylique indisponible : {err}");
+                // Au tout premier lancement, aucune position n'a été mémorisée :
+                // on ancre le widget en bas à gauche. Ensuite on vérifie juste
+                // que la position retenue tient toujours dans l'écran, par
+                // exemple après avoir débranché un deuxième moniteur.
+                if first_run {
+                    place_bottom_left(&win);
+                } else {
+                    keep_on_screen(&win);
                 }
             }
 
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Fermer le widget doit le masquer, pas tuer l'app : elle vit dans la
-            // zone de notification.
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == WIDGET {
+            if window.label() != WIDGET {
+                return;
+            }
+            match event {
+                // Fermer le widget doit le masquer, pas tuer l'app : elle vit
+                // dans la zone de notification.
+                tauri::WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                // Après un déplacement à la souris ou un changement de hauteur,
+                // on vérifie que le widget tient toujours dans l'écran.
+                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
+                    if let Some(win) = window.app_handle().get_webview_window(WIDGET) {
+                        keep_on_screen(&win);
+                    }
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())
