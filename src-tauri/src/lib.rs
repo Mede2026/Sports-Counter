@@ -229,12 +229,17 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
-            // Le greffon de position écrit ce fichier en quittant. Son absence
-            // signifie donc que l'app n'a encore jamais été lancée ici.
-            let first_run = app
+            // Ancrage initial : on le pose une seule fois par utilisateur, via un
+            // fichier témoin. Se fier à l'absence du fichier de position du
+            // greffon ne suffirait pas — quelqu'un qui a déjà lancé une version
+            // antérieure en a un, et n'aurait jamais l'ancrage.
+            let layout_marker = app
                 .path()
                 .app_config_dir()
-                .map(|dir| !dir.join(".window-state.json").exists())
+                .map(|dir| dir.join(".layout-anchored"));
+            let needs_anchor = layout_marker
+                .as_ref()
+                .map(|f| !f.exists())
                 .unwrap_or(true);
 
             build_tray(&handle)?;
@@ -250,12 +255,18 @@ pub fn run() {
                 let _ = win.set_always_on_top(true);
                 let _ = win.set_skip_taskbar(true);
 
-                // Au tout premier lancement, aucune position n'a été mémorisée :
-                // on ancre le widget en bas à gauche. Ensuite on vérifie juste
-                // que la position retenue tient toujours dans l'écran, par
+                // La première fois, le widget se place en bas à gauche. Ensuite
+                // sa position est celle que l'utilisateur lui a donnée, et on
+                // vérifie seulement qu'elle tient toujours dans l'écran — par
                 // exemple après avoir débranché un deuxième moniteur.
-                if first_run {
+                if needs_anchor {
                     place_bottom_left(&win);
+                    if let Ok(marker) = &layout_marker {
+                        if let Some(dir) = marker.parent() {
+                            let _ = std::fs::create_dir_all(dir);
+                        }
+                        let _ = std::fs::write(marker, b"1");
+                    }
                 } else {
                     keep_on_screen(&win);
                 }
