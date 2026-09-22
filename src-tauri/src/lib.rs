@@ -10,6 +10,7 @@ use tauri::{
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_updater::UpdaterExt;
 
 /// Identité annoncée au serveur. Un nom d'application maison suffisait à
 /// déclencher un 403 côté ESPN.
@@ -41,6 +42,11 @@ static HIDDEN_FOR_FULLSCREEN: AtomicBool = AtomicBool::new(false);
 
 /// Intervalle de surveillance du plein écran.
 const FULLSCREEN_POLL: Duration = Duration::from_millis(1500);
+
+/// Délai avant la première recherche de mise à jour, pour ne pas ralentir
+/// le démarrage, puis intervalle entre deux recherches.
+const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(20);
+const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 
 /// Sites où un clic sur un match a le droit d'emmener.
 const ESPN_HOSTS: [&str; 4] = ["www.espn.com", "espn.com", "www.espn.ca", "www.espn.co.uk"];
@@ -301,6 +307,34 @@ fn watch_fullscreen(app: AppHandle) {
     });
 }
 
+/* ---------- 9. Mises à jour automatiques ---------- */
+
+/// Cherche une nouvelle version publiée sur GitHub et l'installe. Le module
+/// vérifie la signature avec la clé publique de tauri.conf.json avant
+/// d'installer quoi que ce soit : une version non signée par nous est refusée.
+async fn install_update_if_any(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
+    if let Some(update) = app.updater()?.check().await? {
+        update.download_and_install(|_, _| {}, || {}).await?;
+        // Sous Windows, l'installateur ferme lui-même l'app pour la remplacer ;
+        // on ne passe ici que si ce n'est pas le cas.
+        app.restart();
+    }
+    Ok(())
+}
+
+fn watch_updates(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(UPDATE_FIRST_CHECK).await;
+        loop {
+            if let Err(err) = install_update_if_any(&app).await {
+                // Pas de réseau, GitHub injoignable… on réessaiera plus tard.
+                eprintln!("mise à jour impossible pour l'instant : {err}");
+            }
+            tokio::time::sleep(UPDATE_INTERVAL).await;
+        }
+    });
+}
+
 /* ---------- 8. Ouvrir la page ESPN d'un match ---------- */
 
 /// Ouvre la page d'un match dans le navigateur par défaut. Seules les
@@ -416,6 +450,7 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Mémorise la position du widget entre deux lancements.
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -457,6 +492,7 @@ pub fn run() {
 
             build_tray(&handle)?;
             watch_fullscreen(handle.clone());
+            watch_updates(handle.clone());
 
             // Démarrage avec Windows activé une seule fois, au premier lancement
             // de cette version ; ensuite, c'est la case des réglages qui décide.

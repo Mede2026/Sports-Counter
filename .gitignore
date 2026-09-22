@@ -21,3 +21,9 @@ desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Clés de signature des mises à jour : la clé privée ne doit JAMAIS entrer
+# dans le dépôt. Elle vit uniquement dans le secret GitHub
+# TAURI_SIGNING_PRIVATE_KEY.
+*.key
+*.key.pub

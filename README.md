@@ -20,6 +20,15 @@ seulement les équipes que tu choisis.
 - **Logos des équipes** affichés à côté de chaque score.
 - **Choix des équipes** dans une fenêtre de réglages, ligue par ligue.
 - **Rafraîchissement adaptatif** : toutes les 25 s pendant un match, toutes les 5 min sinon.
+- **Prochain match** : une équipe favorite qui ne joue pas aujourd'hui montre
+  quand même son prochain match (jusqu'à 10 jours).
+- **F1** : la séance en cours ou la prochaine, et le **top 3** pendant et
+  après chaque séance.
+- **Couleurs de ton équipe** sur la bordure du widget.
+- **Clic sur un match** : ouvre sa page sur ESPN.
+- **Démarre avec Windows** et **se cache pendant les jeux en plein écran**
+  (deux cases dans les réglages).
+- **Se met à jour tout seul** à partir de la version 0.2.0.
 
 ## Ligues couvertes
 
@@ -45,14 +54,47 @@ C'est la voie recommandée. **Tu n'installes aucun outil de développement.**
 GitHub compile l'app sur une vraie machine Windows, et la taille exacte des
 fichiers produits s'affiche dans le résumé de chaque exécution.
 
-Pour obtenir un lien de téléchargement permanent, pousse une étiquette :
+Pour un lien de téléchargement permanent, voir « Publier une version »
+plus bas : l'installateur apparaît alors dans les **Releases** du dépôt.
+
+## Mises à jour automatiques
+
+L'app vérifie au démarrage, puis toutes les 6 heures, s'il existe une version
+plus récente dans les **Releases** du dépôt. Si oui, elle la télécharge,
+**vérifie sa signature**, puis l'installe.
+
+### La signature
+
+Chaque version publiée est signée avec une **clé privée**. L'app contient la
+**clé publique** correspondante (`src-tauri/tauri.conf.json`) et refuse toute
+mise à jour qui n'a pas été signée avec la clé privée. Personne d'autre ne peut
+donc lui faire installer une fausse version.
+
+**La clé privée ne doit jamais entrer dans le dépôt.** Elle vit uniquement
+dans un secret GitHub :
+
+1. Dépôt → **Settings** → **Secrets and variables** → **Actions**
+2. **New repository secret**
+3. Nom : `TAURI_SIGNING_PRIVATE_KEY`
+4. Valeur : tout le contenu du fichier de clé privée
+
+Si ce secret est perdu, les versions déjà installées ne pourront plus se mettre
+à jour : il faudra générer une nouvelle paire de clés et réinstaller l'app une
+fois à la main.
+
+### Publier une version
+
+1. Monter la version dans `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`
+   et `package.json` (par exemple `0.2.1`)
+2. Pousser une étiquette qui correspond :
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
-L'installateur apparaît alors dans les **Releases** du dépôt.
+GitHub compile, signe et publie. La compilation refuse de continuer si
+l'étiquette ne correspond pas à la version, ou si le secret est absent.
 
 ## Compiler soi-même (facultatif)
 
