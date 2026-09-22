@@ -4,6 +4,7 @@
   "description": "Widget flottant de scores sportifs en direct pour Windows",
   "private": true,
   "scripts": {
+    "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
     "icons": "node tools/make-icons.js",
