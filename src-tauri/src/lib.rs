@@ -4,7 +4,7 @@ use std::time::Duration;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
@@ -19,6 +19,7 @@ const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
 const ESPN_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports";
 const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
+const TOAST: &str = "toast";
 
 /// Largeur du widget, en pixels logiques.
 const WIDGET_WIDTH: f64 = 300.0;
@@ -307,6 +308,55 @@ fn watch_fullscreen(app: AppHandle) {
     });
 }
 
+/* ---------- Notifications de l'app ---------- */
+
+/// Place la fenêtre de notification juste au-dessus du widget (ou en dessous
+/// s'il n'y a pas la place), alignée sur son bord gauche. Widget caché : en
+/// bas à gauche de l'écran, là où il se trouve d'habitude.
+fn place_toast(app: &AppHandle) {
+    let (Some(toast), Some(widget)) = (
+        app.get_webview_window(TOAST),
+        app.get_webview_window(WIDGET),
+    ) else {
+        return;
+    };
+    let (Some((left, top, right, bottom, scale)), Ok(size)) =
+        (work_area(&widget), toast.outer_size())
+    else {
+        return;
+    };
+    let (w, h) = (size.width as i32, size.height as i32);
+    let gap = (8.0 * scale).round() as i32;
+
+    let (mut x, mut y) = (left, bottom - h);
+    if widget.is_visible().unwrap_or(false) {
+        if let (Ok(pos), Ok(wsize)) = (widget.outer_position(), widget.outer_size()) {
+            x = pos.x;
+            let above = pos.y - h - gap;
+            y = if above >= top {
+                above
+            } else {
+                pos.y + wsize.height as i32 + gap
+            };
+        }
+    }
+    let x = x.clamp(left, (right - w).max(left));
+    let y = y.clamp(top, (bottom - h).max(top));
+    let _ = toast.set_position(PhysicalPosition::new(x, y));
+}
+
+/// Fait surgir une notification. La fenêtre `toast` affiche elle-même, puis
+/// cache, sa file de notifications ; ici on la place et on lui transmet le
+/// contenu. Rien pendant un jeu en plein écran, si l'option est active.
+#[tauri::command]
+fn notify(app: AppHandle, toast: serde_json::Value) {
+    if HIDE_FULLSCREEN.load(Ordering::SeqCst) && fullscreen_app_running() {
+        return;
+    }
+    place_toast(&app);
+    let _ = app.emit_to(TOAST, "toast", toast);
+}
+
 /* ---------- 9. Mises à jour automatiques ---------- */
 
 /// Cherche une nouvelle version publiée sur GitHub et l'installe. Le module
@@ -455,6 +505,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(tauri_plugin_window_state::StateFlags::POSITION)
+                .with_denylist(&[TOAST])
                 .build(),
         )
         .plugin(
@@ -474,7 +525,8 @@ pub fn run() {
             get_autostart,
             set_autostart,
             set_hide_fullscreen,
-            open_espn
+            open_espn,
+            notify
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

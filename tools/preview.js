@@ -81,6 +81,17 @@ const DESKTOP = `
   console.log('  tools/preview/settings.png');
   await s.close();
 
+  // 3. Une notification, posée juste au-dessus d'un bout de barre des tâches
+  const t = await browser.newPage({ viewport: { width: 340, height: 116 }, deviceScaleFactor: 2 });
+  await t.goto(`http://127.0.0.1:${port}/toast.html?demo`);
+  await t.addStyleTag({ content: `
+    html, body { background: linear-gradient(150deg, #1a1f30, #3a2a4a) !important; }
+    body { padding: 20px; }` });
+  await t.waitForTimeout(500);
+  await t.screenshot({ path: path.join(OUT, 'toast.png') });
+  console.log('  tools/preview/toast.png');
+  await t.close();
+
   await browser.close();
   server.close();
 })();

@@ -4,6 +4,7 @@ import { loadPrefs } from './lib/store.js';
 import { errText } from './lib/err.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
+import { detectEvents, remember } from './lib/events.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
@@ -18,6 +19,7 @@ const el = {
 let prefs = loadPrefs();
 let timer = null;
 const lastScores = new Map(); // "idMatch:idÉquipe" -> score précédent
+let seen = null; // relevé précédent, pour les notifications (null = premier)
 
 const inTauri = () => !!window.__TAURI__;
 
@@ -108,6 +110,28 @@ function renderEmpty() {
       <br /><button id="btnEmptySettings">Ouvrir les réglages</button>
     </div>`;
   document.getElementById('btnEmptySettings')?.addEventListener('click', openSettings);
+}
+
+/**
+ * Compare ce relevé au précédent et fait surgir une notification par
+ * évènement (but, début, fin…). Le premier relevé sert seulement de référence.
+ */
+function notifyEvents(games) {
+  const events = detectEvents(seen, games);
+  seen = remember(seen, games);
+  if (!events.length || prefs.notifications === false || !inTauri()) return;
+
+  for (const e of events) {
+    const color = visibleTeamColor(e.team?.color, e.team?.alt) ?? '#4aa3ff';
+    const toast = {
+      title: e.title,
+      body: e.body,
+      link: e.link,
+      color,
+      team: { abbr: e.team?.abbr ?? '', logo: e.team?.logo ?? '', color },
+    };
+    window.__TAURI__.core.invoke('notify', { toast }).catch(() => {});
+  }
 }
 
 /** Un clic sur un match ouvre sa page ESPN dans le navigateur. */
@@ -290,7 +314,10 @@ async function refresh() {
   const today = games.filter(keepGame).filter((g) => !isStale(g));
   const upcoming = await nextGamesForIdleFavorites(today);
 
-  const visible = [...today, ...upcoming].sort(sortGames).slice(0, prefs.maxGames);
+  const all = [...today, ...upcoming];
+  notifyEvents(all);
+
+  const visible = all.sort(sortGames).slice(0, prefs.maxGames);
 
   render(visible, error);
   schedule(visible.some((g) => g.state === 'in'));

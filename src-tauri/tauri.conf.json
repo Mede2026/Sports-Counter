@@ -22,6 +22,22 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": true
+      },
+      {
+        "label": "toast",
+        "title": "Sports Counter — Notification",
+        "url": "toast.html",
+        "width": 300,
+        "height": 76,
+        "visible": false,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "focusable": false
       }
     ],
     "security": {

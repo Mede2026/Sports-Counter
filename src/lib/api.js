@@ -199,6 +199,7 @@ function normalizeCompetitor(c) {
     name: t.shortDisplayName ?? t.displayName ?? '',
     logo: t.logo ?? t.logos?.[0]?.href ?? '',
     color: t.color ? `#${t.color}` : null,
+    alt: t.alternateColor ? `#${t.alternateColor}` : null,
     score: c?.score != null ? String(c.score) : '–',
     winner: c?.winner === true,
   };

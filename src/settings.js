@@ -4,6 +4,8 @@ import { fetchTeams } from './lib/api.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { errText } from './lib/err.js';
+import { visibleTeamColor } from './lib/color.js';
+import { NHL_TEAMS } from './lib/teams-nhl.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -212,7 +214,42 @@ function bindOptions() {
   fullscreen.checked = prefs.hideFullscreen !== false;
   fullscreen.addEventListener('change', () => { prefs.hideFullscreen = fullscreen.checked; savePrefs(prefs); });
 
+  const notify = document.getElementById('optNotify');
+  notify.checked = prefs.notifications !== false;
+  notify.addEventListener('change', () => { prefs.notifications = notify.checked; savePrefs(prefs); });
+  document.getElementById('btnTryToast').addEventListener('click', tryToast);
+
   bindAutostart();
+}
+
+/**
+ * Notification d'exemple, pour voir le rendu sans attendre un vrai but. Elle
+ * prend l'équipe choisie pour la couleur du widget, sinon les Canadiens.
+ */
+async function tryToast() {
+  if (!inTauri()) return;
+  const info = prefs.favInfo[prefs.theme];
+  const mtl = NHL_TEAMS.find((t) => t.abbr === 'MTL');
+  const team = info
+    ? { abbr: info.abbr, name: info.name, color: info.color, alt: info.alt, logo: teamLogo(prefs.theme) }
+    : { abbr: mtl.abbr, name: 'Canadiens', color: mtl.color, alt: mtl.alt, logo: mtl.logo };
+  const color = visibleTeamColor(team.color, team.alt) ?? '#4aa3ff';
+  await window.__TAURI__.core.invoke('notify', {
+    toast: {
+      title: `But des ${team.name} !`,
+      body: 'Exemple de notification',
+      link: '',
+      color,
+      team: { abbr: team.abbr, logo: team.logo, color },
+    },
+  });
+}
+
+/** Logo d'un favori s'il est connu (liste LNH intégrée, ou liste chargée). */
+function teamLogo(key) {
+  const [leagueId, id] = key.split(':');
+  const list = leagueId === 'nhl' ? NHL_TEAMS : cache.get(leagueId) ?? [];
+  return list.find((t) => t.id === id)?.logo ?? '';
 }
 
 /** L'état du démarrage automatique vit dans Windows, pas dans nos préférences. */

@@ -29,6 +29,13 @@ seulement les équipes que tu choisis.
 - **Démarre avec Windows** et **se cache pendant les jeux en plein écran**
   (deux cases dans les réglages).
 - **Se met à jour tout seul** à partir de la version 0.2.0.
+- **Notifications de l'app** : un encadré aux couleurs de l'équipe surgit
+  au-dessus du widget pour un but, un début ou une fin de match, ou une
+  séance de F1, puis disparaît après 6 s. Il ne prend jamais le clavier, se
+  tait pendant les jeux en plein écran, et un clic ouvre le match sur ESPN.
+  Au basket, seulement le début et la fin : le score y change trop souvent.
+
+![Une notification](tools/preview/toast.png)
 
 ## Ligues couvertes
 

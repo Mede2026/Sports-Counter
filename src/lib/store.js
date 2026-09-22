@@ -20,6 +20,8 @@ const DEFAULTS = {
   theme: '',
   // Cacher le widget quand un jeu ou une vidéo passe en plein écran.
   hideFullscreen: true,
+  // Notifications de l'app : buts, débuts et fins de match, séances de F1.
+  notifications: true,
 };
 
 export function loadPrefs() {
