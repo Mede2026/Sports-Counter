@@ -30,6 +30,19 @@
       <div class="teams" id="teams"></div>
       <div class="options">
         <div class="opt">
+          <input type="checkbox" id="optAutostart" />
+          <label for="optAutostart">Lancer avec Windows</label>
+        </div>
+        <div class="opt" title="Cacher le widget pendant les jeux et vidéos en plein écran">
+          <input type="checkbox" id="optHideFullscreen" />
+          <label for="optHideFullscreen">Cacher en plein écran</label>
+        </div>
+        <div class="opt">
+          <input type="checkbox" id="optNotify" />
+          <label for="optNotify">Notifications</label>
+          <button class="ghost ghost--small" id="btnTryToast" type="button">Essayer</button>
+        </div>
+        <div class="opt">
           <input type="checkbox" id="optCompact" />
           <label for="optCompact">Mode compact</label>
         </div>
@@ -45,21 +58,8 @@
           <label for="optOpacity">Opacité</label>
           <input type="range" id="optOpacity" min="30" max="100" step="5" />
         </div>
-        <div class="opt">
-          <input type="checkbox" id="optAutostart" />
-          <label for="optAutostart">Lancer avec Windows</label>
-        </div>
-        <div class="opt">
-          <input type="checkbox" id="optHideFullscreen" />
-          <label for="optHideFullscreen">Cacher pendant les jeux plein écran</label>
-        </div>
-        <div class="opt">
-          <input type="checkbox" id="optNotify" />
-          <label for="optNotify">Notifications</label>
-          <button class="ghost ghost--small" id="btnTryToast" type="button">Essayer</button>
-        </div>
         <div class="opt opt--wide">
-          <label for="optTheme">Couleur du widget</label>
+          <label for="optTheme">Couleur</label>
           <select id="optTheme"></select>
         </div>
       </div>

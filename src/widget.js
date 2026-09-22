@@ -1,4 +1,4 @@
-import { fetchScoreboard, fetchNextGames, demoEvents } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, demoEvents, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText } from './lib/err.js';
@@ -244,6 +244,19 @@ function sortGames(a, b) {
   return (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0);
 }
 
+/**
+ * Vrai pour un match à venir au-delà des 4 prochains jours (aujourd'hui
+ * compris, jusqu'à minuit du 4e jour). ESPN renvoie parfois plus loin : la
+ * semaine entière pour la NFL, le prochain Grand Prix pour la F1.
+ */
+function beyondHorizon(game) {
+  if (game.state !== 'pre' || !(game.startsAt instanceof Date) || isNaN(game.startsAt)) return false;
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() + LOOKAHEAD_DAYS + 1);
+  return game.startsAt >= cutoff;
+}
+
 function isStale(game) {
   if (!prefs.hideOldFinals || game.state !== 'post' || !game.startsAt) return false;
   return Date.now() - game.startsAt.getTime() > 6 * 3600 * 1000;
@@ -311,10 +324,10 @@ async function refresh() {
     return;
   }
 
-  const today = games.filter(keepGame).filter((g) => !isStale(g));
+  const today = games.filter(keepGame).filter((g) => !isStale(g) && !beyondHorizon(g));
   const upcoming = await nextGamesForIdleFavorites(today);
 
-  const all = [...today, ...upcoming];
+  const all = [...today, ...upcoming.filter((g) => !beyondHorizon(g))];
   notifyEvents(all);
 
   const visible = all.sort(sortGames).slice(0, prefs.maxGames);
