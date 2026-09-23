@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.6.2': [
+    '🌙 Les barres de défilement sont maintenant sombres et fines, au lieu de blanches.',
+  ],
   '0.6.1': [
     '👤 Le classement des joueurs est arrivé : Classements → Joueurs, avec les 10 meilleurs de chaque catégorie.',
     '🏒 Au hockey : points, buts, passes, +/- et gardiens (victoires, % d’arrêts, moyenne, blanchissages).',
