@@ -10,6 +10,7 @@ import { visibleTeamColor } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
+import { translated, translateAll } from './lib/translate.js';
 
 const REFRESH_LIVE_MS = 20_000;
 const REFRESH_IDLE_MS = 300_000;
@@ -107,27 +108,56 @@ function statsHtml(g) {
 
 function periodLabel(g, p) {
   if (!p) return '';
-  if (g.leagueId !== 'nhl') return `${ordinal(p)} pér.`;
-  if (p <= 3) return `${ordinal(p)} pér.`;
+  const sport = sportOf(g.leagueId);
+  if (sport === 'baseball') return `${ordinal(p)} manche`;
+  if (sport === 'basketball' || sport === 'football') return p <= 4 ? `${rankText(p)} quart` : 'Prol.';
+  if (sport === 'soccer') return p <= 2 ? `${ordinal(p)} demie` : 'Prol.';
+  if (g.leagueId !== 'nhl' || p <= 3) return `${ordinal(p)} pér.`;
   return g.playoffs ? `${ordinal(p - 3)} prol.` : p === 4 ? 'Prol.' : 'TB';
+}
+
+/** « Pointage par manche / quart / demie / période ». */
+function periodsTitle(g) {
+  return { baseball: 'Pointage par manche', basketball: 'Pointage par quart', football: 'Pointage par quart',
+    soccer: 'Pointage par demie' }[sportOf(g.leagueId)] ?? 'Pointage par période';
+}
+
+/** Texte d'ESPN en français, si la traduction est activée et déjà faite. */
+const fr = (text) => (prefs.translate === false ? text : translated(text));
+
+/** Un même jeu en double chez ESPN (même moment, même texte) : une seule fois. */
+function uniquePlays(plays) {
+  const seen = new Set();
+  return (plays ?? []).filter((p) => {
+    const key = `${p.period}|${p.clock}|${p.who}|${p.text}`;
+    return seen.has(key) ? false : seen.add(key);
+  });
 }
 
 /** Un de tes joueurs favoris ? */
 const isStar = (name) => !!name && (prefs.favPlayers ?? []).some((f) => sameDriver(f, { name }));
 
 function playsHtml(g, plays, withAssists) {
-  if (!plays?.length) return '';
+  const list = uniquePlays(plays);
+  if (!list.length) return '';
   const team = (id) => (String(g.home.id) === id ? g.home : g.away);
-  return `<ul class="plays">${plays.map((p) => `
+  // Au baseball, ESPN ne nomme pas de « buteur » : la description du jeu suffit.
+  const clockOf = (p) => (sportOf(g.leagueId) === 'baseball' ? '' : p.clock);
+  return `<ul class="plays">${list.map((p) => `
     <li>
       ${crestHtml(team(p.teamId), 'crest-xs')}
-      <span class="plays__when">${esc([periodLabel(g, p.period), p.clock].filter(Boolean).join(' · '))}</span>
+      <span class="plays__when">${esc([periodLabel(g, p.period), clockOf(p)].filter(Boolean).join(' · '))}</span>
       <span class="plays__who">
-        <b>${isStar(p.who) ? '⭐ ' : ''}${esc(p.who || p.text)}</b>
+        ${p.who ? `<b>${isStar(p.who) ? '⭐ ' : ''}${esc(p.who)}</b>` : `<span class="plays__text">${esc(fr(p.text))}</span>`}
         ${withAssists && p.assists.length ? `<small>Passes : ${esc(p.assists.join(', '))}</small>` : ''}
-        ${!withAssists && p.who && p.text ? `<small>${esc(p.text)}</small>` : ''}
+        ${!withAssists && p.who && p.text ? `<small>${esc(fr(p.text))}</small>` : ''}
       </span>
     </li>`).join('')}</ul>`;
+}
+
+/** Textes libres d'ESPN affichés dans la fenêtre : ceux à traduire. */
+function textsOf(g) {
+  return [...(g?.goals ?? []), ...(g?.penalties ?? [])].map((p) => p.text).filter(Boolean);
 }
 
 function standingsHtml(g, table) {
@@ -147,7 +177,7 @@ function standingsHtml(g, table) {
 function matchHtml(g, table) {
   const goalsTitle = ['hockey', 'soccer'].includes(sportOf(g.leagueId)) ? 'Buts' : 'Jeux marquants';
   return heroHtml(g)
-    + section('Pointage par période', periodsHtml(g))
+    + section(periodsTitle(g), periodsHtml(g))
     + section(goalsTitle, playsHtml(g, g.goals, true))
     + section('Statistiques', statsHtml(g))
     + (g.leagueId === 'nhl' ? section('Pénalités', playsHtml(g, g.penalties, false)) : '')
@@ -265,6 +295,7 @@ async function load() {
   el.chip.style.color = league?.accent ?? '';
   let g = null;
   let html = '';
+  let build = null; // refait le HTML (après traduction) sans redemander les données
 
   try {
     if (league?.kind === 'card') {
@@ -290,7 +321,9 @@ async function load() {
         g = { ...basic, stats: [], goals: [], penalties: [] };
       }
       el.title.textContent = `${g.away.abbr} @ ${g.home.abbr}`;
-      html = matchHtml(g, table);
+      const match = g;
+      build = () => matchHtml(match, table);
+      html = build();
     }
   } catch (err) {
     html = isOffline(err)
@@ -300,18 +333,25 @@ async function load() {
         <button class="ghost" id="btnRetry">Réessayer</button></div>`;
   }
 
-  if (html !== lastHtml) {
-    lastHtml = html;
-    el.main.innerHTML = html;
-    bindCrests(el.main);
-    el.main.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
-    document.getElementById('btnRetry')?.addEventListener('click', load);
+  paint(html);
+  // Textes d'ESPN en anglais : traduits en arrière-plan, puis redessinés.
+  if (build && prefs.translate !== false) {
+    translateAll(textsOf(g)).then((changed) => { if (changed) paint(build()); });
   }
 
   link = g?.link ?? '';
   el.espn.hidden = !link;
   if (g?.kind !== 'event' && g?.home && !IS_DEMO) loadForms(g);
   timer = setTimeout(load, g?.state === 'in' || !g ? REFRESH_LIVE_MS : REFRESH_IDLE_MS);
+}
+
+function paint(html) {
+  if (html === lastHtml) return;
+  lastHtml = html;
+  el.main.innerHTML = html;
+  bindCrests(el.main);
+  el.main.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+  document.getElementById('btnRetry')?.addEventListener('click', load);
 }
 
 /** Derniers résultats des deux équipes, chargés après coup (ils peuvent être lents). */

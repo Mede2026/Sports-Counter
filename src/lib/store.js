@@ -43,6 +43,8 @@ const DEFAULTS = {
   widgetTheme: 'dark',
   // Les 5 derniers résultats (✅ ❌) à côté des équipes favorites.
   showForm: true,
+  // Traduire en français les descriptions d'ESPN (Google Traduction, sans compte).
+  translate: true,
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).
   shortcuts: { ...DEFAULT_SHORTCUTS },
 };

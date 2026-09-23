@@ -13,6 +13,7 @@ import { DEMO_EVENTS } from './demo.js';
 import { errText } from './err.js';
 import { NHL_TEAMS } from './teams-nhl.js';
 import { ordinal } from './format.js';
+import { statusFr, weightFr, resultFr, segmentFr } from './status-fr.js';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -476,6 +477,16 @@ function pickLink(event) {
   return href.startsWith('https://') ? href : '';
 }
 
+/**
+ * Horloge d'un match en cours. Vide à l'entracte (ESPN laisse 0:00) et au
+ * baseball, qui n'a pas d'horloge (ESPN y met aussi 0:00).
+ */
+function liveClock(leagueId, state, frStatus, clock) {
+  if (state !== 'in' || frStatus?.startsWith('Fin de')) return '';
+  if (LEAGUES_BY_ID[leagueId]?.path.startsWith('baseball/')) return '';
+  return clock ?? '';
+}
+
 /* ---------- UFC : galas et combats ---------- */
 
 /** Un combattant, tel qu'ESPN le décrit dans un combat. */
@@ -510,10 +521,10 @@ function fightOf(comp) {
     clock: st.displayClock ?? '',
     // « KO/TKO », « Décision unanime »… quand ESPN le précise.
     result: state === 'post'
-      ? st.result?.displayName ?? st.result?.name ?? st.type?.detail ?? st.type?.shortDetail ?? ''
+      ? resultFr(st.result?.displayName ?? st.result?.name ?? st.type?.detail ?? st.type?.shortDetail ?? '')
       : '',
-    weight: comp?.type?.text ?? comp?.note ?? '',
-    segment: comp?.cardSegment?.description ?? comp?.cardSegment?.name ?? '',
+    weight: weightFr(comp?.type?.text ?? comp?.note ?? ''),
+    segment: segmentFr(comp?.cardSegment?.description ?? comp?.cardSegment?.name ?? ''),
     startsAt: comp?.date ? new Date(comp.date) : null,
   };
 }
@@ -561,10 +572,9 @@ function normalizeEvent(event, leagueId, logo = '') {
     id: String(event?.id ?? ''),
     leagueId,
     state,
-    statusText: frStatus ?? status?.type?.shortDetail ?? status?.type?.description ?? '',
+    statusText: frStatus ?? statusFr(status?.type?.shortDetail ?? status?.type?.description ?? ''),
     playoffs,
-    // Entracte : ESPN laisse l'horloge à 0:00, inutile de l'afficher.
-    clock: state === 'in' && !frStatus?.startsWith('Fin de') ? status?.displayClock ?? '' : '',
+    clock: liveClock(leagueId, state, frStatus, status?.displayClock),
     startsAt: event?.date ? new Date(event.date) : null,
     link: pickLink(event),
   };
@@ -778,8 +788,8 @@ export async function fetchMatchDetail(leagueId, eventId) {
     leagueId,
     state,
     playoffs,
-    statusText: frStatus ?? status?.type?.shortDetail ?? '',
-    clock: state === 'in' && !frStatus?.startsWith('Fin de') ? status?.displayClock ?? '' : '',
+    statusText: frStatus ?? statusFr(status?.type?.shortDetail ?? ''),
+    clock: liveClock(leagueId, state, frStatus, status?.displayClock),
     startsAt: comp?.date ? new Date(comp.date) : null,
     home,
     away,

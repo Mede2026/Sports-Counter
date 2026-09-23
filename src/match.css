@@ -297,3 +297,4 @@ span.crest-xs { border-radius: 4px; }
 .fight__names .win { color: #7bd88f; }
 .fight__meta { margin-top: 2px; font-size: 11px; color: var(--text-muted); }
 .fight__meta .live, .status .live { color: var(--live); font-weight: 650; display: inline-flex; align-items: center; gap: 5px; }
+.plays__text { font-size: 12.5px; line-height: 1.4; color: var(--text); }

@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.5.1': [
+    '🇫🇷 Les descriptions des jeux d’ESPN sont traduites en français avec Google Traduction, sans compte.',
+    '⚾ Les statuts sont en français dans tous les sports : « Haut de la 4e », « 3e quart », « Mi-temps »…',
+    '🏎️ En mode compact, la F1 indique la séance (Essais 1, Qualifications, Course) au-dessus de l’heure.',
+    '🧹 Les jeux en double d’ESPN ne s’affichent plus qu’une fois dans la fenêtre Match.',
+  ],
   '0.5.0': [
     '⚽ La Liga, la Serie A, la Bundesliga, la Ligue 1 et la Ligue Europa sont maintenant disponibles.',
     '🥊 Tu peux suivre les galas de l’UFC : combat principal avec photos, combat en cours et vainqueur.',

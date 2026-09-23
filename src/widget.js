@@ -168,10 +168,13 @@ function compactCard(game) {
 
   if (game.kind === 'event') {
     const leader = game.state !== 'pre' ? game.top3?.[0] : null;
-    const when = pre ? middleWhen : leader ? `🥇 ${leader.short || leader.name}` : game.session || game.statusText;
+    const when = pre ? middleWhen : leader ? `🥇 ${leader.short || leader.name}` : game.statusText;
+    // Deux lignes : la séance (Essais 1, Qualifications, Course…), puis
+    // l'heure, le compte à rebours ou le meneur.
+    const label = game.session ? `<small class="row__label">${game.session}</small>` : '';
     return `<div ${cardAttrs(game, cls, tip)}>
       ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '?', color: league?.accent })}
-      <span class="row__event">${when}</span>
+      <span class="row__event row__event--two">${label}<span>${when}</span></span>
     </div>`;
   }
 

@@ -577,3 +577,7 @@ span.crest {
   color: var(--live);
 }
 .widget[data-theme="light"] .bout__name--win { color: #1c8c45; }
+
+/* Mode compact, F1 : la séance au-dessus de l'heure ou du compte à rebours. */
+.row__event--two { display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
+.row__label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-faint); }

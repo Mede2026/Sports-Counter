@@ -128,6 +128,99 @@ async fn espn_get(path: String) -> Result<String, String> {
         .map_err(|e| format!("lecture : {e}\n{url}"))
 }
 
+/* ---------- Traduction (Google Traduction, sans clé ni compte) ---------- */
+
+const TRANSLATE_URL: &str = "https://translate.googleapis.com/translate_a/single";
+/// Taille maximale d'un paquet de textes : l'adresse de la requête a une limite.
+const TRANSLATE_CHUNK: usize = 1500;
+
+/// Une requête à Google Traduction : anglais → français. La réponse découpe
+/// le texte en segments ; on les recolle dans l'ordre.
+async fn gtx(client: &reqwest::Client, text: &str) -> Result<String, String> {
+    let body = client
+        .get(TRANSLATE_URL)
+        .query(&[
+            ("client", "gtx"),
+            ("sl", "en"),
+            ("tl", "fr"),
+            ("dt", "t"),
+            ("q", text),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("réseau : {e}"))?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let mut out = String::new();
+    for seg in value
+        .get(0)
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        if let Some(s) = seg.get(0).and_then(|v| v.as_str()) {
+            out.push_str(s);
+        }
+    }
+    Ok(out)
+}
+
+/// Traduit un paquet de textes en une seule requête (un par ligne) ; si
+/// Google ne rend pas autant de lignes, on les traduit un par un.
+async fn translate_chunk(
+    client: &reqwest::Client,
+    texts: &[String],
+) -> Result<Vec<String>, String> {
+    let joined = texts
+        .iter()
+        .map(|t| t.replace('\n', " "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let full = gtx(client, &joined).await?;
+    let lines: Vec<String> = full.split('\n').map(|s| s.trim().to_string()).collect();
+    if lines.len() == texts.len() {
+        return Ok(lines);
+    }
+    let mut out = Vec::with_capacity(texts.len());
+    for t in texts {
+        out.push(gtx(client, t).await?.trim().to_string());
+    }
+    Ok(out)
+}
+
+/// Traduit des textes anglais d'ESPN en français (descriptions des jeux…).
+#[tauri::command]
+async fn translate_text(texts: Vec<String>) -> Result<Vec<String>, String> {
+    if texts.len() > 300 {
+        return Err("trop de textes d'un coup".into());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .user_agent(BROWSER_UA)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::with_capacity(texts.len());
+    let mut chunk: Vec<String> = Vec::new();
+    let mut size = 0;
+    for t in texts {
+        if !chunk.is_empty() && size + t.len() > TRANSLATE_CHUNK {
+            out.extend(translate_chunk(&client, &chunk).await?);
+            chunk.clear();
+            size = 0;
+        }
+        size += t.len() + 1;
+        chunk.push(t);
+    }
+    if !chunk.is_empty() {
+        out.extend(translate_chunk(&client, &chunk).await?);
+    }
+    Ok(out)
+}
+
 /// Fenêtre secondaire (réglages, match, notes) : sans cadre système,
 /// redimensionnable, centrée. Si elle existe déjà, on la ramène devant.
 /// `init` : script lancé avant la page, pour lui passer des paramètres.
@@ -883,6 +976,7 @@ pub fn run() {
             open_espn,
             open_match,
             open_notes,
+            translate_text,
             notify,
             show_toast,
             app_version,
