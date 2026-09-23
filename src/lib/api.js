@@ -841,12 +841,17 @@ function threeStars(data, comp) {
 }
 
 // Noms français des catégories de meneurs d'ESPN.
-const LEADER_FR = {
+export const LEADER_FR = {
   goals: 'Buts', assists: 'Passes', points: 'Points', saves: 'Arrêts', savePct: "% d'arrêts",
-  rebounds: 'Rebonds', pointsPerGame: 'Points', reboundsPerGame: 'Rebonds', assistsPerGame: 'Passes',
+  plusMinus: '+/-', penaltyMinutes: 'Minutes de pénalité', powerPlayGoals: 'Buts en avantage numérique',
+  wins: 'Victoires', shutouts: 'Blanchissages', goalsAgainstAverage: 'Moyenne de buts alloués',
+  rebounds: 'Rebonds', pointsPerGame: 'Points par match', reboundsPerGame: 'Rebonds par match',
+  assistsPerGame: 'Passes par match', stealsPerGame: 'Interceptions par match', blocksPerGame: 'Contres par match',
   passingYards: 'Verges par la passe', rushingYards: 'Verges au sol', receivingYards: 'Verges en réception',
+  passingTouchdowns: 'Touchés par la passe', rushingTouchdowns: 'Touchés au sol', receptions: 'Réceptions',
+  sacks: 'Sacs du quart', interceptions: 'Interceptions', totalTackles: 'Plaqués',
   homeRuns: 'Circuits', RBIs: 'Points produits', battingAverage: 'Moyenne au bâton', strikeouts: 'Retraits au bâton',
-  hits: 'Coups sûrs',
+  hits: 'Coups sûrs', ERA: 'Moyenne de points mérités', stolenBases: 'Buts volés', saves_baseball: 'Sauvetages',
 };
 
 /**
@@ -1025,6 +1030,87 @@ export async function fetchF1Standings() {
   const result = { drivers, teams };
   if (drivers.length) standingsCache.set('f1', result);
   return result;
+}
+
+/* ---------- Meneurs de la ligue (classement des joueurs) ---------- */
+
+const CORE = 'https://sports.core.api.espn.com';
+
+/**
+ * API « core » d'ESPN : page d'abord, puis relais Rust (préfixe « core/ »).
+ * `path` commence par « /v2/… » (les liens $ref d'ESPN y mènent aussi).
+ */
+async function getCore(path) {
+  try {
+    return await viaPage(`${CORE}${path}`);
+  } catch (err) {
+    if (!inTauri()) throw err;
+    return viaRust(`core${path}`);
+  }
+}
+
+/** Lien $ref d'ESPN → chemin relatif à l'API core (en https). */
+const corePath = (ref) => String(ref ?? '').replace(/^https?:\/\/sports\.core\.api\.espn\.com/, '');
+
+// Catégories affichées d'abord, par sport (les autres suivent).
+const LEADER_ORDER = {
+  hockey: ['points', 'goals', 'assists', 'plusMinus', 'wins', 'savePct', 'goalsAgainstAverage', 'shutouts'],
+  basketball: ['pointsPerGame', 'reboundsPerGame', 'assistsPerGame', 'stealsPerGame', 'blocksPerGame'],
+  football: ['passingYards', 'rushingYards', 'receivingYards', 'sacks', 'interceptions'],
+  baseball: ['battingAverage', 'homeRuns', 'RBIs', 'hits', 'stolenBases', 'ERA', 'strikeouts', 'wins'],
+  soccer: ['goals', 'assists'],
+};
+
+const LEADERS_TTL = 60 * 60 * 1000;
+const leadersCache = diskCache('leaders', LEADERS_TTL);
+const athleteCache = diskCache('athletes', 7 * 24 * 3600 * 1000);
+
+/**
+ * Meneurs de la ligue, par catégorie : [{ name, label, leaders: [{ rank,
+ * value, ref, teamId }] }]. Les joueurs eux-mêmes sont chargés à part.
+ */
+export async function fetchLeagueLeaders(leagueId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || league.kind !== 'team') return [];
+  const hit = leadersCache.get(leagueId);
+  if (hit) return hit;
+  const [sport, code] = league.path.split('/');
+  const data = await getCore(`/v2/sports/${sport}/leagues/${code}/leaders?limit=10&lang=en&region=us`);
+  const order = LEADER_ORDER[sport] ?? [];
+  const rankOf = (name) => { const i = order.indexOf(name); return i === -1 ? 99 : i; };
+  const cats = (data?.categories ?? [])
+    .map((c) => ({
+      name: c?.name ?? '',
+      label: LEADER_FR[c?.name] ?? c?.displayName ?? c?.name ?? '',
+      leaders: (c?.leaders ?? []).slice(0, 10).map((l, i) => ({
+        rank: i + 1,
+        value: l?.displayValue ?? String(l?.value ?? ''),
+        ref: corePath(l?.athlete?.$ref),
+        teamId: /\/teams\/(\d+)/.exec(l?.team?.$ref ?? '')?.[1] ?? '',
+      })).filter((l) => l.ref),
+    }))
+    .filter((c) => c.name && c.leaders.length)
+    .sort((a, b) => rankOf(a.name) - rankOf(b.name))
+    .slice(0, 8);
+  if (cats.length) leadersCache.set(leagueId, cats);
+  return cats;
+}
+
+/** Un joueur (nom, photo, position), gardé une semaine sur le disque. */
+export async function fetchAthlete(ref) {
+  const hit = athleteCache.get(ref);
+  if (hit) return hit;
+  const a = await getCore(ref.includes('?') ? ref : `${ref}?lang=en&region=us`);
+  const athlete = {
+    id: String(a?.id ?? ''),
+    name: a?.displayName ?? a?.fullName ?? '',
+    short: a?.shortName ?? '',
+    photo: a?.headshot?.href ?? '',
+    pos: a?.position?.abbreviation ?? '',
+    jersey: a?.jersey ?? '',
+  };
+  if (athlete.name) athleteCache.set(ref, athlete);
+  return athlete;
 }
 
 /* ---------- Pilotes de F1 (réglages) ---------- */

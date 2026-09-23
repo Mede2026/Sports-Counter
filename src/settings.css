@@ -536,3 +536,24 @@ kbd {
 .st__muted { color: var(--text-muted); font-size: 11.5px; }
 .st__row--fav td { background: rgba(74, 163, 255, 0.12); }
 .st__row--fav td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* ---------- Classement des joueurs ---------- */
+
+.seg[hidden] { display: none; }
+.cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 6px 12px; }
+.cat-chip {
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text-muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  cursor: pointer;
+}
+.cat-chip:hover { color: var(--text); }
+.cat-chip--on { color: #06111f; background: var(--accent); border-color: var(--accent); }
+.st__table--players { margin: 0 6px; width: calc(100% - 12px); }
+.st__cell--c { justify-content: center; gap: 6px; font-weight: 600; font-size: 11.5px; }
+.st__cell--c .crest-sm { width: 20px; height: 20px; }

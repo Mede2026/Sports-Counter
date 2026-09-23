@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Sports Counter",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "identifier": "com.mede2026.sports-counter",
   "build": {
     "frontendDist": "../src"
@@ -43,7 +43,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: https://a.espncdn.com https://*.espncdn.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://site.api.espn.com"
+      "csp": "default-src 'self'; img-src 'self' data: https://a.espncdn.com https://*.espncdn.com; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://site.api.espn.com https://sports.core.api.espn.com"
     }
   },
   "bundle": {

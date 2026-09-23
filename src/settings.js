@@ -1,6 +1,6 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -589,6 +589,8 @@ function demoRoster(teamId) {
 /* ---------- Classements ---------- */
 
 let standingsLeague = null;
+let standingsMode = 'teams'; // 'teams' ou 'players'
+let leaderCat = null; // catégorie choisie dans le classement des joueurs
 
 function showStandings() {
   setView('standings');
@@ -608,6 +610,10 @@ function showStandings() {
 
 async function loadStandings() {
   const leagueId = standingsLeague;
+  // La F1 n'a qu'un classement (pilotes, constructeurs) : pas de choix Équipes/Joueurs.
+  document.getElementById('standingsMode').hidden = leagueId === 'f1';
+  document.querySelectorAll('#standingsMode button').forEach((b) => b.classList.toggle('seg--on', b.dataset.mode === standingsMode));
+  if (standingsMode === 'players' && leagueId !== 'f1') { loadPlayerLeaders(leagueId); return; }
   el.standings.innerHTML = '<div class="state">Chargement du classement…</div>';
   try {
     const html = leagueId === 'f1'
@@ -621,6 +627,75 @@ async function loadStandings() {
   } catch (err) {
     if (standingsLeague === leagueId) el.standings.innerHTML = errorBlock('Classement indisponible.', err);
   }
+}
+
+/* ---------- Classement des joueurs (meneurs de la ligue) ---------- */
+
+let leadersData = null; // { leagueId, cats, teams: Map id -> { abbr, logo } }
+
+async function loadPlayerLeaders(leagueId) {
+  el.standings.innerHTML = '<div class="state">Chargement des meneurs…</div>';
+  try {
+    const cats = IS_DEMO ? demoLeaders() : await fetchLeagueLeaders(leagueId);
+    // Logos et sigles des équipes, repris du classement (souvent déjà en mémoire).
+    let teams = new Map();
+    try {
+      const groups = IS_DEMO ? demoStandings() : await fetchStandingsTable(leagueId);
+      teams = new Map(groups.flatMap((g) => g.rows).map((r) => [r.id, { abbr: r.abbr, logo: r.logo }]));
+    } catch { /* sans logos */ }
+    if (standingsLeague !== leagueId || standingsMode !== 'players') return;
+    if (!cats.length) {
+      el.standings.innerHTML = "<div class=\"state\">ESPN ne donne pas encore de meneurs pour cette ligue.</div>";
+      return;
+    }
+    leadersData = { leagueId, cats, teams };
+    if (!cats.some((c) => c.name === leaderCat)) leaderCat = cats[0].name;
+    renderLeaders();
+  } catch (err) {
+    if (standingsLeague === leagueId) el.standings.innerHTML = errorBlock('Meneurs indisponibles.', err);
+  }
+}
+
+/** Une catégorie : ses 10 meneurs, avec photo et équipe (chargés au besoin). */
+async function renderLeaders() {
+  const { leagueId, cats, teams } = leadersData;
+  const cat = cats.find((c) => c.name === leaderCat) ?? cats[0];
+  const chips = `<div class="cat-chips">${cats.map((c) => `
+    <button type="button" class="cat-chip${c.name === cat.name ? ' cat-chip--on' : ''}" data-cat="${c.name}">${c.label}</button>`).join('')}</div>`;
+  const draw = (players) => {
+    el.standings.innerHTML = chips + `<table class="st__table st__table--players">
+      <thead><tr><th class="st__rank">#</th><th class="st__team">Joueur</th><th>Équipe</th><th>${cat.label}</th></tr></thead>
+      <tbody>${cat.leaders.map((l, i) => {
+        const p = players[i];
+        const t = teams.get(l.teamId);
+        const fav = prefs.favorites.includes(`${leagueId}:${l.teamId}`) || (p?.name && isFavPlayer(p));
+        return `<tr class="${fav ? 'st__row--fav' : ''}">
+          <td class="st__rank">${({ 1: '🥇', 2: '🥈', 3: '🥉' })[l.rank] ?? l.rank}</td>
+          <td class="st__team"><span class="st__cell">${p?.photo ? `<img class="face-sm" src="${p.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}
+            <span>${p?.name ?? '…'}${p?.pos ? ` <small class="st__muted">${p.pos}</small>` : ''}</span></span></td>
+          <td>${t ? `<span class="st__cell st__cell--c">${crestHtml({ logo: t.logo, abbr: t.abbr }, 'crest-sm')}${t.abbr}</span>` : ''}</td>
+          <td><b>${l.value}</b></td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+    bindCrests(el.standings);
+    el.standings.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => { img.style.visibility = 'hidden'; }, { once: true }));
+    el.standings.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => { leaderCat = b.dataset.cat; renderLeaders(); }));
+  };
+  // D'abord les valeurs, puis les noms et photos dès qu'ils arrivent.
+  draw([]);
+  const players = IS_DEMO
+    ? cat.leaders.map((l) => l.demo)
+    : (await Promise.allSettled(cat.leaders.map((l) => fetchAthlete(l.ref)))).map((r) => (r.status === 'fulfilled' ? r.value : null));
+  if (leadersData?.leagueId === leagueId && leaderCat === cat.name && standingsMode === 'players') draw(players);
+}
+
+function demoLeaders() {
+  const p = (name, pos, teamId, value, i) => ({ rank: i + 1, value, ref: `demo${i}`, teamId, demo: { name, pos, photo: '' } });
+  return [
+    { name: 'points', label: 'Points', leaders: [['Nikita Kucherov', 'AD', '17', '21'], ['Nick Suzuki', 'C', '10', '18'], ['Auston Matthews', 'C', '21', '16'], ['Cole Caufield', 'AD', '10', '15']].map(([n, pos, t, v], i) => p(n, pos, t, v, i)) },
+    { name: 'goals', label: 'Buts', leaders: [['Cole Caufield', 'AD', '10', '11'], ['Auston Matthews', 'C', '21', '9']].map(([n, pos, t, v], i) => p(n, pos, t, v, i)) },
+    { name: 'wins', label: 'Victoires', leaders: [['Sam Montembeault', 'G', '10', '7']].map(([n, pos, t, v], i) => p(n, pos, t, v, i)) },
+  ];
 }
 
 /** Tableau par groupe (association, division…), tes équipes en évidence. */
@@ -982,6 +1057,12 @@ el.navCalendar.addEventListener('click', showCalendar);
 el.navStandings.addEventListener('click', showStandings);
 document.getElementById('standingsLeague').addEventListener('change', (e) => { standingsLeague = e.target.value; loadStandings(); });
 document.getElementById('btnStandingsRefresh').addEventListener('click', () => loadStandings());
+document.getElementById('standingsMode').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (!b || b.dataset.mode === standingsMode) return;
+  standingsMode = b.dataset.mode;
+  loadStandings();
+});
 document.getElementById('btnCalRefresh').addEventListener('click', () => loadCalendar(true));
 document.getElementById('playerTeam').addEventListener('change', (e) => loadRoster(e.target.value));
 document.getElementById('playerSearch').addEventListener('input', (e) => { playerQuery = e.target.value; renderPlayers(); });

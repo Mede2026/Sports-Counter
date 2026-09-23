@@ -1,6 +1,11 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.6.1': [
+    '👤 Le classement des joueurs est arrivé : Classements → Joueurs, avec les 10 meilleurs de chaque catégorie.',
+    '🏒 Au hockey : points, buts, passes, +/- et gardiens (victoires, % d’arrêts, moyenne, blanchissages).',
+    '⭐ Les joueurs de tes équipes et tes joueurs favoris sont mis en évidence.',
+  ],
   '0.6.0': [
     '🏆 Un nouvel onglet Classements montre la LNH, les autres ligues et le championnat de F1 (pilotes et constructeurs).',
     '⭐ La fenêtre Match affiche les 3 étoiles et les meneurs du match avec leur photo.',

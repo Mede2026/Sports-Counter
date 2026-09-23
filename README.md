@@ -55,6 +55,8 @@ seulement les équipes que tu choisis.
 - **Classements** : onglet dans la fenêtre des réglages. Toutes les ligues
   d'équipes (tes équipes en évidence) et le championnat de F1, pilotes et
   constructeurs.
+- **Classement des joueurs** : Classements → Joueurs. Les 10 meilleurs de
+  chaque catégorie (points, buts, passes, gardiens…), avec photo et équipe.
 - **Fenêtre Match, en plus** : chances de victoire, faits saillants vidéo,
   les 3 étoiles (hockey) et les meneurs du match, avec photos.
 - **Démarrage instantané** : les derniers scores s'affichent tout de suite, et
