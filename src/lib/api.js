@@ -318,12 +318,14 @@ function classification(session) {
 }
 
 /**
- * Même pilote ? L'identifiant ESPN d'abord ; à défaut, le nom de famille
- * (un favori noté avec une autre forme du nom reste reconnu).
+ * Même personne (pilote, joueur, combattant) ? Deux identifiants ESPN
+ * connus décident seuls : deux « Silva » différents ne se confondent pas.
+ * Sinon (buteur connu par son nom seulement, favori ajouté à la main), le
+ * nom de famille suffit, quelle que soit la forme du prénom.
  */
 export function sameDriver(a, b) {
   if (!a || !b) return false;
-  if (a.id && b.id && a.id === b.id) return true;
+  if (a.id && b.id) return String(a.id) === String(b.id);
   const last = (d) => String(d.name || d.short || '').trim().split(/\s+/).pop()?.toLowerCase() ?? '';
   return !!last(a) && last(a) === last(b);
 }
@@ -1111,6 +1113,49 @@ export async function fetchAthlete(ref) {
   };
   if (athlete.name) athleteCache.set(ref, athlete);
   return athlete;
+}
+
+/* ---------- Combattants de l'UFC (réglages) ---------- */
+
+const fightersCache = diskCache('fighters', 24 * 3600 * 1000);
+
+/**
+ * Combattants des galas récents et à venir, pour choisir ses favoris :
+ * [{ id, name, short, photo, record, weight }], triés par nom.
+ */
+export async function fetchFighters() {
+  const hit = fightersCache.get('ufc');
+  if (hit) return hit;
+  const path = LEAGUES_BY_ID.ufc.path;
+  const found = new Map();
+  const absorb = (data) => {
+    for (const ev of data?.events ?? []) {
+      for (const comp of ev?.competitions ?? []) {
+        const f = fightOf(comp);
+        for (const x of [f.a, f.b]) {
+          if (x?.id && x.name && !found.has(x.id)) {
+            found.set(x.id, { id: x.id, name: x.name, short: x.short, photo: x.photo, record: x.record, weight: f.weight });
+          }
+        }
+      }
+    }
+  };
+  let lastErr = null;
+  // Galas des 4 derniers mois et des 2 prochains, par tranches d'un mois.
+  const ranges = [[0, 60]];
+  for (let end = -1; end > -120; end -= 30) ranges.push([end - 29, end]);
+  const results = await Promise.allSettled([
+    getJson(`${path}/scoreboard`),
+    ...ranges.map(([a, b]) => getJson(`${path}/scoreboard`, `?dates=${ymd(a)}-${ymd(b)}`)),
+  ]);
+  for (const r of results) {
+    if (r.status === 'fulfilled') absorb(r.value);
+    else lastErr = r.reason;
+  }
+  if (!found.size) throw lastErr ?? new Error('aucun combattant trouvé');
+  const fighters = [...found.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  fightersCache.set('ufc', fighters);
+  return fighters;
 }
 
 /* ---------- Pilotes de F1 (réglages) ---------- */

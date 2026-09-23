@@ -4,7 +4,7 @@ import { loadPrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
-import { detectEvents, remember } from './lib/events.js';
+import { detectEvents, remember, favFights } from './lib/events.js';
 import { whenText, shortWhen, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
@@ -162,7 +162,9 @@ function compactCard(game) {
     : shortWhen(game.startsAt) || game.statusText;
 
   if (game.kind === 'card') {
-    const m = game.live ?? game.main;
+    // Le combat d'un favori passe avant le combat principal.
+    const fav = favFights(game, prefs.favFighters).find(({ f }) => f.state !== 'post') ?? favFights(game, prefs.favFighters)[0];
+    const m = fav?.f ?? game.live ?? game.main;
     const w = m?.state === 'post' ? (m.a.winner ? m.a : m.b.winner ? m.b : null) : null;
     const text = pre ? middleWhen : w ? `🏆 ${w.short}` : m ? `${lastName(m.a)} vs ${lastName(m.b)}` : game.statusText;
     return `<div ${cardAttrs(game, cls, tip)}>
@@ -210,6 +212,13 @@ function ufcCard(game, league, head) {
   const m = game.main;
   const bout = (f, cls = '') => `<div class="bout${cls}">
     ${fighterHtml(f.a, 'a')}<span class="bout__vs">vs</span>${fighterHtml(f.b, 'b')}</div>`;
+  // Combats de tes combattants favoris : en premier, avec une étoile.
+  const mine = favFights(game, prefs.favFighters).filter(({ f }) => f.id !== m?.id);
+  const favHtml = mine.map(({ f }) => `
+    ${bout(f, ' bout--fav')}
+    <div class="bout__res">⭐ ${[f.weight, f.state === 'in' ? `<span class="bout__now">En cours · Round ${f.round ?? 1}</span>`
+      : f.state === 'post' ? f.result : isDate(f.startsAt) ? TIME_FMT.format(f.startsAt) : ''].filter(Boolean).join(' · ')}</div>`).join('');
+  const mainIsFav = favFights(game, prefs.favFighters).some(({ f }) => f.id === m?.id);
   const live = game.live && game.live !== m
     ? `<div class="bout__live"><span class="dot"></span>En cours : ${lastName(game.live.a)} vs ${lastName(game.live.b)}</div>`
     : '';
@@ -219,7 +228,7 @@ function ufcCard(game, league, head) {
       ${crestHtml({ logo: game.logo, abbr: 'UFC', color: league?.accent })}
       <span class="event__title">${game.title}</span>
     </div>
-    ${m ? bout(m) : ''}${result}${live}
+    ${favHtml}${m ? bout(m, mainIsFav ? ' bout--fav' : '') : ''}${result}${live}
   </div>`;
 }
 
@@ -273,7 +282,7 @@ function emptyHtml() {
  * évènement (but, début, fin…). Le premier relevé sert seulement de référence.
  */
 function notifyEvents(games) {
-  const opts = { favDrivers: prefs.favDrivers ?? [] };
+  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [] };
   const events = detectEvents(seen, games, opts);
   seen = remember(seen, games, opts);
   if (!events.length || prefs.notifications === false || !inTauri()) return;
@@ -384,6 +393,25 @@ function checkReminders() {
   if (!minutes || prefs.notifications === false || !inTauri()) return;
   const now = Date.now();
   let reminded = null;
+  // UFC : rappel avant le combat d'un combattant favori (souvent tard dans le gala).
+  for (const g of followed) {
+    if (g.kind !== 'card') continue;
+    for (const { f, me, opp } of favFights(g, prefs.favFighters)) {
+      if (f.state !== 'pre' || !isDate(f.startsAt)) continue;
+      const left = f.startsAt.getTime() - now;
+      if (left <= 0 || left > minutes * 60000) continue;
+      reminded ??= loadReminded();
+      const key = `${g.id}:fight:${f.id}`;
+      if (reminded[key]) continue;
+      reminded[key] = now;
+      sendToast({
+        title: `Le combat de ${me.name} commence ${untilText(f.startsAt, now)}`,
+        body: `contre ${opp.name} · ${g.title}`,
+        team: me.photo ? { abbr: 'UFC', logo: me.photo, color: '#e8363d', round: true } : { abbr: 'UFC', logo: g.logo || '', color: '#e8363d' },
+        link: g.link,
+      });
+    }
+  }
   for (const g of followed) {
     if (g.state !== 'pre' || !isDate(g.startsAt)) continue;
     const left = g.startsAt.getTime() - now;

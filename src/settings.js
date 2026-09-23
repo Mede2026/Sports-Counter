@@ -1,6 +1,6 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -122,18 +122,88 @@ function errorBlock(title, err, extra = '') {
     <code class="state__code">${errText(err)}</code>${extra}</div>`;
 }
 
-/** Ligue suivie en entier, sans rien d'autre à choisir (UFC). */
+/* ---------- UFC : suivre les galas, choisir ses combattants ---------- */
+
+let fighters = null; // null = pas encore chargés
+let fightersErr = null;
+
 function renderWhole(league) {
   const on = prefs.leagues.includes(league.id);
+  const q = query.trim().toLowerCase();
+  const favs = prefs.favFighters ?? [];
+  let list = '';
+  if (fightersErr) {
+    list = errorBlock('Impossible de charger les combattants.', fightersErr,
+      '<br /><button class="ghost" id="btnRetryFighters">Réessayer</button>');
+  } else if (!fighters) {
+    list = '<div class="state">Chargement des combattants…</div>';
+  } else {
+    // Tes favoris d'abord, puis tous les autres (filtrés par la recherche).
+    const shown = (q ? fighters.filter((f) => `${f.name} ${f.weight}`.toLowerCase().includes(q)) : fighters)
+      .map((f) => ({ f, mine: favs.some((x) => sameDriver(f, x)) }))
+      .sort((a, b) => Number(b.mine) - Number(a.mine));
+    list = shown.map(({ f, mine }) => `
+      <div class="team-row driver-row${mine ? ' team-row--on' : ''}" data-fighter="${f.id}">
+        <span class="check">${CHECK}</span>
+        ${f.photo ? `<img class="face-sm" src="${f.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}
+        <span class="team-row__name">${f.name}${f.record ? ` <small class="st__muted">${f.record}</small>` : ''}</span>
+        <span class="team-row__abbr">${f.weight ?? ''}</span>
+      </div>`).join('') || `<div class="state">Aucun combattant ne correspond à « ${query} ».</div>`;
+  }
+
   el.teams.innerHTML = `
     <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
       <span class="check">${CHECK}</span>
       <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
       <span class="team-row__name">Suivre tous les galas de l'${league.label}</span>
     </div>
-    <div class="state">Le widget affiche le gala en cours ou le prochain, avec le combat principal.<br />
-      Notifications : début du gala, combat principal et son vainqueur.</div>`;
+    <div class="subhead">Tes combattants favoris <small>coche-en autant que tu veux : leur combat est mis en évidence, avec un rappel avant et une notification quand ils gagnent ou perdent</small></div>
+    ${list}`;
+  el.teams.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
   document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
+  document.getElementById('btnRetryFighters')?.addEventListener('click', () => { fightersErr = null; loadFighters(); });
+  el.teams.querySelectorAll('[data-fighter]').forEach((row) => row.addEventListener('click', () => pickFighter(row.dataset.fighter)));
+}
+
+async function loadFighters() {
+  if (fighters) return;
+  renderTeams();
+  try {
+    fighters = IS_DEMO ? demoFighters() : await fetchFighters();
+  } catch (err) {
+    fightersErr = err;
+  }
+  if (current === 'ufc' && view === 'teams') renderTeams();
+}
+
+/** Coche ou décoche un combattant favori ; en choisir un, c'est suivre l'UFC. */
+function pickFighter(id) {
+  const f = fighters?.find((x) => x.id === id);
+  if (!f) return;
+  prefs.favFighters ??= [];
+  const i = prefs.favFighters.findIndex((x) => sameDriver(f, x));
+  if (i === -1) prefs.favFighters.push({ id: f.id, name: f.name, short: f.short, photo: f.photo });
+  else prefs.favFighters.splice(i, 1);
+  if (prefs.favFighters.length && !prefs.leagues.includes('ufc')) prefs.leagues.push('ufc');
+  savePrefs(prefs);
+  renderLeagues();
+  renderTeams();
+  renderFavFighters();
+}
+
+function renderFavFighters() {
+  const favs = prefs.favFighters ?? [];
+  const box = document.getElementById('favFightersTxt');
+  if (!box) return;
+  box.innerHTML = favs.length
+    ? `<b>Combattants favoris</b><span class="chips">${favs.map((f) => `<span class="chip-player">${f.photo ? `<img class="face-xs" src="${f.photo}" alt="" />` : ''}${f.name}</span>`).join('')}</span>`
+    : '<b>Combattants favoris</b><small>Aucun</small>';
+}
+
+function demoFighters() {
+  return [['Alex Pereira', '12-2-0', 'Mi-lourds'], ['Magomed Ankalaev', '20-1-1', 'Mi-lourds'], ['Islam Makhachev', '27-1-0', 'Poids légers'],
+    ['Merab Dvalishvili', '19-4-0', 'Poids coqs'], ['Jiri Prochazka', '31-5-1', 'Mi-lourds']]
+    .map(([name, record, weight], i) => ({ id: `f${i}`, name, short: name, record, weight, photo: '' }));
 }
 
 /* ---------- F1 : suivre la saison, choisir son pilote ---------- */
@@ -233,8 +303,7 @@ function showLeague(id) {
   query = '';
   el.search.value = '';
   const kind = LEAGUES_BY_ID[id]?.kind;
-  el.search.placeholder = kind === 'event' ? 'Rechercher un pilote…' : kind === 'card' ? '' : 'Rechercher une équipe…';
-  el.search.disabled = kind === 'card';
+  el.search.placeholder = kind === 'event' ? 'Rechercher un pilote…' : kind === 'card' ? 'Rechercher un combattant…' : 'Rechercher une équipe…';
   setView('teams');
   selectLeague();
 }
@@ -308,7 +377,7 @@ async function selectLeague() {
   const league = LEAGUES_BY_ID[current];
 
   if (league.kind === 'event') { renderTeams(); loadDrivers(); return; }
-  if (league.kind === 'card') { renderTeams(); return; }
+  if (league.kind === 'card') { renderTeams(); loadFighters(); return; }
 
   if (cache.has(current)) { teams = cache.get(current); renderTeams(); return; }
 
@@ -392,6 +461,8 @@ function bindOptions() {
 
   renderFavDriver();
   document.getElementById('btnPickDriver').addEventListener('click', () => showLeague('f1'));
+  renderFavFighters();
+  document.getElementById('btnPickFighters').addEventListener('click', () => showLeague('ufc'));
 
   const look = document.getElementById('optWidgetTheme');
   look.value = prefs.widgetTheme ?? 'dark';
@@ -782,7 +853,7 @@ async function loadCalendar(force) {
 
   const teamKeys = prefs.favorites.filter((k) => LEAGUES_BY_ID[k.split(':')[0]]?.kind === 'team');
   const wantF1 = prefs.leagues.includes('f1') || !!prefs.favDrivers?.length;
-  const wantUfc = prefs.leagues.includes('ufc');
+  const wantUfc = prefs.leagues.includes('ufc') || !!prefs.favFighters?.length;
   if (!IS_DEMO && !teamKeys.length && !wantF1 && !wantUfc) {
     el.calendar.innerHTML = '<div class="state">Choisis des équipes (ou la F1) pour remplir ton calendrier.</div>';
     calLoading = false;
@@ -832,8 +903,12 @@ function calRow(g) {
   if (g.kind === 'card') {
     const m = g.main;
     const w = state === 'post' && m ? (m.a.winner ? m.a : m.b.winner ? m.b : null) : null;
+    // Tes combattants à l'affiche de ce gala.
+    const mine = (g.fights ?? []).flatMap((f) => [f.a, f.b])
+      .filter((x) => (prefs.favFighters ?? []).some((fav) => sameDriver(x, fav)));
     body = `${crestHtml({ logo: g.logo, abbr: 'UFC', color: league.accent }, 'crest-sm')}
       <span class="cal__title">${g.title}</span>
+      ${mine.length ? `<span class="cal__fav">⭐ ${mine.map((x) => x.name).join(', ')}</span>` : ''}
       ${w ? `<span class="cal__res">🏆 ${w.name}</span>` : ''}`;
   } else if (g.kind === 'event') {
     const winner = state === 'post' ? g.top3?.[0] : null;

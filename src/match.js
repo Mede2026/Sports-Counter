@@ -315,8 +315,33 @@ function fightStatus(f) {
 }
 
 /** Gala de l'UFC : combat principal en grand, puis toute la carte. */
+/** Une carte par combattant favori : photo, fiche, adversaire, état du combat. */
+function favFightersHtml(g) {
+  const favs = prefs.favFighters ?? [];
+  const cards = [];
+  for (const f of g.fights ?? []) {
+    const me = [f.a, f.b].find((x) => favs.some((fav) => sameDriver(x, fav)));
+    if (!me) continue;
+    const opp = me === f.a ? f.b : f.a;
+    const outcome = f.state === 'post'
+      ? (me.winner ? `🏆 Victoire${f.result ? ` · ${esc(f.result)}` : ''}` : opp.winner ? `Défaite${f.result ? ` · ${esc(f.result)}` : ''}` : esc(f.result || 'Terminé'))
+      : fightStatus(f);
+    cards.push(`<section class="card favdriver favfighter">
+      ${me.photo ? `<img class="face face--xl face--ufc" src="${esc(me.photo)}" alt="" data-face />` : ''}
+      <div class="favdriver__txt">
+        <small>${favs.length > 1 ? 'Un de tes combattants' : 'Ton combattant'}</small>
+        <b>${esc(me.name)}${me.record ? ` <span class="st-rec">${esc(me.record)}</span>` : ''}</b>
+        <span>contre ${esc(opp.name)}${f.weight ? ` · ${esc(f.weight)}` : ''}</span>
+        <span>${outcome}</span>
+      </div>
+    </section>`);
+  }
+  return cards.join('');
+}
+
 function ufcHtml(g) {
   const m = g.main;
+  const isFav = (x) => (prefs.favFighters ?? []).some((fav) => sameDriver(x, fav));
   const hero = `<section class="hero hero--f1">
     <div class="hero__title">${esc(g.title)}</div>
     ${statusHtml(g)}
@@ -327,13 +352,14 @@ function ufcHtml(g) {
   const rows = (g.fights ?? []).filter((f) => f !== m && f.id !== m?.id).map((f) => {
     const head = f.segment && f.segment !== segment ? `<li class="seg">${esc(f.segment)}</li>` : '';
     segment = f.segment || segment;
-    const name = (x) => `<span class="${x.winner ? 'win' : ''}">${x.winner ? '✅ ' : ''}${esc(x.name)}</span>`;
-    return `${head}<li class="fight${f.state === 'in' ? ' fight--live' : ''}">
+    const name = (x) => `<span class="${x.winner ? 'win' : ''}">${isFav(x) ? '⭐ ' : ''}${x.winner ? '✅ ' : ''}${esc(x.name)}</span>`;
+    const fav = isFav(f.a) || isFav(f.b);
+    return `${head}<li class="fight${f.state === 'in' ? ' fight--live' : ''}${fav ? ' fight--fav' : ''}">
       <div class="fight__names">${name(f.a)}<i>vs</i>${name(f.b)}</div>
       <div class="fight__meta">${[esc(f.weight), fightStatus(f)].filter(Boolean).join(' · ')}</div>
     </li>`;
   }).join('');
-  return hero + section('Carte complète', rows ? `<ul class="card-list">${rows}</ul>` : '');
+  return hero + favFightersHtml(g) + section('Carte complète', rows ? `<ul class="card-list">${rows}</ul>` : '');
 }
 
 /* ---------- Chargement ---------- */

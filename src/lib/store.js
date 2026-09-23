@@ -35,6 +35,8 @@ const DEFAULTS = {
   reminderMinutes: 15,
   // Pilotes de F1 favoris : [{ id, name, short, photo, team }].
   favDrivers: [],
+  // Combattants de l'UFC favoris : [{ id, name, short, photo }].
+  favFighters: [],
   // Mode Grand Prix : top 5 et écarts pendant une course.
   gpMode: true,
   // Joueurs de hockey favoris : [{ id, name, photo, teamId }].

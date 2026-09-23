@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.6.3': [
+    '🥊 Tu peux choisir tes combattants favoris à l’UFC, avec leur photo, comme tes pilotes en F1.',
+    '⭐ Leur combat est mis en évidence dans le widget, la fenêtre Match et le calendrier.',
+    '🔔 Un rappel avant leur combat, puis une notification quand il commence et quand ils gagnent ou perdent.',
+    '🐛 Deux personnes avec le même nom de famille ne sont plus confondues.',
+  ],
   '0.6.2': [
     '🌙 Les barres de défilement sont maintenant sombres et fines, au lieu de blanches.',
   ],

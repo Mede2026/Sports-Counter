@@ -41,7 +41,11 @@ function favPositions(g, favs) {
 /** Ce qu'il faut retenir d'un match pour le comparer au relevé suivant. */
 export function snapshot(g, opts = {}) {
   if (g.kind === 'match') return { state: g.state, home: g.home.score, away: g.away.score };
-  if (g.kind === 'card') return { state: g.state, main: g.main?.state ?? 'pre' };
+  if (g.kind === 'card') {
+    // État de chaque combat d'un combattant favori, pour voir son début et sa fin.
+    const favs = Object.fromEntries(favFights(g, opts.favFighters).map(({ f }) => [f.id, f.state]));
+    return { state: g.state, main: g.main?.state ?? 'pre', favs };
+  }
   return { state: g.state, session: g.session ?? '', favPos: favPositions(g, favList(opts)) };
 }
 
@@ -152,11 +156,37 @@ function sessionEvents(g, before, opts = {}) {
  * UFC : début du gala, début du combat principal, et son vainqueur. Les
  * autres combats de la soirée ne notifient pas : ce serait une avalanche.
  */
-function cardEvents(g, before) {
+/** Combats d'un gala où se bat un combattant favori : [{ f, me, opp }]. */
+export function favFights(g, favFighters = []) {
+  if (!favFighters?.length) return [];
+  const out = [];
+  for (const f of g.fights ?? []) {
+    const me = [f.a, f.b].find((x) => favFighters.some((fav) => sameDriver(x, fav)));
+    if (me) out.push({ f, me, opp: me === f.a ? f.b : f.a });
+  }
+  return out;
+}
+
+function cardEvents(g, before, opts = {}) {
   const out = [];
   const link = g.link ?? '';
   const team = { abbr: 'UFC', logo: g.logo ?? '', color: '#e8363d' };
-  const m = g.main;
+  const was = before.favs ?? {};
+  const face = (x) => (x?.photo ? { ...team, logo: x.photo, round: true } : team);
+
+  // Tes combattants : début de leur combat, puis victoire ou défaite.
+  const mine = favFights(g, opts.favFighters);
+  for (const { f, me, opp } of mine) {
+    if (was[f.id] !== 'in' && was[f.id] !== 'post' && f.state === 'in') {
+      out.push({ title: `🥊 ${me.name} entre dans l'octogone`, body: `contre ${opp.name} · ${g.title}`, team: face(me), link });
+    }
+    if (was[f.id] !== 'post' && f.state === 'post') {
+      const title = me.winner ? `🏆 Victoire de ${me.name} !` : opp.winner ? `${me.name} s'incline` : `Combat de ${me.name} terminé`;
+      out.push({ title, body: [`contre ${opp.name}`, f.result].filter(Boolean).join(' · '), team: face(me.winner ? me : opp.winner ? opp : me), big: me.winner, link });
+    }
+  }
+  // Le combat principal, s'il n'est pas déjà celui d'un favori.
+  const m = mine.some(({ f }) => f.id === g.main?.id) ? null : g.main;
   if (before.state === 'pre' && g.state === 'in') {
     out.push({ title: 'Le gala commence', body: g.title, team, link });
   }
@@ -186,7 +216,7 @@ export function detectEvents(prev, games, opts = {}) {
     const before = prev.get(g.id);
     if (!before) continue; // match apparu : rien n'a « changé »
     if (g.kind === 'match') out.push(...matchEvents(g, before));
-    else if (g.kind === 'card') out.push(...cardEvents(g, before));
+    else if (g.kind === 'card') out.push(...cardEvents(g, before, opts));
     else out.push(...sessionEvents(g, before, opts));
   }
   return out.slice(-MAX_PER_REFRESH);

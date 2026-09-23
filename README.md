@@ -52,6 +52,9 @@ seulement les équipes que tu choisis.
   deux équipes. En F1 : classement complet, ton pilote, programme du
   week-end. Un bouton y ouvre aussi la page ESPN.
 - **Taille du widget** : petit, moyen ou grand.
+- **Combattants favoris (UFC)** : choisis-les avec leur photo (Réglages → UFC).
+  Leur combat est mis en évidence ⭐ dans le widget, la fenêtre Match et le
+  calendrier, avec un rappel avant et une notification de victoire ou défaite.
 - **Classements** : onglet dans la fenêtre des réglages. Toutes les ligues
   d'équipes (tes équipes en évidence) et le championnat de F1, pilotes et
   constructeurs.
