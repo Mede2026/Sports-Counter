@@ -507,3 +507,32 @@ kbd {
 }
 #leagues > .league-group:first-child { margin-top: 2px; }
 .league { padding-top: 6px; padding-bottom: 6px; }
+
+/* ---------- Classements ---------- */
+
+.st { margin: 4px 6px 16px; }
+.st__group {
+  margin: 6px 4px 6px;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.st__table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.st__table th {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-align: center;
+  padding: 4px 6px 6px;
+}
+.st__table td { text-align: center; padding: 5px 6px; border-top: 1px solid var(--border); }
+.st__table .st__rank { width: 34px; color: var(--text-muted); }
+.st__table .st__team { text-align: left; }
+.st__table td.st__team { font-weight: 600; }
+.st__cell { display: flex; align-items: center; gap: 9px; }
+.st__cell .crest-sm, .st__cell .face-sm { width: 24px; height: 24px; }
+.st__muted { color: var(--text-muted); font-size: 11.5px; }
+.st__row--fav td { background: rgba(74, 163, 255, 0.12); }
+.st__row--fav td:first-child { box-shadow: inset 3px 0 0 var(--accent); }

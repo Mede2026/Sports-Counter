@@ -52,6 +52,13 @@ seulement les équipes que tu choisis.
   deux équipes. En F1 : classement complet, ton pilote, programme du
   week-end. Un bouton y ouvre aussi la page ESPN.
 - **Taille du widget** : petit, moyen ou grand.
+- **Classements** : onglet dans la fenêtre des réglages. Toutes les ligues
+  d'équipes (tes équipes en évidence) et le championnat de F1, pilotes et
+  constructeurs.
+- **Fenêtre Match, en plus** : chances de victoire, faits saillants vidéo,
+  les 3 étoiles (hockey) et les meneurs du match, avec photos.
+- **Démarrage instantané** : les derniers scores s'affichent tout de suite, et
+  calendriers, classements et résultats sont gardés sur le disque.
 - **Section Réglages** dans la fenêtre des réglages, rangée par thèmes.
 - **Démarre avec Windows** et **se cache pendant les jeux en plein écran**
   (deux cases dans les réglages).

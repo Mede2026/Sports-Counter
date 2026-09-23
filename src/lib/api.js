@@ -14,8 +14,10 @@ import { errText } from './err.js';
 import { NHL_TEAMS } from './teams-nhl.js';
 import { ordinal } from './format.js';
 import { statusFr, weightFr, resultFr, segmentFr } from './status-fr.js';
+import { diskCache } from './cache.js';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
+const BASE_V2 = 'https://site.api.espn.com/apis/v2/sports';
 
 function inTauri() {
   return typeof window !== 'undefined' && !!window.__TAURI__;
@@ -32,9 +34,13 @@ async function viaRust(suffix) {
   return JSON.parse(raw);
 }
 
-async function getJson(path, query = '') {
-  const suffix = `${path}${query}`;
-  const url = `${BASE}/${suffix}`;
+/**
+ * `opts.v2` : API « v2 » d'ESPN (classements), à une autre adresse que celle
+ * des scores. Le relais Rust la reconnaît au préfixe « v2/ ».
+ */
+async function getJson(path, query = '', opts = {}) {
+  const suffix = `${opts.v2 ? 'v2/' : ''}${path}${query}`;
+  const url = opts.v2 ? `${BASE_V2}/${path}${query}` : `${BASE}/${suffix}`;
 
   let pageErr;
   try {
@@ -637,19 +643,20 @@ export async function fetchScoreboard(leagueId) {
 // jours. Au-delà, inutile de chercher.
 export const LOOKAHEAD_DAYS = 4;
 const DAY_TTL = 30 * 60 * 1000;
-const dayCache = new Map(); // "ligue:AAAAMMJJ" -> { at, events }
+// "ligue:AAAAMMJJ" -> matchs du jour, gardés sur le disque 30 min.
+const dayCache = diskCache('days', DAY_TTL);
 
 async function fetchDay(leagueId, offsetDays) {
   const league = LEAGUES_BY_ID[leagueId];
   const date = ymd(offsetDays);
   const key = `${leagueId}:${date}`;
   const hit = dayCache.get(key);
-  if (hit && Date.now() - hit.at < DAY_TTL) return hit.events;
+  if (hit) return hit;
 
   const data = await getJson(`${league.path}/scoreboard`, `?dates=${date}`);
   const logo = league.logo || leagueLogo(data);
   const events = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId, logo));
-  dayCache.set(key, { at: Date.now(), events });
+  dayCache.set(key, events);
   return events;
 }
 
@@ -798,7 +805,105 @@ export async function fetchMatchDetail(leagueId, eventId) {
     series: seriesInfo(comp, homeC, awayC),
     venue: data?.gameInfo?.venue?.fullName ?? '',
     link: pickLink(data?.header) || '',
+    stars: threeStars(data, comp),
+    leaders: gameLeaders(data, home.id, away.id),
+    winProb: winProbability(data, state),
+    videos: highlights(data),
   };
+}
+
+/* ---------- Fenêtre Match : étoiles, meneurs, chances, vidéos ---------- */
+
+const athletePhoto = (a) => a?.headshot?.href ?? a?.headshot ?? '';
+
+/**
+ * Les 3 étoiles du match (hockey), quand ESPN les nomme (« firstStar »…).
+ * Liste vide sinon.
+ */
+function threeStars(data, comp) {
+  const pools = [comp?.status?.featuredAthletes, comp?.featuredAthletes, data?.header?.featuredAthletes, data?.featuredAthletes];
+  const order = (x) => (/first|1/i.test(x) ? 1 : /second|2/i.test(x) ? 2 : /third|3/i.test(x) ? 3 : 9);
+  for (const pool of pools) {
+    const stars = (pool ?? [])
+      .filter((f) => /star/i.test(`${f?.name ?? ''} ${f?.displayName ?? ''}`) && f?.athlete)
+      .map((f) => ({
+        rank: order(`${f.name ?? ''} ${f.displayName ?? ''}`),
+        name: f.athlete.displayName ?? f.athlete.shortName ?? '',
+        photo: athletePhoto(f.athlete),
+        teamId: String(f.team?.id ?? f.athlete.team?.id ?? ''),
+        line: f.statistics?.map?.((s) => s?.displayValue).filter(Boolean).join(' · ') ?? '',
+      }))
+      .filter((s) => s.name && s.rank <= 3)
+      .sort((a, b) => a.rank - b.rank);
+    if (stars.length) return stars;
+  }
+  return [];
+}
+
+// Noms français des catégories de meneurs d'ESPN.
+const LEADER_FR = {
+  goals: 'Buts', assists: 'Passes', points: 'Points', saves: 'Arrêts', savePct: "% d'arrêts",
+  rebounds: 'Rebonds', pointsPerGame: 'Points', reboundsPerGame: 'Rebonds', assistsPerGame: 'Passes',
+  passingYards: 'Verges par la passe', rushingYards: 'Verges au sol', receivingYards: 'Verges en réception',
+  homeRuns: 'Circuits', RBIs: 'Points produits', battingAverage: 'Moyenne au bâton', strikeouts: 'Retraits au bâton',
+  hits: 'Coups sûrs',
+};
+
+/**
+ * Meneurs du match, par catégorie : le meilleur de chaque équipe.
+ * [{ label, away: { name, photo, value }, home: {…} }], 3 catégories au plus.
+ */
+function gameLeaders(data, homeId, awayId) {
+  const byTeam = new Map((data?.leaders ?? []).map((t) => [String(t?.team?.id ?? ''), t?.leaders ?? []]));
+  const home = byTeam.get(String(homeId)) ?? [];
+  const away = byTeam.get(String(awayId)) ?? [];
+  const best = (cats, name) => {
+    const l = cats.find((c) => c?.name === name)?.leaders?.[0];
+    return l?.athlete ? { name: l.athlete.displayName ?? l.athlete.shortName ?? '', photo: athletePhoto(l.athlete), value: l.displayValue ?? '' } : null;
+  };
+  const names = [...new Set([...home, ...away].map((c) => c?.name).filter(Boolean))];
+  return names
+    .map((name) => ({
+      label: LEADER_FR[name] ?? [...home, ...away].find((c) => c?.name === name)?.displayName ?? name,
+      home: best(home, name),
+      away: best(away, name),
+    }))
+    .filter((r) => r.home || r.away)
+    .slice(0, 3);
+}
+
+/**
+ * Chances de victoire (en %) : { home, away, live }. En direct : le dernier
+ * calcul d'ESPN ; avant le match : sa prédiction. null si ESPN n'en donne pas.
+ */
+function winProbability(data, state) {
+  if (state === 'post') return null;
+  const live = data?.winprobability;
+  if (state === 'in' && Array.isArray(live) && live.length) {
+    const last = live[live.length - 1];
+    const h = Number(last?.homeWinPercentage);
+    if (Number.isFinite(h)) {
+      const tie = Number(last?.tiePercentage) || 0;
+      return { home: Math.round(h * 100), away: Math.round((1 - h - tie) * 100), live: true };
+    }
+  }
+  const p = data?.predictor;
+  const h = parseFloat(p?.homeTeam?.gameProjection ?? p?.homeTeam?.teamChanceLoss);
+  const a = parseFloat(p?.awayTeam?.gameProjection ?? p?.awayTeam?.teamChanceLoss);
+  if (Number.isFinite(h) && Number.isFinite(a)) return { home: Math.round(h), away: Math.round(a), live: false };
+  return null;
+}
+
+/** Faits saillants vidéo d'ESPN : [{ title, thumb, href }], 4 au plus. */
+function highlights(data) {
+  return (data?.videos ?? [])
+    .map((v) => ({
+      title: v?.headline ?? v?.title ?? '',
+      thumb: v?.thumbnail ?? v?.images?.[0]?.url ?? '',
+      href: v?.links?.web?.href ?? v?.links?.mobile?.href ?? '',
+    }))
+    .filter((v) => v.title && /^https:\/\/(www\.)?espn\.(com|ca|co\.uk)\//.test(v.href))
+    .slice(0, 4);
 }
 
 /* ---------- Classements ---------- */
@@ -810,8 +915,9 @@ const GROUP_FR = [
 ];
 const groupFr = (name) => GROUP_FR.find(([re]) => re.test(name ?? ''))?.[1] ?? name ?? '';
 
-const standingsCache = new Map(); // idLigue -> { at, table }
 const STANDINGS_TTL = 60 * 60 * 1000;
+// idLigue -> groupes du classement, gardés sur le disque 1 h.
+const standingsCache = diskCache('standings', STANDINGS_TTL);
 
 /** Rang de chaque équipe dans son groupe, trié comme ESPN le calcule. */
 function rankEntries(entries) {
@@ -824,34 +930,101 @@ function rankEntries(entries) {
   return sorted;
 }
 
+// Colonnes du tableau de classement, par sport : [nom ESPN, en-tête].
+export const STANDING_COLS = {
+  hockey: [['gamesPlayed', 'PJ'], ['wins', 'V'], ['losses', 'D'], ['otLosses', 'DP'], ['points', 'PTS']],
+  basketball: [['wins', 'V'], ['losses', 'D'], ['winPercent', '%'], ['gamesBehind', 'Écart']],
+  football: [['wins', 'V'], ['losses', 'D'], ['ties', 'N'], ['winPercent', '%']],
+  baseball: [['wins', 'V'], ['losses', 'D'], ['winPercent', '%'], ['gamesBehind', 'Écart']],
+  soccer: [['gamesPlayed', 'PJ'], ['wins', 'V'], ['ties', 'N'], ['losses', 'D'], ['pointDifferential', 'Diff'], ['points', 'PTS']],
+};
+
 /**
- * Classement d'une ligue : Map idÉquipe -> { rank, group, points }. Vide si
- * ESPN ne le fournit pas à l'app (adresse différente de celle des scores).
+ * Classement complet d'une ligue, par groupe (association, division,
+ * ligue) : [{ name, rows: [{ id, name, abbr, logo, rank, stats }] }].
+ */
+export async function fetchStandingsTable(leagueId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || league.kind !== 'team') return [];
+  const hit = standingsCache.get(leagueId);
+  if (hit) return hit;
+
+  const data = await getJson(`${league.path}/standings`, '', { v2: true });
+  const groups = [];
+  const walk = (node) => {
+    const entries = node?.standings?.entries;
+    if (entries?.length) {
+      const rows = rankEntries(entries).map((e, i) => {
+        const t = e?.team ?? {};
+        return {
+          id: String(t.id ?? ''),
+          name: t.displayName ?? t.name ?? '',
+          short: t.shortDisplayName ?? t.name ?? '',
+          abbr: t.abbreviation ?? '',
+          logo: t.logos?.[0]?.href ?? t.logo ?? '',
+          rank: i + 1,
+          stats: Object.fromEntries((e?.stats ?? []).filter((x) => x?.name).map((x) => [x.name, x.displayValue ?? String(x.value ?? '')])),
+        };
+      }).filter((r) => r.id);
+      groups.push({ name: groupFr(node?.name ?? node?.abbreviation ?? league.label), rows });
+    }
+    (node?.children ?? []).forEach(walk);
+  };
+  walk(data);
+  if (groups.length) standingsCache.set(leagueId, groups);
+  return groups;
+}
+
+/**
+ * Classement d'une ligue pour la fenêtre Match : Map idÉquipe -> { rank,
+ * group, points }. Vide si ESPN ne le fournit pas.
  */
 export async function fetchStandings(leagueId) {
-  const league = LEAGUES_BY_ID[leagueId];
-  if (!league || league.kind !== 'team') return new Map();
-  const hit = standingsCache.get(leagueId);
-  if (hit && Date.now() - hit.at < STANDINGS_TTL) return hit.table;
-
   const table = new Map();
   try {
-    const data = await viaPage(`https://site.api.espn.com/apis/v2/sports/${league.path}/standings`);
-    const walk = (node) => {
-      const entries = node?.standings?.entries;
-      if (entries?.length) {
-        rankEntries(entries).forEach((e, i) => {
-          const id = String(e?.team?.id ?? '');
-          const pts = e?.stats?.find((s) => s?.name === 'points')?.displayValue ?? '';
-          if (id) table.set(id, { rank: i + 1, group: groupFr(node?.name), points: pts });
-        });
-      }
-      (node?.children ?? []).forEach(walk);
-    };
-    walk(data);
+    for (const g of await fetchStandingsTable(leagueId)) {
+      for (const r of g.rows) table.set(r.id, { rank: r.rank, group: g.name, points: r.stats.points ?? '' });
+    }
   } catch { /* classement indisponible : la fenêtre s'en passe */ }
-  standingsCache.set(leagueId, { at: Date.now(), table });
   return table;
+}
+
+/**
+ * Championnat de F1 : pilotes et constructeurs, avec leurs points.
+ * { drivers: [{ rank, name, photo, team, points }], teams: [{ rank, name, points }] }
+ */
+export async function fetchF1Standings() {
+  const hit = standingsCache.get('f1');
+  if (hit) return hit;
+  const data = await getJson('racing/f1/standings', '', { v2: true });
+  const drivers = [];
+  const teams = [];
+  const points = (e) => {
+    const s = (e?.stats ?? []).find((x) => /championshippts|points/i.test(x?.name ?? '') || /^pts$/i.test(x?.abbreviation ?? ''));
+    return s?.displayValue ?? String(s?.value ?? '');
+  };
+  const rankOf = (e, i) => {
+    const s = (e?.stats ?? []).find((x) => /^rank$/i.test(x?.name ?? ''));
+    return Number(s?.value) || i + 1;
+  };
+  const walk = (node) => {
+    (node?.standings?.entries ?? []).forEach((e, i) => {
+      if (e?.athlete) {
+        const a = e.athlete;
+        drivers.push({ rank: rankOf(e, i), id: String(a.id ?? ''), name: a.displayName ?? '', short: a.shortName ?? '',
+          photo: driverPhoto(a, a.id), team: e.team?.displayName ?? a.team?.displayName ?? '', points: points(e) });
+      } else if (e?.team) {
+        teams.push({ rank: rankOf(e, i), name: e.team.displayName ?? e.team.name ?? '', logo: e.team.logos?.[0]?.href ?? '', points: points(e) });
+      }
+    });
+    (node?.children ?? []).forEach(walk);
+  };
+  walk(data);
+  drivers.sort((a, b) => a.rank - b.rank);
+  teams.sort((a, b) => a.rank - b.rank);
+  const result = { drivers, teams };
+  if (drivers.length) standingsCache.set('f1', result);
+  return result;
 }
 
 /* ---------- Pilotes de F1 (réglages) ---------- */
@@ -904,7 +1077,9 @@ export async function fetchDrivers() {
 /* ---------- Calendrier et historique d'une équipe ---------- */
 
 const TEAM_TTL = 3 * 3600 * 1000;
-const teamGamesCache = new Map(); // "ligue:équipe" -> { at, games }
+// "ligue:équipe" -> { games, back, ahead }, gardé sur le disque 3 h.
+const teamGamesCache = diskCache('teamGames', TEAM_TTL);
+const WHOLE_SEASON = 9999; // jours : calendrier complet de la saison
 
 /**
  * Matchs de la saison d'une équipe (passés et à venir), triés par date.
@@ -914,7 +1089,7 @@ const teamGamesCache = new Map(); // "ligue:équipe" -> { at, games }
 export async function fetchTeamGames(leagueId, teamId, { back = 21, ahead = 30 } = {}) {
   const key = `${leagueId}:${teamId}`;
   const hit = teamGamesCache.get(key);
-  if (hit && Date.now() - hit.at < TEAM_TTL && hit.back >= back && hit.ahead >= ahead) return hit.games;
+  if (hit && hit.back >= back && hit.ahead >= ahead) return hit.games;
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || league.kind !== 'team') return [];
 
@@ -923,7 +1098,7 @@ export async function fetchTeamGames(leagueId, teamId, { back = 21, ahead = 30 }
   try {
     const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/schedule`);
     games = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId)).filter((g) => g.kind === 'match');
-    span = { back: Infinity, ahead: Infinity }; // toute la saison
+    span = { back: WHOLE_SEASON, ahead: WHOLE_SEASON }; // toute la saison
   } catch { /* calendrier illisible : on passe aux tableaux des scores */ }
 
   if (!games?.length) {
@@ -940,7 +1115,7 @@ export async function fetchTeamGames(leagueId, teamId, { back = 21, ahead = 30 }
     games = found;
   }
   games.sort((a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0));
-  teamGamesCache.set(key, { at: Date.now(), games, ...span });
+  teamGamesCache.set(key, { games, ...span });
   return games;
 }
 

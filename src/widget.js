@@ -8,6 +8,7 @@ import { detectEvents, remember } from './lib/events.js';
 import { whenText, shortWhen, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
+import { diskCache } from './lib/cache.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
@@ -29,7 +30,11 @@ let seen = null; // relevé précédent, pour les notifications (null = premier)
 let followed = []; // tous les matchs suivis (pas seulement ceux affichés)
 let lastHtml = ''; // dernier rendu : on ne touche pas au DOM s'il est identique
 const shownIds = new Set(); // cartes déjà affichées : elles n'ont plus d'animation d'entrée
-const forms = new Map(); // "ligue:équipe" -> { at, list } : 5 derniers résultats
+// "ligue:équipe" -> 5 derniers résultats, gardés sur le disque 3 h.
+const FORM_TTL = 3 * 3600 * 1000;
+const forms = diskCache('forms', FORM_TTL);
+// Dernier relevé affiché, pour réapparaître aussitôt au prochain lancement.
+const snapshot = diskCache('widget', 12 * 3600 * 1000);
 let lastRender = null; // [matchs, erreur] du dernier rendu, pour redessiner
 
 const inTauri = () => !!window.__TAURI__;
@@ -54,7 +59,7 @@ function teamRow(game, team, dim) {
 /** Les 5 derniers résultats d'une équipe favorite : ✅ ❌ ➖. */
 function formHtml(leagueId, teamId) {
   if (prefs.showForm === false) return '';
-  const list = forms.get(`${leagueId}:${teamId}`)?.list;
+  const list = forms.get(`${leagueId}:${teamId}`);
   if (!list?.length) return '';
   return ` <span class="form" title="${attr(formTitle(list))}">${formIcons(list)}</span>`;
 }
@@ -330,7 +335,6 @@ lightQuery?.addEventListener?.('change', () => { lastHtml = ''; if (lastRender) 
 
 /* ---------- Derniers résultats des équipes favorites ---------- */
 
-const FORM_TTL = 3 * 3600 * 1000;
 let formsLoading = false;
 
 /** Charge (en arrière-plan) les 5 derniers résultats des équipes favorites. */
@@ -340,8 +344,7 @@ async function loadForms() {
   const stale = prefs.favorites.filter((key) => {
     const [leagueId] = key.split(':');
     if (LEAGUES_BY_ID[leagueId]?.kind !== 'team') return false;
-    const f = forms.get(key);
-    return !f || Date.now() - f.at > FORM_TTL;
+    return forms.get(key) === undefined;
   });
   if (!stale.length) return;
   formsLoading = true;
@@ -350,10 +353,10 @@ async function loadForms() {
     const [leagueId, teamId] = key.split(':');
     try {
       const list = await fetchTeamForm(leagueId, teamId);
-      forms.set(key, { at: Date.now(), list });
+      forms.set(key, list);
       changed ||= list.length > 0;
     } catch {
-      forms.set(key, { at: Date.now(), list: [] }); // on réessaiera dans 3 h
+      forms.set(key, []); // on réessaiera dans 3 h
     }
   }
   formsLoading = false;
@@ -764,6 +767,7 @@ async function doRefresh(force) {
 
   const visible = followed.slice(0, prefs.maxGames);
   render(visible, error, offline);
+  if (!offline) snapshot.set('games', visible);
   if (!offline) loadForms();
   const hasLive = visible.some((g) => g.state === 'in');
   applyWidgetMode(hasLive);
@@ -805,8 +809,9 @@ document.getElementById('btnHide').addEventListener('click', hideWidget);
 
 // Les réglages écrivent dans localStorage : on recharge dès qu'ils changent.
 window.addEventListener('storage', (e) => {
-  if (!e.key?.startsWith('sports-counter.') || e.key === REMINDED_KEY || e.key === 'sports-counter.lastVersion') return;
-  if (e.key.startsWith('sports-counter.teams.') || e.key.startsWith('sports-counter.drivers.')) return;
+  // Seuls les réglages comptent : les caches écrits par les autres fenêtres
+  // (équipes, calendriers, traductions…) ne doivent pas relancer un relevé.
+  if (e.key !== 'sports-counter.prefs.v1' && e.key !== 'sports-counter.ping') return;
   prefs = loadPrefs();
   // Redessiné avant d'être montré : en quittant le mode « Jamais », le widget
   // n'apparaît pas vide ou avec d'anciens scores.
@@ -868,5 +873,8 @@ if (!inTauri() && new URLSearchParams(location.search).has('demo')) {
       { id: 'demo-lec', name: 'Charles Leclerc', short: 'C. Leclerc', photo: '' }] };
   render(demoEvents(), null);
 } else {
+  // Affichage immédiat des derniers scores connus, puis relevé à jour.
+  const last = snapshot.get('games');
+  if (last?.length) render(last, null);
   refresh();
 }

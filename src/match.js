@@ -157,7 +157,9 @@ function playsHtml(g, plays, withAssists) {
 
 /** Textes libres d'ESPN affichés dans la fenêtre : ceux à traduire. */
 function textsOf(g) {
-  return [...(g?.goals ?? []), ...(g?.penalties ?? [])].map((p) => p.text).filter(Boolean);
+  return [...(g?.goals ?? []), ...(g?.penalties ?? [])].map((p) => p.text)
+    .concat((g?.videos ?? []).map((v) => v.title))
+    .filter(Boolean);
 }
 
 function standingsHtml(g, table) {
@@ -174,9 +176,65 @@ function standingsHtml(g, table) {
   return line(g.away) + line(g.home);
 }
 
+/** Barre des chances de victoire, aux couleurs des deux équipes. */
+function winProbHtml(g) {
+  const p = g.winProb;
+  if (!p) return '';
+  const colorA = visibleTeamColor(g.away.color, g.away.alt) ?? '#4aa3ff';
+  const colorH = visibleTeamColor(g.home.color, g.home.alt) ?? '#ff7a45';
+  const total = p.away + p.home || 1;
+  return `<div class="prob">
+    <div class="prob__vals"><b>${esc(g.away.abbr)} ${p.away} %</b><span>${p.live ? 'en direct' : 'avant le match'}</span><b>${p.home} % ${esc(g.home.abbr)}</b></div>
+    <div class="stat__bar"><i style="width:${(p.away / total) * 100}%;background:${colorA}"></i><i style="width:${(p.home / total) * 100}%;background:${colorH}"></i></div>
+  </div>`;
+}
+
+const personFace = (x, cls = 'face') => (x?.photo
+  ? `<img class="${cls}" src="${esc(x.photo)}" alt="" data-face />`
+  : `<span class="${cls}"></span>`);
+
+/** Les 3 étoiles du match (hockey). */
+function starsHtml(g) {
+  if (!g.stars?.length) return '';
+  const team = (id) => (String(g.home.id) === id ? g.home : String(g.away.id) === id ? g.away : null);
+  return `<div class="stars">${g.stars.map((s) => `
+    <div class="star">
+      <div class="star__rank">${'⭐'.repeat(4 - s.rank)}</div>
+      ${personFace(s, 'face face--lg')}
+      <b>${isStar(s.name) ? '⭐ ' : ''}${esc(s.name)}</b>
+      <small>${team(s.teamId) ? esc(team(s.teamId).abbr) : ''}${s.line ? ` · ${esc(s.line)}` : ''}</small>
+    </div>`).join('')}</div>`;
+}
+
+/** Meneurs du match, face à face : le meilleur de chaque équipe par catégorie. */
+function leadersHtml(g) {
+  if (!g.leaders?.length) return '';
+  const side = (x, right) => (x
+    ? `<div class="lead__p${right ? ' lead__p--r' : ''}">${right ? '' : personFace(x)}<span><b>${esc(x.name)}</b><small>${esc(x.value)}</small></span>${right ? personFace(x) : ''}</div>`
+    : '<div class="lead__p"></div>');
+  return g.leaders.map((l) => `<div class="lead">
+    ${side(l.away, false)}<span class="lead__label">${esc(l.label)}</span>${side(l.home, true)}
+  </div>`).join('');
+}
+
+/** Faits saillants vidéo : un clic ouvre la vidéo sur ESPN. */
+function videosHtml(g) {
+  if (!g.videos?.length) return '';
+  return `<div class="videos">${g.videos.map((v) => `
+    <button class="video" type="button" data-href="${esc(v.href)}">
+      ${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy" data-face />` : '<span class="video__ph"></span>'}
+      <span class="video__play">▶</span>
+      <span class="video__title">${esc(fr(v.title))}</span>
+    </button>`).join('')}</div>`;
+}
+
 function matchHtml(g, table) {
   const goalsTitle = ['hockey', 'soccer'].includes(sportOf(g.leagueId)) ? 'Buts' : 'Jeux marquants';
   return heroHtml(g)
+    + section('Chances de victoire', winProbHtml(g))
+    + section('Faits saillants', videosHtml(g))
+    + section('Les 3 étoiles', starsHtml(g))
+    + section('Meneurs du match', leadersHtml(g))
     + section(periodsTitle(g), periodsHtml(g))
     + section(goalsTitle, playsHtml(g, g.goals, true))
     + section('Statistiques', statsHtml(g))
@@ -352,6 +410,12 @@ function paint(html) {
   bindCrests(el.main);
   el.main.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
   document.getElementById('btnRetry')?.addEventListener('click', load);
+  // Vidéo des faits saillants : ouverte sur ESPN, dans le navigateur.
+  el.main.querySelectorAll('.video[data-href]').forEach((b) => b.addEventListener('click', async () => {
+    const url = b.dataset.href;
+    if (!inTauri()) { window.open(url, '_blank', 'noopener'); return; }
+    try { await window.__TAURI__.core.invoke('open_espn', { url }); } catch { /* refusé */ }
+  }));
 }
 
 /** Derniers résultats des deux équipes, chargés après coup (ils peuvent être lents). */
@@ -391,6 +455,20 @@ function demoDetail() {
       { label: 'Tirs bloqués', away: '9', home: '14' },
     ],
     venue: 'Centre Bell, Montréal',
+    winProb: { home: 64, away: 36, live: true },
+    stars: [
+      { rank: 1, name: 'Cole Caufield', photo: '', teamId: '10', line: '2 buts' },
+      { rank: 2, name: 'Nick Suzuki', photo: '', teamId: '10', line: '1 but, 2 passes' },
+      { rank: 3, name: 'Auston Matthews', photo: '', teamId: '21', line: '1 but' },
+    ],
+    leaders: [
+      { label: 'Points', away: { name: 'Auston Matthews', photo: '', value: '1 B, 1 A' }, home: { name: 'Nick Suzuki', photo: '', value: '1 B, 2 A' } },
+      { label: 'Arrêts', away: { name: 'Anthony Stolarz', photo: '', value: '24 arrêts' }, home: { name: 'Sam Montembeault', photo: '', value: '17 arrêts' } },
+    ],
+    videos: [
+      { title: 'Caufield scores on the power play', thumb: '', href: 'https://www.espn.com/video/clip?id=1' },
+      { title: 'Suzuki buries the go-ahead goal', thumb: '', href: 'https://www.espn.com/video/clip?id=2' },
+    ],
   };
 }
 

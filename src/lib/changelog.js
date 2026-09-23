@@ -1,6 +1,14 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.6.0': [
+    '🏆 Un nouvel onglet Classements montre la LNH, les autres ligues et le championnat de F1 (pilotes et constructeurs).',
+    '⭐ La fenêtre Match affiche les 3 étoiles et les meneurs du match avec leur photo.',
+    '📊 Une barre montre les chances de victoire de chaque équipe, avant et pendant le match.',
+    '🎬 Les faits saillants vidéo s’ouvrent d’un clic depuis la fenêtre Match.',
+    '⚡ Au démarrage, le widget affiche tout de suite les derniers scores connus.',
+    '💾 L’app garde calendriers, classements et résultats en mémoire : elle démarre plus vite et utilise moins Internet.',
+  ],
   '0.5.1': [
     '🇫🇷 Les descriptions des jeux d’ESPN sont traduites en français avec Google Traduction, sans compte.',
     '⚾ Les statuts sont en français dans tous les sports : « Haut de la 4e », « 3e quart », « Mi-temps »…',

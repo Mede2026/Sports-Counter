@@ -298,3 +298,66 @@ span.crest-xs { border-radius: 4px; }
 .fight__meta { margin-top: 2px; font-size: 11px; color: var(--text-muted); }
 .fight__meta .live, .status .live { color: var(--live); font-weight: 650; display: inline-flex; align-items: center; gap: 5px; }
 .plays__text { font-size: 12.5px; line-height: 1.4; color: var(--text); }
+
+/* ---------- Chances de victoire ---------- */
+
+.prob__vals { display: flex; align-items: baseline; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.prob__vals b { font-weight: 750; }
+.prob__vals span { flex: 1; text-align: center; font-size: 10.5px; color: var(--text-faint); }
+.prob .stat__bar { height: 8px; margin-top: 7px; }
+
+/* ---------- Les 3 étoiles ---------- */
+
+.stars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.star { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; min-width: 0; }
+.star__rank { font-size: 10px; letter-spacing: -1px; height: 13px; }
+.star b { font-size: 12px; line-height: 1.2; }
+.star small { font-size: 10.5px; color: var(--text-faint); }
+.face--lg { width: 48px; height: 48px; }
+
+/* ---------- Meneurs du match ---------- */
+
+.lead { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.lead + .lead { margin-top: 10px; }
+.lead__label { font-size: 10.5px; font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.05em; text-align: center; }
+.lead__p { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.lead__p--r { justify-content: flex-end; text-align: right; }
+.lead__p span { display: flex; flex-direction: column; min-width: 0; }
+.lead__p b { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lead__p small { font-size: 10.5px; color: var(--text-muted); }
+
+/* ---------- Faits saillants vidéo ---------- */
+
+.videos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.video {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.video img, .video__ph {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  display: block;
+}
+.video__play {
+  position: absolute;
+  top: 8px; left: 8px;
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  font-size: 10px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+}
+.video__title { font-size: 11.5px; line-height: 1.35; font-weight: 600; }
+.video:hover .video__title { color: #4aa3ff; }

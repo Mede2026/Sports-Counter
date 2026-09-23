@@ -19,6 +19,8 @@ use tauri_plugin_updater::{Update, UpdaterExt};
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const ESPN_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports";
+/// API « v2 » d'ESPN (classements). L'interface la demande avec le préfixe « v2/ ».
+const ESPN_BASE_V2: &str = "https://site.api.espn.com/apis/v2/sports";
 /// Options du moteur WebView2, identiques pour TOUTES les fenêtres : elles
 /// partagent un même dossier de données, et WebView2 refuse d'ouvrir une
 /// fenêtre dont les options diffèrent des autres. Doit rester égale à
@@ -100,7 +102,10 @@ async fn espn_get(path: String) -> Result<String, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let url = format!("{ESPN_BASE}/{path}");
+    let url = match path.strip_prefix("v2/") {
+        Some(rest) => format!("{ESPN_BASE_V2}/{rest}"),
+        None => format!("{ESPN_BASE}/{path}"),
+    };
     let res = client
         .get(&url)
         // Ces en-têtes sont ceux d'un navigateur ordinaire. Sans eux, le pare-feu
