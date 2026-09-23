@@ -1,10 +1,10 @@
-// Logo de la Formule 1, dessiné en SVG et intégré à l'app : il s'affiche
-// toujours, même quand ESPN n'envoie pas le sien (écran de réglages, hors
-// week-end de course). Tracé en rouge, lisible sur le fond sombre.
-const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 26"><g fill="#e10600">'
-  + '<path d="M26 0H80L71 9H30C26 9 23.5 10.3 21.5 13L12 26H0L13 8C17 2.5 20.5 0 26 0Z"/>'
-  + '<path d="M26 14H56L49 21H21Z"/>'
-  + '<path d="M86 0H100L81 26H67Z"/>'
+// Logo actuel de la Formule 1, retracé en SVG et intégré à l'app : il
+// s'affiche toujours, même quand ESPN n'envoie pas le sien (réglages, hors
+// week-end de course). Tracé calqué sur le logo officiel, en rouge F1.
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 318 1952 488"><g fill="#ff2000">'
+  + '<path d="M24 806L380 452C470 365 540 322 745 318H1632L1447 500H790C640 500 590 525 530 583L300 806Z"/>'
+  + '<path d="M350 806L548 606C610 545 660 531 765 531H1417L1247 701H785C720 701 695 715 675 735L605 806Z"/>'
+  + '<path d="M1183 806L1669 318H1976L1488 806Z"/>'
   + '</g></svg>';
 
 export const F1_LOGO = `data:image/svg+xml,${encodeURIComponent(SVG)}`;

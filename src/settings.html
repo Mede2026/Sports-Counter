@@ -23,50 +23,46 @@
   </div>
 
   <div class="body">
-    <nav class="leagues" id="leagues"></nav>
+    <nav class="leagues">
+      <div id="leagues"></div>
+      <div class="nav-sep"></div>
+      <button class="league league--prefs" id="navPrefs" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+        <span>Réglages</span>
+      </button>
+    </nav>
 
-    <div class="panel">
+    <!-- Équipes (ou pilotes) d'une ligue -->
+    <div class="panel" id="teamsView">
       <div class="toolbar">
         <input class="search" id="search" type="search" placeholder="Rechercher une équipe…" />
         <button class="ghost" id="btnClear">Tout décocher</button>
       </div>
       <div class="teams" id="teams"></div>
-      <div class="options">
-        <div class="opt">
-          <input type="checkbox" id="optAutostart" />
-          <label for="optAutostart">Lancer avec Windows</label>
-        </div>
-        <div class="opt" title="Cacher le widget pendant les jeux et vidéos en plein écran">
-          <input type="checkbox" id="optHideFullscreen" />
-          <label for="optHideFullscreen">Cacher en plein écran</label>
-        </div>
-        <div class="opt">
-          <input type="checkbox" id="optNotify" />
-          <label for="optNotify">Notifications</label>
-          <button class="ghost ghost--small" id="btnTryToast" type="button">Essayer</button>
-        </div>
-        <div class="opt">
-          <input type="checkbox" id="optCompact" />
-          <label for="optCompact">Mode compact</label>
-        </div>
-        <div class="opt">
-          <input type="checkbox" id="optHideOld" />
-          <label for="optHideOld">Cacher les matchs finis</label>
-        </div>
-        <div class="opt">
-          <label for="optMax">Matchs affichés</label>
-          <input type="number" id="optMax" min="1" max="10" />
-        </div>
-        <div class="opt">
-          <label for="optOpacity">Opacité</label>
-          <input type="range" id="optOpacity" min="30" max="100" step="5" />
-        </div>
-        <div class="opt">
-          <label for="optTheme">Couleur</label>
-          <select id="optTheme"></select>
-        </div>
-        <div class="opt" title="Sur le bureau : le widget reste derrière tes fenêtres, les notifications passent devant. Pendant un match : le widget apparaît quand un de tes matchs est en direct, et se cache sinon. Jamais : seulement les notifications.">
-          <label for="optWidgetMode">Widget</label>
+    </div>
+
+    <!-- Section Réglages -->
+    <div class="panel prefs" id="prefsView" hidden>
+      <section class="prefs__group">
+        <h2>Général</h2>
+        <label class="pref">
+          <span class="pref__txt"><b>Lancer avec Windows</b><small>L'app démarre avec l'ordinateur.</small></span>
+          <input type="checkbox" class="switch" id="optAutostart" />
+        </label>
+        <label class="pref">
+          <span class="pref__txt"><b>Cacher en plein écran</b><small>Le widget et les notifications s'effacent pendant les jeux et les vidéos.</small></span>
+          <input type="checkbox" class="switch" id="optHideFullscreen" />
+        </label>
+      </section>
+
+      <section class="prefs__group">
+        <h2>Widget</h2>
+        <div class="pref">
+          <span class="pref__txt"><b>Affichage</b><small>Sur le bureau : derrière tes fenêtres, les notifications passent devant.</small></span>
           <select id="optWidgetMode">
             <option value="always">Toujours devant</option>
             <option value="desktop">Sur le bureau</option>
@@ -74,7 +70,62 @@
             <option value="never">Jamais (notifications)</option>
           </select>
         </div>
-      </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Taille</b></span>
+          <div class="seg" id="optSize">
+            <button type="button" data-size="s">Petit</button>
+            <button type="button" data-size="m">Moyen</button>
+            <button type="button" data-size="l">Grand</button>
+          </div>
+        </div>
+        <label class="pref">
+          <span class="pref__txt"><b>Mode compact</b><small>Une ligne par match : logo, pointage | pointage, logo.</small></span>
+          <input type="checkbox" class="switch" id="optCompact" />
+        </label>
+        <div class="pref">
+          <span class="pref__txt"><b>Matchs affichés</b></span>
+          <input type="number" id="optMax" min="1" max="10" />
+        </div>
+        <label class="pref">
+          <span class="pref__txt"><b>Cacher les matchs finis</b><small>Après 6 heures.</small></span>
+          <input type="checkbox" class="switch" id="optHideOld" />
+        </label>
+        <div class="pref">
+          <span class="pref__txt"><b>Opacité</b></span>
+          <input type="range" id="optOpacity" min="30" max="100" step="5" />
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Couleur</b><small>Aux couleurs d'une de tes équipes.</small></span>
+          <select id="optTheme"></select>
+        </div>
+      </section>
+
+      <section class="prefs__group">
+        <h2>Notifications</h2>
+        <div class="pref">
+          <label class="pref__txt" for="optNotify"><b>Notifications de l'app</b><small>Buts, débuts et fins de match, séances de F1.</small></label>
+          <button class="ghost ghost--small" id="btnTryToast" type="button">Essayer</button>
+          <input type="checkbox" class="switch" id="optNotify" />
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Rappel avant le match</b><small>Une notification avant le début d'un match ou d'une séance suivis.</small></span>
+          <select id="optReminder">
+            <option value="0">Aucun</option>
+            <option value="5">5 min avant</option>
+            <option value="15">15 min avant</option>
+            <option value="30">30 min avant</option>
+            <option value="60">1 h avant</option>
+          </select>
+        </div>
+      </section>
+
+      <section class="prefs__group">
+        <h2>Formule 1</h2>
+        <div class="pref">
+          <span class="pref__txt" id="favDriverTxt"><b>Pilote favori</b><small>Aucun</small></span>
+          <button class="ghost ghost--small" id="btnPickDriver" type="button">Choisir</button>
+        </div>
+      </section>
     </div>
   </div>
 

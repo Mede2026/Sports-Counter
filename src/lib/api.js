@@ -215,7 +215,29 @@ function normalizeCompetitor(c, state) {
     // Avant le coup d'envoi, ESPN envoie « 0 » : on affiche « – ».
     score: state !== 'pre' && c?.score != null ? String(c.score) : '–',
     winner: c?.winner === true,
+    record: recordOf(c),
+    shots: statOf(c?.statistics, SHOT_STATS),
   };
+}
+
+/** Fiche de l'équipe (« 12-5-3 »), sous l'une ou l'autre forme d'ESPN. */
+function recordOf(c) {
+  const list = c?.records ?? c?.record ?? [];
+  if (!Array.isArray(list)) return '';
+  const total = list.find((r) => /total|overall/i.test(`${r?.type ?? ''} ${r?.name ?? ''}`)) ?? list[0];
+  return total?.summary ?? total?.displayValue ?? '';
+}
+
+// Tirs au but : ESPN les nomme différemment selon la source.
+const SHOT_STATS = ['shotsOnGoal', 'shots', 'shotsTotal', 'SOG'];
+
+/** Valeur d'une statistique d'ESPN parmi plusieurs noms possibles. */
+function statOf(stats, names) {
+  for (const n of names) {
+    const s = (stats ?? []).find((x) => x?.name === n || x?.abbreviation === n);
+    if (s?.displayValue != null && s.displayValue !== '') return String(s.displayValue);
+  }
+  return '';
 }
 
 // Un week-end de F1 regroupe plusieurs séances. La date de l'évènement est
@@ -238,19 +260,63 @@ function sessionLabel(comp) {
 }
 
 /**
- * Les trois premiers d'une séance. Chez ESPN, chaque pilote est un
- * « competitor » ; `order` donne sa position. Renvoie une liste vide si la
- * structure ne correspond pas : on n'affiche rien plutôt qu'un faux classement.
+ * Photo d'un pilote. ESPN range les portraits de la course automobile sous
+ * « rpm » ; on prend celle de la réponse quand elle y est.
  */
-function topThree(session) {
+export function driverPhoto(athlete, id) {
+  const href = athlete?.headshot?.href ?? athlete?.headshot ?? '';
+  if (typeof href === 'string' && href.startsWith('https://')) return href;
+  return id ? `https://a.espncdn.com/i/headshots/rpm/players/full/${id}.png` : '';
+}
+
+/** Un pilote, tel qu'ESPN le décrit dans une séance. */
+function toDriver(c, i) {
+  const a = c?.athlete ?? {};
+  const id = String(a.id ?? c?.id ?? '');
+  return {
+    id,
+    pos: Number(c?.order ?? c?.place ?? i + 1),
+    name: a.displayName ?? c?.displayName ?? '',
+    short: a.shortName ?? a.displayName ?? c?.displayName ?? '',
+    photo: driverPhoto(a, id),
+    flag: a.flag?.href ?? '',
+    team: c?.vehicle?.manufacturer ?? c?.team?.displayName ?? c?.team?.name ?? '',
+  };
+}
+
+/**
+ * Classement complet d'une séance. Chez ESPN, chaque pilote est un
+ * « competitor » ; `order` donne sa position. Liste vide si la structure ne
+ * correspond pas : on n'affiche rien plutôt qu'un faux classement.
+ */
+function classification(session) {
   return (session?.competitors ?? [])
-    .map((c, i) => ({
-      pos: Number(c?.order ?? c?.place ?? i + 1),
-      name: c?.athlete?.shortName ?? c?.athlete?.displayName ?? c?.displayName ?? '',
-    }))
+    .map(toDriver)
     .filter((d) => d.name && Number.isFinite(d.pos) && d.pos > 0)
-    .sort((a, b) => a.pos - b.pos)
-    .slice(0, 3);
+    .sort((a, b) => a.pos - b.pos);
+}
+
+/**
+ * Même pilote ? L'identifiant ESPN d'abord ; à défaut, le nom de famille
+ * (un favori noté avec une autre forme du nom reste reconnu).
+ */
+export function sameDriver(a, b) {
+  if (!a || !b) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+  const last = (d) => String(d.name || d.short || '').trim().split(/\s+/).pop()?.toLowerCase() ?? '';
+  return !!last(a) && last(a) === last(b);
+}
+
+/** Toutes les séances du week-end, pour la fenêtre de détail. */
+function weekendSessions(event) {
+  return (event?.competitions ?? [])
+    .filter((c) => c?.date)
+    .map((c) => ({
+      label: sessionLabel(c),
+      startsAt: new Date(c.date),
+      state: c?.status?.type?.state ?? 'pre',
+    }))
+    .sort((a, b) => a.startsAt - b.startsAt);
 }
 
 /** Séance en cours, sinon la prochaine, sinon la dernière du week-end. */
@@ -426,14 +492,19 @@ function normalizeEvent(event, leagueId, logo = '') {
     if (!session) return { ...base, kind: 'event', title, logo };
 
     const sState = session.status?.type?.state ?? base.state;
+    // Pas de classement avant le départ : il n'existe pas encore.
+    const results = sState === 'pre' ? [] : classification(session);
     return {
       ...base,
       kind: 'event',
       title,
       logo,
       state: sState,
-      // Pas de classement avant le départ : il n'existe pas encore.
-      top3: sState === 'pre' ? [] : topThree(session),
+      results,
+      top3: results.slice(0, 3),
+      sessions: weekendSessions(event),
+      // Tour en cours / total, quand ESPN le donne (course et sprint).
+      laps: session.status?.period && session.laps ? `Tour ${session.status.period} / ${session.laps}` : '',
       session: sessionLabel(session),
       statusText: session.status?.type?.shortDetail ?? base.statusText,
       startsAt: session.date ? new Date(session.date) : base.startsAt,
@@ -508,6 +579,223 @@ export async function fetchNextGames(leagueId, teamIds) {
     }
   }
   return found;
+}
+
+/* ---------- Fenêtre de détail d'un match ---------- */
+
+// Statistiques d'équipe, dans l'ordre d'affichage, avec leur nom en français.
+// Les noms absents de cette liste sont ignorés : la fenêtre reste lisible.
+const STAT_LABELS = {
+  hockey: [
+    ['shotsTotal', 'Tirs au but'], ['shots', 'Tirs au but'], ['powerPlayGoals', 'Buts en avantage numérique'],
+    ['powerPlayOpportunities', 'Avantages numériques'], ['faceoffPercent', 'Mises en jeu (%)'],
+    ['faceoffsWon', 'Mises en jeu gagnées'], ['hits', 'Mises en échec'], ['blockedShots', 'Tirs bloqués'],
+    ['takeaways', 'Revirements provoqués'], ['giveaways', 'Revirements'], ['penaltyMinutes', 'Minutes de pénalité'],
+  ],
+  basketball: [
+    ['fieldGoalPct', 'Tirs (%)'], ['threePointFieldGoalPct', 'Tirs à 3 points (%)'], ['freeThrowPct', 'Lancers francs (%)'],
+    ['totalRebounds', 'Rebonds'], ['assists', 'Passes décisives'], ['steals', 'Interceptions'],
+    ['blocks', 'Contres'], ['turnovers', 'Pertes de balle'],
+  ],
+  soccer: [
+    ['possessionPct', 'Possession (%)'], ['totalShots', 'Tirs'], ['shotsOnTarget', 'Tirs cadrés'],
+    ['wonCorners', 'Corners'], ['foulsCommitted', 'Fautes'], ['yellowCards', 'Cartons jaunes'],
+    ['redCards', 'Cartons rouges'], ['offsides', 'Hors-jeu'], ['saves', 'Arrêts'],
+  ],
+  football: [
+    ['totalYards', 'Verges totales'], ['netPassingYards', 'Verges par la passe'], ['rushingYards', 'Verges au sol'],
+    ['firstDowns', 'Premiers essais'], ['turnovers', 'Revirements'], ['possessionTime', 'Temps de possession'],
+  ],
+  baseball: [['hits', 'Coups sûrs'], ['errors', 'Erreurs'], ['homeRuns', 'Circuits'], ['strikeouts', 'Retraits au bâton']],
+};
+
+function teamStats(data, leagueId, homeId, awayId) {
+  const sport = LEAGUES_BY_ID[leagueId]?.path.split('/')[0];
+  const wanted = STAT_LABELS[sport] ?? [];
+  const byTeam = new Map((data?.boxscore?.teams ?? []).map((t) => [String(t?.team?.id), t?.statistics ?? []]));
+  const home = byTeam.get(String(homeId));
+  const away = byTeam.get(String(awayId));
+  if (!home || !away) return [];
+  const rows = [];
+  const labels = new Set();
+  for (const [name, label] of wanted) {
+    if (labels.has(label)) continue; // deux noms pour la même statistique
+    const h = statOf(home, [name]);
+    const a = statOf(away, [name]);
+    if (h === '' || a === '') continue;
+    labels.add(label);
+    rows.push({ label, home: h, away: a });
+  }
+  return rows;
+}
+
+const assistNames = (p) => (p?.participants ?? [])
+  .filter((x) => /assist/i.test(String(x?.type?.text ?? x?.type ?? '')))
+  .map((x) => x?.athlete?.displayName ?? x?.athlete?.shortName)
+  .filter(Boolean);
+
+function playOf(p) {
+  const period = p?.period?.number ?? p?.period ?? null;
+  return {
+    teamId: String(p?.team?.id ?? ''),
+    period: Number(period) || null,
+    clock: p?.clock?.displayValue ?? '',
+    who: scorerName(p),
+    assists: assistNames(p),
+    text: p?.text ?? p?.shortText ?? '',
+  };
+}
+
+/** Buts (ou points) et pénalités, lus dans le résumé détaillé d'ESPN. */
+function keyPlays(data) {
+  const pools = [data?.scoringPlays, data?.plays, data?.keyEvents, data?.header?.competitions?.[0]?.details];
+  let goals = [];
+  for (const pool of pools) {
+    goals = (pool ?? []).filter(isScoring);
+    if (goals.length) break;
+  }
+  const penalties = (data?.plays ?? []).filter((p) => /penalty/i.test(p?.type?.text ?? '') && !isScoring(p));
+  return { goals: goals.map(playOf), penalties: penalties.map(playOf) };
+}
+
+/**
+ * Tout ce que la fenêtre « Match » affiche, à partir du résumé d'ESPN :
+ * pointage par période, statistiques d'équipe, buts, pénalités, série.
+ */
+export async function fetchMatchDetail(leagueId, eventId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !eventId) throw new Error('match inconnu');
+  const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
+  const comp = data?.header?.competitions?.[0] ?? {};
+  const status = comp?.status ?? {};
+  const state = status?.type?.state ?? 'pre';
+  const playoffs = Number(data?.header?.season?.type) === 3 || !!comp?.series;
+  const competitors = comp?.competitors ?? [];
+  const homeC = competitors.find((c) => c.homeAway === 'home') ?? competitors[0];
+  const awayC = competitors.find((c) => c.homeAway === 'away') ?? competitors[1];
+  if (!homeC || !awayC) throw new Error('résumé du match illisible');
+
+  const side = (c) => ({
+    ...normalizeCompetitor(c, state),
+    logo: c?.team?.logos?.[0]?.href ?? c?.team?.logo ?? '',
+    periods: (c?.linescores ?? []).map((l) => String(l?.displayValue ?? l?.value ?? '')),
+  });
+  const frStatus = leagueId === 'nhl'
+    ? hockeyStatus({ state, period: status?.period, clock: status?.displayClock, detail: status?.type?.shortDetail }, playoffs)
+    : null;
+  const home = side(homeC);
+  const away = side(awayC);
+  return {
+    id: String(eventId),
+    leagueId,
+    state,
+    playoffs,
+    statusText: frStatus ?? status?.type?.shortDetail ?? '',
+    clock: state === 'in' && !frStatus?.startsWith('Fin de') ? status?.displayClock ?? '' : '',
+    startsAt: comp?.date ? new Date(comp.date) : null,
+    home,
+    away,
+    stats: teamStats(data, leagueId, home.id, away.id),
+    ...keyPlays(data),
+    series: seriesInfo(comp, homeC, awayC),
+    venue: data?.gameInfo?.venue?.fullName ?? '',
+    link: pickLink(data?.header) || '',
+  };
+}
+
+/* ---------- Classements ---------- */
+
+const GROUP_FR = [
+  [/eastern/i, "Association de l'Est"], [/western/i, "Association de l'Ouest"],
+  [/atlantic/i, 'Atlantique'], [/metropolitan/i, 'Métropolitaine'], [/central/i, 'Centrale'],
+  [/pacific/i, 'Pacifique'], [/american league|^al\b/i, 'Ligue américaine'], [/national league|^nl\b/i, 'Ligue nationale'],
+];
+const groupFr = (name) => GROUP_FR.find(([re]) => re.test(name ?? ''))?.[1] ?? name ?? '';
+
+const standingsCache = new Map(); // idLigue -> { at, table }
+const STANDINGS_TTL = 60 * 60 * 1000;
+
+/** Rang de chaque équipe dans son groupe, trié comme ESPN le calcule. */
+function rankEntries(entries) {
+  const stat = (e, n) => e?.stats?.find((s) => s?.name === n)?.value;
+  const seeded = entries.every((e) => Number.isFinite(stat(e, 'playoffSeed')));
+  const key = seeded ? null : entries.some((e) => Number.isFinite(stat(e, 'points'))) ? 'points' : 'winPercent';
+  const sorted = seeded
+    ? [...entries].sort((a, b) => stat(a, 'playoffSeed') - stat(b, 'playoffSeed'))
+    : [...entries].sort((a, b) => (stat(b, key) ?? 0) - (stat(a, key) ?? 0));
+  return sorted;
+}
+
+/**
+ * Classement d'une ligue : Map idÉquipe -> { rank, group, points }. Vide si
+ * ESPN ne le fournit pas à l'app (adresse différente de celle des scores).
+ */
+export async function fetchStandings(leagueId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || league.kind !== 'team') return new Map();
+  const hit = standingsCache.get(leagueId);
+  if (hit && Date.now() - hit.at < STANDINGS_TTL) return hit.table;
+
+  const table = new Map();
+  try {
+    const data = await viaPage(`https://site.api.espn.com/apis/v2/sports/${league.path}/standings`);
+    const walk = (node) => {
+      const entries = node?.standings?.entries;
+      if (entries?.length) {
+        rankEntries(entries).forEach((e, i) => {
+          const id = String(e?.team?.id ?? '');
+          const pts = e?.stats?.find((s) => s?.name === 'points')?.displayValue ?? '';
+          if (id) table.set(id, { rank: i + 1, group: groupFr(node?.name), points: pts });
+        });
+      }
+      (node?.children ?? []).forEach(walk);
+    };
+    walk(data);
+  } catch { /* classement indisponible : la fenêtre s'en passe */ }
+  standingsCache.set(leagueId, { at: Date.now(), table });
+  return table;
+}
+
+/* ---------- Pilotes de F1 (réglages) ---------- */
+
+const DRIVERS_KEY = 'sports-counter.drivers.f1.v1';
+const FULL_GRID = 20;
+
+/**
+ * Pilotes de la saison, pour choisir son favori. Tirés des séances : celles
+ * du week-end en cours, sinon des Grands Prix précédents.
+ */
+export async function fetchDrivers() {
+  try {
+    const { at, drivers } = JSON.parse(localStorage.getItem(DRIVERS_KEY) ?? 'null') ?? {};
+    if (drivers?.length >= FULL_GRID && Date.now() - at < TEAMS_TTL) return drivers;
+  } catch { /* cache illisible */ }
+
+  const league = LEAGUES_BY_ID.f1;
+  const found = new Map();
+  const absorb = (data) => {
+    for (const ev of data?.events ?? []) {
+      for (const comp of ev?.competitions ?? []) {
+        (comp?.competitors ?? []).forEach((c, i) => {
+          const d = toDriver(c, i);
+          if (d.id && d.name && !found.has(d.id)) found.set(d.id, { id: d.id, name: d.name, short: d.short, photo: d.photo, team: d.team });
+        });
+      }
+    }
+  };
+  let lastErr = null;
+  try { absorb(await getJson(`${league.path}/scoreboard`)); } catch (err) { lastErr = err; }
+  // Entre deux Grands Prix, on remonte le calendrier par tranches d'un mois.
+  for (let end = 0; end > -240 && found.size < FULL_GRID; end -= 30) {
+    try { absorb(await getJson(`${league.path}/scoreboard`, `?dates=${ymd(end - 29)}-${ymd(end)}`)); } catch (err) { lastErr = err; }
+  }
+  if (!found.size) throw lastErr ?? new Error('aucun pilote trouvé');
+
+  const drivers = [...found.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  if (drivers.length >= FULL_GRID) {
+    try { localStorage.setItem(DRIVERS_KEY, JSON.stringify({ at: Date.now(), drivers })); } catch { /* plein */ }
+  }
+  return drivers;
 }
 
 /** Données factices : aperçu navigateur et première ouverture hors ligne. */

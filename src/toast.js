@@ -46,6 +46,8 @@ function render(t) {
     return;
   }
   el.icon.innerHTML = crestHtml(t.team ?? { abbr: '•' }, 'crest');
+  // Photo de pilote : ronde, recadrée sur le visage.
+  if (t.team?.round) el.icon.firstElementChild?.classList.add('crest--round');
   bindCrests(el.icon);
   el.title.textContent = t.title ?? '';
   el.body.textContent = t.body ?? '';

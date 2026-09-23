@@ -120,6 +120,8 @@ body {
 /* ---------- Panneau de droite ---------- */
 
 .panel { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+/* `display: flex` l'emporterait sur l'attribut `hidden`. */
+.panel[hidden] { display: none; }
 
 .toolbar {
   padding: 12px 16px;
@@ -231,43 +233,127 @@ span.crest-sm {
 
 /* Trois colonnes serrées : les options tiennent sur trois lignes et laissent
    la place à la liste des équipes. */
-.options {
-  border-top: 1px solid var(--border);
-  padding: 8px 14px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px 14px;
-  flex-shrink: 0;
+/* ---------- Section Réglages ---------- */
+
+.nav-sep { height: 1px; background: var(--border); margin: 8px 6px; }
+.league--prefs svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.prefs { overflow-y: auto; padding: 14px 18px 18px; gap: 16px; }
+
+.prefs__group h2 {
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 6px 2px;
+}
+
+.prefs__group {
+  display: flex;
+  flex-direction: column;
   background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px 6px;
 }
 
-.opt { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-muted); min-width: 0; white-space: nowrap; }
-.opt label { cursor: pointer; }
-.opt input[type="number"] {
-  width: 44px; padding: 2px 6px;
-  font: inherit; font-size: 12px;
-  color: var(--text); background: var(--panel-2);
-  border: 1px solid var(--border); border-radius: 7px; outline: none;
+.pref {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  cursor: default;
 }
-.opt input[type="range"] { flex: 1; accent-color: var(--accent); }
-.opt input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+.prefs__group h2 + .pref { border-top: none; }
+label.pref { cursor: pointer; }
 
-.opt--wide { grid-column: span 2; }
+.pref__txt { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; cursor: inherit; }
+.pref__txt b { font-size: 12.5px; font-weight: 600; }
+.pref__txt small { font-size: 11px; color: var(--text-faint); }
 
-.opt select {
-  flex: 1;
-  padding: 3px 6px;
+.pref select, .pref input[type="number"] {
+  padding: 5px 8px;
   font: inherit;
-  font-size: 11.5px;
-  min-width: 0;
+  font-size: 12px;
   color: var(--text);
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 8px;
   outline: none;
+  min-width: 150px;
 }
+.pref input[type="number"] { min-width: 0; width: 64px; }
+.pref select:disabled { opacity: 0.5; }
+.pref input[type="range"] { width: 170px; accent-color: var(--accent); }
 
-.opt input:disabled + label { opacity: 0.45; }
+/* Interrupteur : une case à cocher habillée. */
+.switch {
+  appearance: none;
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.14);
+  position: relative;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 140ms ease;
+}
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(14px); }
+.switch:disabled { opacity: 0.4; cursor: default; }
+
+/* Choix en segments (taille du widget). */
+.seg { display: flex; border: 1px solid var(--border-strong); border-radius: 9px; overflow: hidden; }
+.seg button {
+  padding: 5px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--border-strong); }
+.seg button:hover { color: var(--text); }
+.seg .seg--on { background: var(--accent); color: #06111f; }
+
+.favline { display: flex; align-items: center; gap: 6px; color: var(--text-muted) !important; }
+
+/* ---------- Pilotes de F1 ---------- */
+
+.subhead {
+  margin: 14px 10px 6px;
+  font-size: 12px;
+  font-weight: 650;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.subhead small { font-size: 11px; font-weight: 400; color: var(--text-faint); }
+
+.check--round { border-radius: 50%; }
+
+.face-sm, .face-xs {
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+.face-sm { width: 30px; height: 30px; }
+.face-xs { width: 18px; height: 18px; }
 
 .ghost--small { padding: 3px 9px; font-size: 11px; margin-left: 4px; }
 

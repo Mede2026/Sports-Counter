@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sports Counter — Match</title>
+  <link rel="stylesheet" href="match.css" />
+</head>
+<body>
+  <div class="head" data-tauri-drag-region>
+    <span class="chip" id="chip" data-tauri-drag-region></span>
+    <span class="head__title" id="headTitle" data-tauri-drag-region>Match</span>
+    <button class="ghost" id="btnEspn" type="button" hidden>Ouvrir sur ESPN</button>
+    <button class="close" id="btnClose" title="Fermer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 6 6 18" /><path d="m6 6 12 12" />
+      </svg>
+    </button>
+  </div>
+  <main class="main" id="main">
+    <div class="state">Chargement…</div>
+  </main>
+  <script type="module" src="match.js"></script>
+</body>
+</html>

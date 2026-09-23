@@ -39,12 +39,22 @@ const LOGOS = {
   ),
 };
 
+// Classement factice d'une course (aperçu seulement).
+const DEMO_GRID = [
+  ['demo-ant', 'Andrea Kimi Antonelli', 'K. Antonelli', 'Mercedes'],
+  ['demo-rus', 'George Russell', 'G. Russell', 'Mercedes'],
+  ['demo-ver', 'Max Verstappen', 'M. Verstappen', 'Red Bull'],
+  ['demo-nor', 'Lando Norris', 'L. Norris', 'McLaren'],
+  ['demo-lec', 'Charles Leclerc', 'C. Leclerc', 'Ferrari'],
+  ['demo-pia', 'Oscar Piastri', 'O. Piastri', 'McLaren'],
+].map(([id, name, short, team], i) => ({ id, pos: i + 1, name, short, team, photo: '' }));
+
 export const DEMO_EVENTS = [
   {
     id: 'demo-nhl-1', leagueId: 'nhl', kind: 'match', state: 'in',
     statusText: '2e période', clock: '07:42', startsAt: null,
-    home: { id: '10', abbr: 'MTL', name: 'Canadiens', logo: LOGOS.MTL, color: '#af1e2d', score: '3', winner: false },
-    away: { id: '21', abbr: 'TOR', name: 'Maple Leafs', logo: LOGOS.TOR, color: '#00205b', score: '2', winner: false },
+    home: { id: '10', abbr: 'MTL', name: 'Canadiens', logo: LOGOS.MTL, color: '#af1e2d', score: '3', winner: false, record: '12-5-3', shots: '27' },
+    away: { id: '21', abbr: 'TOR', name: 'Maple Leafs', logo: LOGOS.TOR, color: '#00205b', score: '2', winner: false, record: '10-8-2', shots: '19' },
   },
   {
     id: 'demo-nhl-2', leagueId: 'nhl', kind: 'match', state: 'post',
@@ -54,7 +64,7 @@ export const DEMO_EVENTS = [
   },
   {
     id: 'demo-nba-1', leagueId: 'nba', kind: 'match', state: 'pre',
-    statusText: '19 h 30', clock: '', startsAt: null,
+    statusText: '19 h 30', clock: '', startsAt: Date.now() + (2 * 60 + 15) * 60000,
     home: { id: '13', abbr: 'LAL', name: 'Lakers', logo: LOGOS.LAL, color: '#552583', score: '–', winner: false },
     away: { id: '2', abbr: 'BOS', name: 'Celtics', logo: LOGOS.CEL, color: '#007a33', score: '–', winner: false },
   },
@@ -62,10 +72,12 @@ export const DEMO_EVENTS = [
     id: 'demo-f1-1', leagueId: 'f1', kind: 'event', state: 'in',
     statusText: 'Tour 34 / 70', clock: '', startsAt: null, session: 'Course',
     title: 'GP du Canada',
-    top3: [
-      { pos: 1, name: 'K. Antonelli' },
-      { pos: 2, name: 'G. Russell' },
-      { pos: 3, name: 'M. Verstappen' },
+    top3: DEMO_GRID.slice(0, 3),
+    results: DEMO_GRID,
+    sessions: [
+      { label: 'Essais 1', startsAt: new Date(Date.now() - 50 * 3600e3), state: 'post' },
+      { label: 'Qualifications', startsAt: new Date(Date.now() - 24 * 3600e3), state: 'post' },
+      { label: 'Course', startsAt: new Date(Date.now() - 3600e3), state: 'in' },
     ],
   },
 ];

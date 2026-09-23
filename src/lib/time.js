@@ -1,0 +1,43 @@
+// Heures et comptes à rebours, à la québécoise.
+
+const DAY_FMT = new Intl.DateTimeFormat('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' });
+const SHORT_DAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'short' });
+export const TIME_FMT = new Intl.DateTimeFormat('fr-CA', { hour: 'numeric', minute: '2-digit' });
+
+export const isDate = (d) => d instanceof Date && !isNaN(d);
+
+/** « Aujourd'hui · 19 h 00 », « Demain · 13 h 30 », « sam. 27 sept. · 19 h 00 ». */
+export function whenText(date, now = new Date()) {
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const day =
+    date.toDateString() === now.toDateString() ? "Aujourd'hui"
+    : date.toDateString() === tomorrow.toDateString() ? 'Demain'
+    : DAY_FMT.format(date);
+  return `${day} · ${TIME_FMT.format(date)}`;
+}
+
+/** Heure de départ courte : « 19 h 00 », ou « sam. 19 h 00 » un autre jour. */
+export function shortWhen(date, now = new Date()) {
+  if (!isDate(date)) return '';
+  const time = TIME_FMT.format(date);
+  return date.toDateString() === now.toDateString() ? time : `${SHORT_DAY.format(date)} ${time}`;
+}
+
+/**
+ * Temps avant le départ : « dans 42 min », « dans 2 h 15 », « dans 3 j ».
+ * `short` retire le « dans » (mode compact). Vide une fois l'heure passée.
+ */
+export function untilText(date, now = Date.now(), short = false) {
+  if (!isDate(date)) return '';
+  const min = Math.ceil((date.getTime() - now) / 60000);
+  if (min <= 0) return '';
+  const pre = short ? '' : 'dans ';
+  if (min < 60) return `${pre}${min} min`;
+  if (min < 24 * 60) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m ? `${pre}${h} h ${String(m).padStart(2, '0')}` : `${pre}${h} h`;
+  }
+  return `${pre}${Math.round(min / (24 * 60))} j`;
+}

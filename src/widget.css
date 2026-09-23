@@ -112,12 +112,15 @@ html, body {
 .game {
   padding: 11px 14px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  animation: rise 240ms ease both;
 }
+
+/* Animation d'entrée : seulement pour une carte qui vient d'apparaître, pas
+   à chaque rafraîchissement. */
+.game--new { animation: rise 240ms ease both; }
 
 .game:last-child { border-bottom: none; }
 
-/* Carte cliquable : ouvre la page du match sur ESPN. */
+/* Carte cliquable : ouvre la fenêtre de détail du match. */
 .game--link {
   cursor: pointer;
   transition: background 120ms ease;
@@ -160,6 +163,9 @@ html, body {
 }
 
 .status--live { color: var(--live); font-weight: 600; }
+
+/* Compte à rebours avant le départ. */
+.until { color: #7bd88f; font-weight: 650; }
 
 .dot {
   width: 6px;
@@ -236,6 +242,14 @@ span.crest {
   flex: 1;
 }
 
+.team__rec {
+  margin-left: 4px;
+  font-size: 10px;
+  color: var(--text-faint);
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
 .team__score {
   font-size: 17px;
   font-weight: 700;
@@ -258,38 +272,70 @@ span.crest {
 .event { display: flex; align-items: center; gap: 9px; padding: 3px 0; }
 .event__title { font-size: 13px; font-weight: 650; flex: 1; }
 
-/* Top 3 d'une séance de F1 */
+/* Top 3 d'une séance de F1, avec médailles */
 .podium {
   list-style: none;
-  margin: 8px 0 0 37px;
+  margin: 8px 0 0 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .podium li {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   font-size: 12px;
   font-weight: 550;
+  min-height: 20px;
+}
+
+.podium__medal {
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .podium__pos {
-  width: 17px;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
   height: 17px;
   border-radius: 5px;
-  display: grid;
-  place-items: center;
   font-size: 10px;
   font-weight: 800;
-  color: #16171c;
+  background: rgba(255, 255, 255, 0.12);
   font-variant-numeric: tabular-nums;
 }
 
-.podium__pos--1 { background: #f2c55c; }
-.podium__pos--2 { background: #c9ced6; }
-.podium__pos--3 { background: #d0925a; }
+/* Pilote favori : en couleur F1, avec sa photo. */
+.podium__fav { color: #ff6b5b; font-weight: 750; }
+.podium__extra { margin-top: 3px; padding-top: 4px; border-top: 1px dashed rgba(255, 255, 255, 0.1); }
+
+.face {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: top;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+/* Tirs au but (hockey) */
+.shots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.shots span { flex: 1; }
+.shots b { color: var(--text-muted); font-weight: 650; min-width: 16px; text-align: center; }
+.shots i { width: 1px; height: 10px; background: rgba(255, 255, 255, 0.2); }
 
 /* ---------- États ---------- */
 
@@ -358,7 +404,6 @@ span.crest {
   gap: 8px;
   padding: 5px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  animation: rise 240ms ease both;
 }
 
 .row:last-child { border-bottom: none; }

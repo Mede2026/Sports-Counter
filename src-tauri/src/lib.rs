@@ -30,6 +30,7 @@ const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreen
 const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
 const TOAST: &str = "toast";
+const MATCH: &str = "match";
 
 /// Largeur du widget, en pixels logiques.
 const WIDGET_WIDTH: f64 = 300.0;
@@ -118,6 +119,45 @@ async fn espn_get(path: String) -> Result<String, String> {
     res.text()
         .await
         .map_err(|e| format!("lecture : {e}\n{url}"))
+}
+
+/// Identifiant de ligue ou de match venu de l'interface : lettres, chiffres,
+/// tirets seulement (il finit dans un script injecté dans la page).
+fn id_is_safe(s: &str) -> bool {
+    !s.is_empty() && s.len() <= 40 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
+/// Ouvre la fenêtre « Match » sur un match, ou y bascule si elle est déjà
+/// ouverte. Le match voulu est passé à la page par un petit script.
+#[tauri::command]
+async fn open_match(app: AppHandle, league: String, event: String) -> Result<(), String> {
+    if !id_is_safe(&league) || !id_is_safe(&event) {
+        return Err("match invalide".into());
+    }
+    let target = serde_json::json!({ "league": league, "event": event });
+
+    if let Some(win) = app.get_webview_window(MATCH) {
+        let _ = app.emit_to(MATCH, "match-open", target);
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+
+    let win = WebviewWindowBuilder::new(&app, MATCH, WebviewUrl::App("match.html".into()))
+        .title("Sports Counter — Match")
+        .initialization_script(format!("window.__MATCH__ = {target};"))
+        .inner_size(400.0, 640.0)
+        .min_inner_size(340.0, 420.0)
+        .decorations(false)
+        .transparent(false)
+        .additional_browser_args(BROWSER_ARGS)
+        .resizable(true)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let _ = win.set_focus();
+    Ok(())
 }
 
 /// Ouvre la fenêtre de réglages, ou la ramène devant si elle existe déjà.
@@ -743,6 +783,7 @@ pub fn run() {
             set_hide_fullscreen,
             set_widget_on_top,
             open_espn,
+            open_match,
             notify,
             show_toast,
             app_version,

@@ -27,6 +27,12 @@ const DEFAULTS = {
   // notifications passent devant), 'live' (pendant un match seulement),
   // 'never' (notifications seulement).
   widgetMode: 'always',
+  // Taille du widget : 's' (petit), 'm' (moyen), 'l' (grand).
+  widgetSize: 'm',
+  // Rappel avant le début d'un match ou d'une séance, en minutes (0 = aucun).
+  reminderMinutes: 15,
+  // Pilote de F1 favori : { id, name, short, photo } ou null.
+  favDriver: null,
 };
 
 export function loadPrefs() {

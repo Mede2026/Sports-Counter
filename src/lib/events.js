@@ -2,6 +2,7 @@
 // Module pur (sans fenêtre ni réseau) : testable isolément.
 
 import { F1_LOGO } from './f1-logo.js';
+import { sameDriver } from './api.js';
 
 // Ligues où chaque point mérite une notification. Au basket, le score change
 // toutes les vingt secondes : on s'en tient au début et à la fin du match.
@@ -18,19 +19,28 @@ const num = (s) => {
 
 const scoreLine = (g) => `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}`;
 
+/** Position du pilote favori dans la séance, ou null. */
+export function favPosition(g, favDriver) {
+  if (!favDriver) return null;
+  return (g.results ?? g.top3 ?? []).find((d) => sameDriver(d, favDriver))?.pos ?? null;
+}
+
 /** Ce qu'il faut retenir d'un match pour le comparer au relevé suivant. */
-export function snapshot(g) {
+export function snapshot(g, opts = {}) {
   return g.kind === 'match'
     ? { state: g.state, home: g.home.score, away: g.away.score }
-    : { state: g.state, session: g.session ?? '' };
+    : { state: g.state, session: g.session ?? '', favPos: favPosition(g, opts.favDriver) };
 }
 
 /** Met à jour le relevé : les matchs absents cette fois sont conservés. */
-export function remember(prev, games) {
+export function remember(prev, games, opts = {}) {
   const next = new Map(prev ?? []);
-  for (const g of games) next.set(g.id, snapshot(g));
+  for (const g of games) next.set(g.id, snapshot(g, opts));
   return next;
 }
+
+const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
+const place = (n) => (n === 1 ? '1er' : `${n}e`);
 
 function matchEvents(g, before) {
   const out = [];
@@ -75,25 +85,42 @@ function matchEvents(g, before) {
   return out;
 }
 
-function sessionEvents(g, before) {
+function sessionEvents(g, before, opts = {}) {
   const out = [];
   const link = g.link ?? '';
   const team = { abbr: 'F1', logo: g.logo || F1_LOGO, color: '#ff4d6d' };
+  const fav = opts.favDriver;
+  const favTeam = fav?.photo ? { abbr: 'F1', logo: fav.photo, color: '#ff4d6d', round: true } : team;
+  const favName = fav?.short || fav?.name || '';
+  const nowPos = favPosition(g, fav);
 
   // Une séance qui était en cours ne l'est plus : elle est finie, même si le
   // widget affiche maintenant la suivante (état « à venir »).
   if (before.state === 'in' && g.state !== 'in') {
     const ended = before.session || 'La séance';
     const first = g.state === 'post' ? g.top3?.[0] : null;
-    out.push({
-      title: `${ended} terminée`,
-      body: first ? `1. ${first.name} · ${g.title}` : g.title,
-      team,
-      link,
-    });
+    // Position finale du favori : celle du résultat, sinon la dernière vue en direct.
+    const favPos = g.state === 'post' ? nowPos : before.favPos;
+    if (fav && favPos && favPos <= 3) {
+      const race = /course|sprint/i.test(ended);
+      out.push({
+        title: favPos === 1 && race ? `${MEDALS[1]} Victoire de ${favName} !` : `${MEDALS[favPos]} ${favName} termine ${place(favPos)}`,
+        body: `${ended} · ${g.title}`,
+        team: favTeam,
+        link,
+      });
+    } else {
+      const parts = [first ? `1. ${first.short || first.name}` : '', fav && favPos ? `${favName} ${place(favPos)}` : '', g.title];
+      out.push({ title: `${ended} terminée`, body: parts.filter(Boolean).join(' · '), team, link });
+    }
   }
   if (g.state === 'in' && (before.state !== 'in' || before.session !== g.session)) {
     out.push({ title: `${g.session || 'Séance'} : c'est parti`, body: g.title, team, link });
+  }
+  // Le favori passe en tête pendant la séance.
+  if (g.state === 'in' && before.state === 'in' && before.session === g.session
+      && nowPos === 1 && before.favPos !== 1) {
+    out.push({ title: `${favName} prend la tête !`, body: `${g.session} · ${g.title}`, team: favTeam, link });
   }
   return out;
 }
@@ -102,13 +129,13 @@ function sessionEvents(g, before) {
  * Évènements survenus entre deux relevés. `prev` à null (premier relevé) ne
  * donne rien : on ne notifie pas l'état trouvé au démarrage.
  */
-export function detectEvents(prev, games) {
+export function detectEvents(prev, games, opts = {}) {
   if (!prev) return [];
   const out = [];
   for (const g of games) {
     const before = prev.get(g.id);
     if (!before) continue; // match apparu : rien n'a « changé »
-    out.push(...(g.kind === 'match' ? matchEvents(g, before) : sessionEvents(g, before)));
+    out.push(...(g.kind === 'match' ? matchEvents(g, before) : sessionEvents(g, before, opts)));
   }
   return out.slice(-MAX_PER_REFRESH);
 }

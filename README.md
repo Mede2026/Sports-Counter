@@ -21,10 +21,20 @@ seulement les équipes que tu choisis.
 - **Rafraîchissement adaptatif** : toutes les 25 s pendant un match, toutes les 5 min sinon.
 - **Prochain match** : une équipe favorite qui ne joue pas aujourd'hui montre
   quand même son prochain match (jusqu'à 10 jours).
-- **F1** : la séance en cours ou la prochaine, et le **top 3** pendant et
-  après chaque séance.
+- **F1** : la séance en cours ou la prochaine, et le **top 3** 🥇🥈🥉 pendant
+  et après chaque séance. **Pilote favori** au choix (avec sa photo) : mis en
+  évidence, sa position affichée même hors du podium, et une notification
+  s'il prend la tête ou termine sur le podium.
+- **Compte à rebours** avant chaque match ou séance (« dans 2 h 15 »), et
+  **rappel** par notification 5, 15, 30 ou 60 min avant (au choix).
+- **Fiche des équipes** (victoires-défaites) et **tirs au but** au hockey.
 - **Couleurs de ton équipe** sur la bordure du widget.
-- **Clic sur un match** : ouvre sa page sur ESPN.
+- **Clic sur un match** : ouvre la **fenêtre Match** — pointage par période,
+  buts avec les passes, statistiques face à face, pénalités, classement des
+  deux équipes. En F1 : classement complet, ton pilote, programme du
+  week-end. Un bouton y ouvre aussi la page ESPN.
+- **Taille du widget** : petit, moyen ou grand.
+- **Section Réglages** dans la fenêtre des réglages, rangée par thèmes.
 - **Démarre avec Windows** et **se cache pendant les jeux en plein écran**
   (deux cases dans les réglages).
 - **Mises à jour** : l'app en cherche toute seule et **demande avant
@@ -150,7 +160,10 @@ Tu peux aussi ouvrir `src/index.html?demo` via n'importe quel serveur local.
 | Chemin | Rôle |
 |---|---|
 | `src/index.html`, `widget.js`, `widget.css` | le widget lui-même |
-| `src/settings.html`, `settings.js`, `settings.css` | le choix des équipes et les options |
+| `src/settings.html`, `settings.js`, `settings.css` | le choix des équipes, du pilote et la section Réglages |
+| `src/match.html`, `match.js`, `match.css` | la fenêtre de détail d'un match |
+| `src/lib/time.js` | heures et comptes à rebours |
+| `src/lib/f1-logo.js` | logo de la F1, intégré à l'app |
 | `src/lib/api.js` | appels à ESPN et mise en forme des données |
 | `src/lib/leagues.js` | catalogue des ligues |
 | `src/lib/store.js` | préférences, dans `localStorage` |
