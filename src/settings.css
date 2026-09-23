@@ -360,10 +360,19 @@ label.pref { cursor: pointer; }
 
 /* Version installée et bouton de mise à jour, dans l'en-tête. */
 .version {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  padding: 2px 4px;
+  font: inherit;
   font-size: 11px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
 }
+.version:hover { color: var(--accent); text-decoration: underline dotted; }
 
 .ghost--ok { color: #7bd88f; border-color: rgba(123, 216, 143, 0.45); }
 .ghost--busy { opacity: 0.7; cursor: progress; }

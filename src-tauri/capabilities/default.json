@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions du widget, des réglages, de la notification et de la fenêtre de match.",
+  "description": "Permissions du widget, des réglages, de la notification, de la fenêtre de match et des notes de mise à jour.",
   "windows": [
     "widget",
     "settings",
     "toast",
-    "match"
+    "match",
+    "notes"
   ],
   "permissions": [
     "core:default",

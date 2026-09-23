@@ -32,6 +32,7 @@ const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
 const TOAST: &str = "toast";
 const MATCH: &str = "match";
+const NOTES: &str = "notes";
 
 /// Largeur du widget, en pixels logiques.
 const WIDGET_WIDTH: f64 = 300.0;
@@ -209,6 +210,37 @@ fn set_shortcuts(app: AppHandle, toggle: String, match_key: String) -> Result<()
         }
     }
     *current = [Some(new[0]), Some(new[1])];
+    Ok(())
+}
+
+/// Ouvre l'écran « Notes de mise à jour ». `since` : dernière version vue
+/// (vide si inconnue) ; l'écran montre tout ce qui est arrivé depuis.
+#[tauri::command]
+async fn open_notes(app: AppHandle, since: String) -> Result<(), String> {
+    if since.len() > 20 || !since.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        return Err("version invalide".into());
+    }
+    if let Some(win) = app.get_webview_window(NOTES) {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        return Ok(());
+    }
+    let opts =
+        serde_json::json!({ "since": since, "current": app.package_info().version.to_string() });
+    let win = WebviewWindowBuilder::new(&app, NOTES, WebviewUrl::App("notes.html".into()))
+        .title("Sports Counter — Notes de mise à jour")
+        .initialization_script(format!("window.__NOTES__ = {opts};"))
+        .inner_size(440.0, 500.0)
+        .min_inner_size(360.0, 360.0)
+        .decorations(false)
+        .transparent(false)
+        .additional_browser_args(BROWSER_ARGS)
+        .resizable(true)
+        .center()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let _ = win.set_focus();
     Ok(())
 }
 
@@ -810,7 +842,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::default()
                 .with_state_flags(tauri_plugin_window_state::StateFlags::POSITION)
-                .with_denylist(&[TOAST])
+                .with_denylist(&[TOAST, NOTES])
                 .build(),
         )
         .plugin(
@@ -843,6 +875,7 @@ pub fn run() {
             set_shortcuts,
             open_espn,
             open_match,
+            open_notes,
             notify,
             show_toast,
             app_version,

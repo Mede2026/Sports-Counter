@@ -38,6 +38,9 @@ seulement les équipes que tu choisis.
 - **Calendrier** : matchs de tes équipes et Grands Prix, d'aujourd'hui à
   dans 30 jours.
 - **Thème** du widget et des notifications : sombre, clair ou comme Windows.
+- **Notes de mise à jour** : après chaque mise à jour, un écran résume les
+  nouveautés en quelques phrases (à revoir en cliquant sur la version dans
+  les réglages). Elles se trouvent dans `src/lib/changelog.js`.
 - **Sans Internet** : le widget le dit clairement (« vérifie ta connexion
   Internet »), garde les derniers scores connus et réessaie tout seul.
 - **Couleurs de ton équipe** sur la bordure du widget.

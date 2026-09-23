@@ -1,0 +1,92 @@
+:root {
+  --bg: #0e1016;
+  --panel: #151822;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #f2f4f8;
+  --text-muted: rgba(242, 244, 248, 0.62);
+  --text-faint: rgba(242, 244, 248, 0.38);
+  --accent: #4aa3ff;
+  --font: "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  padding: 10px 10px 10px 16px;
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+.head__title { flex: 1; font-size: 12px; font-weight: 650; color: var(--text-faint); letter-spacing: 0.04em; }
+
+.close {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border: none; border-radius: 7px;
+  background: transparent; color: var(--text-muted);
+  cursor: pointer;
+}
+.close:hover { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+.close svg { width: 14px; height: 14px; }
+
+.main { flex: 1; overflow-y: auto; padding: 20px 22px 8px; }
+
+.rel h1 { font-size: 19px; font-weight: 750; letter-spacing: -0.01em; margin-bottom: 14px; }
+.rel .ver { color: var(--accent); }
+.rel ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.rel li {
+  font-size: 13.5px;
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  animation: rise 260ms ease both;
+}
+.rel li:nth-child(2) { animation-delay: 60ms; }
+.rel li:nth-child(3) { animation-delay: 120ms; }
+.rel li:nth-child(4) { animation-delay: 180ms; }
+.rel li:nth-child(5) { animation-delay: 240ms; }
+.rel li:nth-child(6) { animation-delay: 300ms; }
+
+/* Versions sautées : plus petites, sous la version actuelle. */
+.rel--old { margin-top: 22px; opacity: 0.75; }
+.rel--old h1 { font-size: 14px; margin-bottom: 10px; }
+.rel--old li { font-size: 12.5px; padding: 8px 11px; animation: none; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.empty { color: var(--text-faint); font-size: 13px; }
+
+.foot { padding: 12px 22px 18px; display: flex; justify-content: flex-end; }
+.btn {
+  padding: 8px 18px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #06111f;
+  background: var(--accent);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.btn:hover { filter: brightness(1.1); }

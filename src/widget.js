@@ -733,7 +733,7 @@ document.getElementById('btnHide').addEventListener('click', hideWidget);
 
 // Les réglages écrivent dans localStorage : on recharge dès qu'ils changent.
 window.addEventListener('storage', (e) => {
-  if (!e.key?.startsWith('sports-counter.') || e.key === REMINDED_KEY) return;
+  if (!e.key?.startsWith('sports-counter.') || e.key === REMINDED_KEY || e.key === 'sports-counter.lastVersion') return;
   if (e.key.startsWith('sports-counter.teams.') || e.key.startsWith('sports-counter.drivers.')) return;
   prefs = loadPrefs();
   shownByMode = undefined; // réglage peut-être changé : réappliquer
@@ -748,6 +748,26 @@ window.addEventListener('online', () => refresh(true));
 syncFullscreenOption();
 setInterval(tick, TICK_MS);
 
+/* ---------- Notes de mise à jour ---------- */
+
+const SEEN_KEY = 'sports-counter.lastVersion';
+
+/**
+ * Première ouverture après une mise à jour : l'écran « Notes de mise à
+ * jour ». Rien au tout premier lancement (pas encore de réglages).
+ */
+async function showNotesIfUpdated() {
+  const { invoke } = window.__TAURI__.core;
+  let version;
+  try { version = await invoke('app_version'); } catch { return; }
+  let seen = null;
+  try { seen = localStorage.getItem(SEEN_KEY); localStorage.setItem(SEEN_KEY, version); } catch { return; }
+  if (seen === version) return;
+  const firstRun = !seen && !localStorage.getItem('sports-counter.prefs.v1');
+  if (firstRun) return;
+  invoke('open_notes', { since: seen ?? '' }).catch(() => {});
+}
+
 /** Ctrl + Alt + M : fenêtre Match du match en cours, sinon du prochain. */
 async function openCurrentMatch() {
   const game = followed.find((g) => g.state === 'in') ?? followed.find((g) => g.state === 'pre') ?? followed[0];
@@ -760,6 +780,7 @@ async function openCurrentMatch() {
 if (inTauri()) {
   window.__TAURI__.event.listen('snapped', (e) => flashEdges(e.payload));
   window.__TAURI__.event.listen('shortcut-match', openCurrentMatch);
+  showNotesIfUpdated();
   // Le widget démarre caché. « Toujours » : on l'affiche tout de suite.
   // « Pendant un match » : on attend le premier relevé pour savoir.
   if ((prefs.widgetMode ?? 'always') !== 'live') applyWidgetMode(false);

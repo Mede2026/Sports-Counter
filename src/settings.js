@@ -834,6 +834,11 @@ async function onUpdateClick() {
 }
 
 document.getElementById('btnUpdate').addEventListener('click', onUpdateClick);
+// Clic sur le numéro de version : les notes de mise à jour de cette version.
+document.getElementById('appVersion').addEventListener('click', async () => {
+  if (!inTauri()) { window.open('notes.html', '_blank'); return; }
+  try { await window.__TAURI__.core.invoke('open_notes', { since: '' }); } catch { /* ancienne version */ }
+});
 document.getElementById('btnUpdateLater').addEventListener('click', () => resetUpdateButton());
 showVersion();
 
