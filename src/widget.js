@@ -1,4 +1,4 @@
-import { fetchScoreboard, fetchNextGames, demoEvents, LOOKAHEAD_DAYS } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, fetchScorer, demoEvents, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText } from './lib/err.js';
@@ -77,7 +77,64 @@ function podiumHtml(top3) {
 
 const attr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+const SHORT_DAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'short' });
+
+/** Heure de départ courte pour le mode compact : « 19 h 00 », « sam. 19 h 00 ». */
+function shortWhen(date) {
+  if (!(date instanceof Date) || isNaN(date)) return '';
+  const time = TIME_FMT.format(date);
+  return date.toDateString() === new Date().toDateString() ? time : `${SHORT_DAY.format(date)} ${time}`;
+}
+
+function scoreSpan(game, team) {
+  const key = `${game.id}:${team.id}`;
+  const prev = lastScores.get(key);
+  const bumped = prev !== undefined && prev !== team.score && game.state === 'in';
+  lastScores.set(key, team.score);
+  return `<span class="row__score${bumped ? ' team__score--bump' : ''}">${team.score}</span>`;
+}
+
+/**
+ * Mode compact : une seule ligne par match — logo, pointage | pointage,
+ * logo. L'équipe favorite à gauche. Match à venir : l'heure au milieu.
+ * En direct, la barre de séparation est rouge. Le détail est en infobulle.
+ */
+function compactCard(game) {
+  const league = LEAGUES_BY_ID[game.leagueId];
+  const status = [game.session, game.clock, game.statusText, game.series?.text].filter(Boolean).join(' · ');
+  const tip = game.link ? `${status} — cliquer pour ouvrir sur ESPN` : status;
+  const link = game.link ? ` data-link="${attr(game.link)}"` : '';
+  const cls = `row${game.link ? ' game--link' : ''}${game.state === 'in' ? ' row--live' : ''}`;
+
+  if (game.kind === 'event') {
+    const when = game.state === 'pre'
+      ? shortWhen(game.startsAt) || game.statusText
+      : game.session || game.statusText;
+    return `<div class="${cls} game" title="${attr(tip)}"${link}>
+      ${crestHtml({ logo: game.logo, abbr: league?.short ?? '?', color: league?.accent })}
+      <span class="row__event">${when}</span>
+    </div>`;
+  }
+
+  const fav = (t) => prefs.favorites.includes(`${game.leagueId}:${t.id}`);
+  const [a, b] = fav(game.home) && !fav(game.away) ? [game.home, game.away] : [game.away, game.home];
+  const middle = game.state === 'pre'
+    ? `<span class="row__when">${shortWhen(game.startsAt) || game.statusText}</span>`
+    : `${scoreSpan(game, a)}<span class="row__sep"></span>${scoreSpan(game, b)}`;
+  return `<div class="${cls} game" title="${attr(tip)}"${link}>
+    ${crestHtml(a)}${middle}${crestHtml(b)}
+  </div>`;
+}
+
+/** Séries éliminatoires : « 1re ronde · Match 5 · MTL mène la série 3-2 ». */
+function seriesLine(series) {
+  if (!series) return '';
+  const parts = [series.round, series.game ? `Match ${series.game}` : '', series.text].filter(Boolean);
+  return `<div class="series">${parts.join(' · ')}</div>`;
+}
+
 function gameCard(game) {
+  if (prefs.compact) return compactCard(game);
   const league = LEAGUES_BY_ID[game.leagueId];
   const open = game.link ? ` game--link" data-link="${attr(game.link)}" title="Ouvrir sur ESPN` : '';
   const head = `
@@ -99,6 +156,7 @@ function gameCard(game) {
   return `<div class="game${open}">${head}
     ${teamRow(game, game.away, done && game.home.winner)}
     ${teamRow(game, game.home, done && game.away.winner)}
+    ${seriesLine(game.series)}
   </div>`;
 }
 
@@ -121,17 +179,33 @@ function notifyEvents(games) {
   seen = remember(seen, games);
   if (!events.length || prefs.notifications === false || !inTauri()) return;
 
-  for (const e of events) {
-    const color = visibleTeamColor(e.team?.color, e.team?.alt) ?? '#4aa3ff';
-    const toast = {
-      title: e.title,
-      body: e.body,
-      link: e.link,
-      color,
-      team: { abbr: e.team?.abbr ?? '', logo: e.team?.logo ?? '', color },
-    };
-    window.__TAURI__.core.invoke('notify', { toast }).catch(() => {});
+  // L'une après l'autre, dans l'ordre : un but qui attend le nom de son
+  // buteur ne doit pas se faire doubler par un évènement survenu après lui.
+  (async () => { for (const e of events) await sendToast(e); })();
+}
+
+/** Temps maximal accordé à la recherche du buteur avant d'afficher quand même. */
+const SCORER_TIMEOUT_MS = 3000;
+
+async function sendToast(e) {
+  // But sans buteur connu : on le cherche dans le résumé du match, sans
+  // jamais retarder la notification de plus de 3 s.
+  if (e.goal) {
+    const name = await Promise.race([
+      fetchScorer(e.goal.leagueId, e.goal.eventId, e.goal.teamId),
+      new Promise((r) => setTimeout(() => r(''), SCORER_TIMEOUT_MS)),
+    ]);
+    if (name) e = { ...e, title: `But de ${name} !` };
   }
+  const color = visibleTeamColor(e.team?.color, e.team?.alt) ?? '#4aa3ff';
+  const toast = {
+    title: e.title,
+    body: e.body,
+    link: e.link,
+    color,
+    team: { abbr: e.team?.abbr ?? '', logo: e.team?.logo ?? '', color },
+  };
+  await window.__TAURI__.core.invoke('notify', { toast }).catch(() => {});
 }
 
 /** Un clic sur un match ouvre sa page ESPN dans le navigateur. */
@@ -154,6 +228,32 @@ function applyTheme() {
   el.widget.classList.toggle('widget--team', !!color);
   if (color) el.widget.style.setProperty('--team', color);
   else el.widget.style.removeProperty('--team');
+}
+
+/**
+ * Réglage « Widget » : Toujours, Pendant un match (en direct), Jamais
+ * (notifications seulement). On n'agit qu'aux changements : si tu montres ou
+ * caches le widget à la main, il le reste jusqu'au prochain début ou fin de
+ * match. Le relevé des scores continue quand il est caché.
+ */
+let shownByMode;
+function applyWidgetMode(hasLive) {
+  const mode = prefs.widgetMode ?? 'always';
+  const want = mode === 'always' ? true : mode === 'never' ? false : !!hasLive;
+  if (want === shownByMode || !inTauri()) return;
+  shownByMode = want;
+  window.__TAURI__.core.invoke('set_widget_visible', { visible: want }).catch(() => {});
+}
+
+/** L'aimant vient de coller le widget à un bord : un éclat le long de ce bord. */
+function flashEdges(edges) {
+  for (const side of ['left', 'right', 'top', 'bottom']) {
+    if (!edges?.[side]) continue;
+    const glow = document.createElement('div');
+    glow.className = `snapedge snapedge--${side}`;
+    el.widget.appendChild(glow);
+    setTimeout(() => glow.remove(), 900);
+  }
 }
 
 /** Rust surveille le plein écran ; il faut lui dire si l'option est active. */
@@ -210,11 +310,13 @@ function render(games, error) {
 /** Ajuste la hauteur de la fenêtre au contenu réel. */
 async function fitWindow() {
   if (!inTauri()) return;
-  const height = Math.ceil(el.widget.getBoundingClientRect().height);
+  const box = el.widget.getBoundingClientRect();
+  const height = Math.ceil(box.height);
+  const width = Math.ceil(box.width);
   try {
-    // Côté Rust : un widget posé en bas grandit par le haut, pour rester
-    // collé à la barre des tâches.
-    await window.__TAURI__.core.invoke('fit_widget', { height });
+    // Côté Rust : un widget collé en bas (ou à droite) grandit par le haut
+    // (ou par la gauche), pour rester collé à son bord.
+    await window.__TAURI__.core.invoke('fit_widget', { height, width });
   } catch { /* la fenêtre peut être en cours de fermeture */ }
 }
 
@@ -333,7 +435,9 @@ async function refresh() {
   const visible = all.sort(sortGames).slice(0, prefs.maxGames);
 
   render(visible, error);
-  schedule(visible.some((g) => g.state === 'in'));
+  const hasLive = visible.some((g) => g.state === 'in');
+  applyWidgetMode(hasLive);
+  schedule(hasLive);
 }
 
 function schedule(hasLive) {
@@ -361,11 +465,20 @@ document.getElementById('btnHide').addEventListener('click', hideWidget);
 window.addEventListener('storage', (e) => {
   if (!e.key?.startsWith('sports-counter.')) return;
   prefs = loadPrefs();
+  shownByMode = undefined; // réglage peut-être changé : réappliquer
+  if ((prefs.widgetMode ?? 'always') !== 'live') applyWidgetMode(false);
   syncFullscreenOption();
   refresh();
 });
 
 syncFullscreenOption();
+
+if (inTauri()) {
+  window.__TAURI__.event.listen('snapped', (e) => flashEdges(e.payload));
+  // Le widget démarre caché. « Toujours » : on l'affiche tout de suite.
+  // « Pendant un match » : on attend le premier relevé pour savoir.
+  if ((prefs.widgetMode ?? 'always') !== 'live') applyWidgetMode(false);
+}
 
 // Mode aperçu navigateur : données de démonstration, sans réseau.
 if (!inTauri() && new URLSearchParams(location.search).has('demo')) {

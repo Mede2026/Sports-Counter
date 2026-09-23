@@ -12,7 +12,6 @@ seulement les équipes que tu choisis.
 - **Déplaçable** : tu attrapes la barre du haut, la position est retenue au prochain lancement.
 - **Impossible à perdre hors de l'écran** : le widget est ramené dans la zone
   visible s'il en dépasse, et ne passe jamais sous la barre des tâches.
-- **Aimanté aux bords** : lâché à moins de 24 px d'un bord, il s'y colle.
 - **Collé en bas à gauche** au premier lancement, juste au-dessus de la barre
   des tâches. Posé dans la moitié basse de l'écran, il grandit vers le haut :
   son bord inférieur reste collé à la barre.
@@ -28,10 +27,20 @@ seulement les équipes que tu choisis.
 - **Clic sur un match** : ouvre sa page sur ESPN.
 - **Démarre avec Windows** et **se cache pendant les jeux en plein écran**
   (deux cases dans les réglages).
-- **Se met à jour tout seul** à partir de la version 0.2.0.
+- **Mises à jour** : l'app en cherche toute seule et **demande avant
+  d'installer** (« Installer » / « Plus tard ») ; bouton « Rechercher une mise
+  à jour » dans les réglages.
+- **Affichage du widget** : Toujours, Pendant un match (il apparaît quand un de
+  tes matchs est en direct), ou Jamais (notifications seulement).
+- **Mode compact** : une ligne par match — logo, pointage | pointage, logo.
+- **Séries éliminatoires de la LNH** : ronde, numéro du match, état de la série,
+  prolongations multiples ; statuts du hockey en français.
+- **Aimant** : lâché à moins de 40 px d'un bord, le widget y glisse et le bord
+  s'illumine.
 - **Notifications de l'app** : un encadré aux couleurs de l'équipe surgit
-  au-dessus du widget pour un but, un début ou une fin de match, ou une
-  séance de F1, puis disparaît après 6 s. Il ne prend jamais le clavier, se
+  au-dessus du widget (en bas à gauche s'il est caché) pour un but — avec le
+  buteur quand ESPN le fournit —, un début ou une fin de match, ou une séance
+  de F1, puis disparaît après 6 s. Il ne prend jamais le clavier, se
   tait pendant les jeux en plein écran, et un clic ouvre le match sur ESPN.
   Au basket, seulement le début et la fin : le score y change trop souvent.
 

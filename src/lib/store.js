@@ -22,6 +22,9 @@ const DEFAULTS = {
   hideFullscreen: true,
   // Notifications de l'app : buts, débuts et fins de match, séances de F1.
   notifications: true,
+  // Affichage du widget : 'always' (toujours), 'live' (pendant un match
+  // seulement), 'never' (notifications seulement).
+  widgetMode: 'always',
 };
 
 export function loadPrefs() {

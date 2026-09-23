@@ -134,3 +134,36 @@ span.crest {
   from { transform: scaleX(1); }
   to   { transform: scaleX(0); }
 }
+
+/* Proposition de mise à jour : deux boutons à la place du texte. */
+.toast__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.toast__actions[hidden] { display: none; }
+
+.btn {
+  padding: 3px 11px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.btn:hover { background: rgba(255, 255, 255, 0.15); }
+.btn--primary { background: var(--team); border-color: var(--team); color: #06111f; }
+.btn--primary:hover { filter: brightness(1.1); background: var(--team); }
+.btn:disabled { opacity: 0.6; cursor: progress; }
+
+/* Icône de mise à jour : flèche dans une pastille. */
+.crest--update {
+  background: var(--team);
+  border-radius: 9px;
+}
+.crest--update svg { width: 18px; height: 18px; color: #06111f; }

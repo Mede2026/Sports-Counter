@@ -214,6 +214,18 @@ function bindOptions() {
   fullscreen.checked = prefs.hideFullscreen !== false;
   fullscreen.addEventListener('change', () => { prefs.hideFullscreen = fullscreen.checked; savePrefs(prefs); });
 
+  const mode = document.getElementById('optWidgetMode');
+  mode.value = prefs.widgetMode ?? 'always';
+  mode.addEventListener('change', () => {
+    prefs.widgetMode = mode.value;
+    // Sans widget ni notifications, l'app ne montrerait plus rien.
+    if (mode.value === 'never' && prefs.notifications === false) {
+      prefs.notifications = true;
+      document.getElementById('optNotify').checked = true;
+    }
+    savePrefs(prefs);
+  });
+
   const notify = document.getElementById('optNotify');
   notify.checked = prefs.notifications !== false;
   notify.addEventListener('change', () => { prefs.notifications = notify.checked; savePrefs(prefs); });
@@ -281,6 +293,79 @@ document.getElementById('btnClear').addEventListener('click', () => {
   renderTeams();
   renderThemeOptions();
 });
+
+/* ---------- Mises à jour ---------- */
+
+async function showVersion() {
+  if (!inTauri()) return;
+  try {
+    const v = await window.__TAURI__.core.invoke('app_version');
+    document.getElementById('appVersion').textContent = `v${v}`;
+  } catch { /* version antérieure sans cette commande */ }
+}
+
+const UPDATE_LABEL = 'Rechercher une mise à jour';
+let pendingVersion = null; // version trouvée, en attente de « Installer »
+
+function setUpdateButton(text, state = '', title = '') {
+  const btn = document.getElementById('btnUpdate');
+  btn.textContent = text;
+  btn.title = title;
+  btn.classList.remove('ghost--ok', 'ghost--busy', 'ghost--err');
+  if (state) btn.classList.add(`ghost--${state}`);
+}
+
+function resetUpdateButton(delay = 0) {
+  setTimeout(() => {
+    pendingVersion = null;
+    document.getElementById('btnUpdateLater').hidden = true;
+    const btn = document.getElementById('btnUpdate');
+    btn.disabled = false;
+    setUpdateButton(UPDATE_LABEL);
+  }, delay);
+}
+
+/** Premier clic : chercher. S'il y a une version, second clic : l'installer. */
+async function onUpdateClick() {
+  const btn = document.getElementById('btnUpdate');
+  if (!inTauri() || btn.disabled) return;
+  const { invoke } = window.__TAURI__.core;
+
+  if (pendingVersion) {
+    btn.disabled = true;
+    document.getElementById('btnUpdateLater').hidden = true;
+    setUpdateButton(`Installation de la v${pendingVersion}…`, 'busy', "L'app va redémarrer toute seule.");
+    try {
+      await invoke('install_update');
+    } catch (err) {
+      setUpdateButton('Installation impossible', 'err', errText(err));
+      resetUpdateButton(4000);
+    }
+    return;
+  }
+
+  btn.disabled = true;
+  setUpdateButton('Recherche…', 'busy');
+  try {
+    const r = await invoke('check_update');
+    if (r.available) {
+      // Rien n'est installé sans accord : on propose.
+      pendingVersion = r.available;
+      btn.disabled = false;
+      setUpdateButton(`Installer la v${r.available}`, 'ok');
+      document.getElementById('btnUpdateLater').hidden = false;
+      return;
+    }
+    setUpdateButton(`À jour (v${r.current}) ✓`, 'ok');
+  } catch (err) {
+    setUpdateButton('Recherche impossible', 'err', errText(err));
+  }
+  resetUpdateButton(4000);
+}
+
+document.getElementById('btnUpdate').addEventListener('click', onUpdateClick);
+document.getElementById('btnUpdateLater').addEventListener('click', () => resetUpdateButton());
+showVersion();
 
 document.getElementById('btnReveal').addEventListener('click', async () => {
   if (inTauri()) await window.__TAURI__.core.invoke('reveal_widget');

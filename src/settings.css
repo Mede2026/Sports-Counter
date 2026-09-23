@@ -267,3 +267,14 @@ span.crest-sm {
 .opt input:disabled + label { opacity: 0.45; }
 
 .ghost--small { padding: 3px 9px; font-size: 11px; margin-left: 4px; }
+
+/* Version installée et bouton de mise à jour, dans l'en-tête. */
+.version {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.ghost--ok { color: #7bd88f; border-color: rgba(123, 216, 143, 0.45); }
+.ghost--busy { opacity: 0.7; cursor: progress; }
+.ghost--err { color: #ffa07a; border-color: rgba(255, 160, 122, 0.45); }

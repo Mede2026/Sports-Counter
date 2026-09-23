@@ -3,6 +3,12 @@
 import { crestHtml, bindCrests } from './lib/crest.js';
 
 const DURATION_MS = 6000;
+// Une proposition de mise à jour reste plus longtemps ; sans réponse, elle
+// compte comme « Plus tard » (l'app redemandera à la prochaine recherche).
+const UPDATE_DURATION_MS = 30000;
+const UPDATE_COLOR = '#4aa3ff';
+const ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+  stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>`;
 const LEAVE_MS = 200;
 
 const el = {
@@ -10,6 +16,9 @@ const el = {
   icon: document.getElementById('icon'),
   title: document.getElementById('title'),
   body: document.getElementById('body'),
+  actions: document.getElementById('actions'),
+  install: document.getElementById('btnInstall'),
+  later: document.getElementById('btnLater'),
 };
 
 const inTauri = () => !!window.__TAURI__;
@@ -22,12 +31,28 @@ document.documentElement.style.setProperty('--duration', `${DURATION_MS}ms`);
 
 function render(t) {
   current = t;
-  el.card.style.setProperty('--team', t.color || '#4aa3ff');
+  const isUpdate = t.kind === 'update';
+  el.card.style.setProperty('--team', isUpdate ? UPDATE_COLOR : t.color || '#4aa3ff');
+  if (isUpdate) {
+    el.icon.innerHTML = `<span class="crest crest--update">${ARROW}</span>`;
+    el.title.textContent = `Mise à jour ${t.version} disponible`;
+    el.body.hidden = true;
+    el.actions.hidden = false;
+    el.install.disabled = false;
+    el.install.textContent = 'Installer';
+    el.later.disabled = false;
+    el.card.title = '';
+    el.card.style.cursor = 'default';
+    return;
+  }
   el.icon.innerHTML = crestHtml(t.team ?? { abbr: '•' }, 'crest');
   bindCrests(el.icon);
   el.title.textContent = t.title ?? '';
   el.body.textContent = t.body ?? '';
+  el.body.hidden = false;
+  el.actions.hidden = true;
   el.card.title = t.link ? 'Ouvrir le match sur ESPN' : '';
+  el.card.style.cursor = 'pointer';
 }
 
 async function next() {
@@ -45,7 +70,9 @@ async function next() {
   void el.card.offsetWidth;
   el.card.classList.add('toast--in');
   clearTimeout(timer);
-  timer = setTimeout(leave, DURATION_MS);
+  const duration = t.kind === 'update' ? UPDATE_DURATION_MS : DURATION_MS;
+  el.card.style.setProperty('--duration', `${duration}ms`);
+  timer = setTimeout(leave, duration);
 }
 
 function leave() {
@@ -60,8 +87,29 @@ function enqueue(t) {
   if (!busy) next();
 }
 
+// Mise à jour acceptée : Rust installe puis redémarre l'app.
+el.install.addEventListener('click', async (e) => {
+  e.stopPropagation();
+  clearTimeout(timer);
+  el.install.disabled = true;
+  el.later.disabled = true;
+  el.install.textContent = 'Installation…';
+  try {
+    await window.__TAURI__.core.invoke('install_update');
+  } catch {
+    el.install.textContent = 'Échec';
+    timer = setTimeout(leave, 4000);
+  }
+});
+
+el.later.addEventListener('click', (e) => {
+  e.stopPropagation();
+  leave();
+});
+
 // Un clic ouvre le match sur ESPN (s'il a une page) et ferme la notification.
 el.card.addEventListener('click', async () => {
+  if (current?.kind === 'update') return; // seuls ses boutons agissent
   if (current?.link && inTauri()) {
     try { await window.__TAURI__.core.invoke('open_espn', { url: current.link }); } catch { /* refusé */ }
   }

@@ -10,6 +10,9 @@
   <div class="head" data-tauri-drag-region>
     <h1 data-tauri-drag-region>Réglages</h1>
     <span class="sub" id="summary"></span>
+    <span class="version" id="appVersion"></span>
+    <button class="ghost ghost--head" id="btnUpdate" type="button">Rechercher une mise à jour</button>
+    <button class="ghost ghost--head" id="btnUpdateLater" type="button" hidden>Plus tard</button>
     <button class="ghost ghost--head" id="btnReveal">Afficher le widget</button>
     <button class="close" id="btnClose" title="Fermer">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
@@ -58,9 +61,17 @@
           <label for="optOpacity">Opacité</label>
           <input type="range" id="optOpacity" min="30" max="100" step="5" />
         </div>
-        <div class="opt opt--wide">
+        <div class="opt">
           <label for="optTheme">Couleur</label>
           <select id="optTheme"></select>
+        </div>
+        <div class="opt" title="Pendant un match : le widget apparaît quand un de tes matchs est en direct, et se cache sinon. Jamais : seulement les notifications.">
+          <label for="optWidgetMode">Widget</label>
+          <select id="optWidgetMode">
+            <option value="always">Toujours</option>
+            <option value="live">Pendant un match</option>
+            <option value="never">Jamais (notifications)</option>
+          </select>
         </div>
       </div>
     </div>

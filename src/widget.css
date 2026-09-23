@@ -27,6 +27,7 @@ html, body {
 /* ---------- Carte principale ---------- */
 
 .widget {
+  position: relative;
   width: 300px;
   background: var(--surface);
   backdrop-filter: blur(28px) saturate(150%);
@@ -41,16 +42,16 @@ html, body {
   transition: opacity 160ms ease;
 }
 
-/* Couleurs de l'équipe choisie : liseré en haut, bordure teintée. */
+/* Couleurs de l'équipe choisie : liseré en haut, bordure teintée.
+   Le liseré est une ombre intérieure et non un élément ajouté : une ombre
+   suit toujours les coins arrondis, alors qu'un élément ajouté débordait par
+   endroits sous WebView2 et se voyait à plat par-dessus les coins. */
 .widget--team {
   border-color: color-mix(in srgb, var(--team) 55%, transparent);
-}
-
-.widget--team::before {
-  content: '';
-  display: block;
-  height: 3px;
-  background: var(--team);
+  box-shadow:
+    inset 0 3px 0 var(--team),
+    0 18px 48px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 /* Zone de déplacement : toute la barre du haut. */
@@ -339,7 +340,89 @@ span.crest {
 
 .foot__err { color: #ffa07a; }
 
-/* Mode compact : on retire les noms complets et on resserre. */
-.widget--compact .team__name { display: none; }
-.widget--compact .game { padding: 8px 14px 9px; }
-.widget--compact .game__head { margin-bottom: 5px; }
+/* ---------- Mode compact : une ligne par match ---------- */
+
+.widget--compact { width: 176px; border-radius: 14px; }
+
+/* Barre du haut réduite à une poignée : on la saisit pour déplacer, les
+   boutons apparaissent au survol. */
+.widget--compact .bar { padding: 2px 4px 2px 8px; min-height: 22px; }
+.widget--compact .bar__title { font-size: 0; }
+.widget--compact .icon-btn { width: 20px; height: 20px; }
+.widget--compact .icon-btn svg { width: 12px; height: 12px; }
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  animation: rise 240ms ease both;
+}
+
+.row:last-child { border-bottom: none; }
+.row .crest { width: 24px; height: 24px; font-size: 8px; }
+
+.row__score {
+  font-size: 16px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* Barre de séparation entre les deux pointages ; rouge pendant le match. */
+.row__sep {
+  width: 2px;
+  height: 16px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.row--live .row__sep { background: var(--live); }
+
+.row__when, .row__event {
+  flex: 1;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Séries éliminatoires ---------- */
+
+.series {
+  margin-top: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #f2c55c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Aimant : éclat le long du bord touché ---------- */
+
+.snapedge {
+  position: absolute;
+  pointer-events: none;
+  background: var(--team, #4aa3ff);
+  box-shadow: 0 0 14px 3px var(--team, #4aa3ff);
+  border-radius: 3px;
+  animation: snapflash 850ms ease-out forwards;
+}
+
+.snapedge--left   { top: 10px; bottom: 10px; left: 0;   width: 3px; }
+.snapedge--right  { top: 10px; bottom: 10px; right: 0;  width: 3px; }
+.snapedge--top    { left: 10px; right: 10px; top: 0;    height: 3px; }
+.snapedge--bottom { left: 10px; right: 10px; bottom: 0; height: 3px; }
+
+@keyframes snapflash {
+  0%   { opacity: 0; }
+  15%  { opacity: 1; }
+  100% { opacity: 0; }
+}

@@ -1,22 +1,32 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 /// Identité annoncée au serveur. Un nom d'application maison suffisait à
 /// déclencher un 403 côté ESPN.
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
     AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 const ESPN_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports";
+/// Options du moteur WebView2, identiques pour TOUTES les fenêtres : elles
+/// partagent un même dossier de données, et WebView2 refuse d'ouvrir une
+/// fenêtre dont les options diffèrent des autres. Doit rester égale à
+/// `additionalBrowserArgs` dans tauri.conf.json.
+///
+/// Les trois dernières empêchent Chromium de ralentir les minuteries d'une
+/// fenêtre cachée : le widget relève les scores même quand il n'est pas
+/// affiché (mode « notifications seulement », plein écran…).
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
 const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
 const TOAST: &str = "toast";
@@ -25,7 +35,12 @@ const TOAST: &str = "toast";
 const WIDGET_WIDTH: f64 = 300.0;
 
 /// En deçà de cette distance d'un bord (pixels logiques), le widget s'y colle.
-const SNAP: f64 = 24.0;
+const SNAP: f64 = 40.0;
+
+/// Glissement du widget vers le bord qui l'attire : nombre d'images et durée
+/// de chacune. Assez court pour rester vif, assez long pour se voir.
+const GLIDE_FRAMES: u32 = 10;
+const GLIDE_FRAME: Duration = Duration::from_millis(14);
 
 /// Délai après le dernier déplacement avant de recadrer le widget. Recadrer
 /// pendant le glisser lutterait contre la souris et ferait trembler la fenêtre.
@@ -121,6 +136,7 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
         .min_inner_size(660.0, 440.0)
         .decorations(false)
         .transparent(false)
+        .additional_browser_args(BROWSER_ARGS)
         .resizable(true)
         .center()
         .build()
@@ -153,16 +169,21 @@ fn place_bottom_left(win: &WebviewWindow) {
     let _ = win.set_position(PhysicalPosition::new(left, bottom - size.height as i32));
 }
 
-/// Ramène le widget dans l'écran, et le colle au bord s'il en est tout près.
-/// Ne déplace rien quand il est déjà en place, ce qui évite de boucler sur
-/// l'évènement de déplacement que provoque `set_position`.
-fn settle(win: &WebviewWindow) {
-    let Some((left, top, right, bottom, scale)) = work_area(win) else {
-        return;
-    };
-    let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) else {
-        return;
-    };
+/// Bords de l'écran contre lesquels le widget se trouve.
+#[derive(serde::Serialize, Clone, Copy, Default, PartialEq)]
+struct Edges {
+    left: bool,
+    right: bool,
+    top: bool,
+    bottom: bool,
+}
+
+/// Place visée pour le widget : ramené dans l'écran, et collé au bord s'il en
+/// est tout près. Renvoie la position actuelle, la position visée, et les
+/// bords touchés une fois en place.
+fn settle_target(win: &WebviewWindow) -> Option<(PhysicalPosition<i32>, (i32, i32), Edges)> {
+    let (left, top, right, bottom, scale) = work_area(win)?;
+    let (pos, size) = (win.outer_position().ok()?, win.outer_size().ok()?);
     let snap = (SNAP * scale).round() as i32;
 
     // `max` évite une borne inversée si la fenêtre dépasse la taille de l'écran.
@@ -182,29 +203,66 @@ fn settle(win: &WebviewWindow) {
         y = max_y;
     }
 
-    if x != pos.x || y != pos.y {
-        let _ = win.set_position(PhysicalPosition::new(x, y));
+    let edges = Edges {
+        left: x == left,
+        right: x == max_x,
+        top: y == top,
+        bottom: y == max_y,
+    };
+    Some((pos, (x, y), edges))
+}
+
+/// Recadrage immédiat, sans animation (au démarrage).
+fn settle(win: &WebviewWindow) {
+    if let Some((pos, (x, y), _)) = settle_target(win) {
+        if x != pos.x || y != pos.y {
+            let _ = win.set_position(PhysicalPosition::new(x, y));
+        }
     }
 }
 
-/// Recadre le widget une fois qu'il a cessé de bouger.
+/// Fait glisser le widget jusqu'à sa place, en ralentissant à l'arrivée :
+/// on voit l'aimant le tirer vers le bord.
+async fn glide(win: &WebviewWindow, from: PhysicalPosition<i32>, to: (i32, i32)) {
+    for i in 1..=GLIDE_FRAMES {
+        let t = f64::from(i) / f64::from(GLIDE_FRAMES);
+        let ease = 1.0 - (1.0 - t).powi(3);
+        let x = from.x + (f64::from(to.0 - from.x) * ease).round() as i32;
+        let y = from.y + (f64::from(to.1 - from.y) * ease).round() as i32;
+        let _ = win.set_position(PhysicalPosition::new(x, y));
+        tokio::time::sleep(GLIDE_FRAME).await;
+    }
+}
+
+/// Recadre le widget une fois qu'il a cessé de bouger. S'il vient de se
+/// coller à un bord, le widget en est prévenu pour faire briller ce bord.
 fn settle_later(win: WebviewWindow) {
     let gen = SETTLE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(SETTLE_DELAY).await;
-        if SETTLE_GEN.load(Ordering::SeqCst) == gen {
-            settle(&win);
+        if SETTLE_GEN.load(Ordering::SeqCst) != gen {
+            return;
+        }
+        let Some((from, to, edges)) = settle_target(&win) else {
+            return;
+        };
+        if (from.x, from.y) == to {
+            return;
+        }
+        glide(&win, from, to).await;
+        if edges != Edges::default() {
+            let _ = win.app_handle().emit_to(WIDGET, "snapped", edges);
         }
     });
 }
 
-/// Ajuste la hauteur du widget à son contenu.
+/// Ajuste la taille du widget à son contenu (le mode compact est plus étroit).
 ///
 /// Un widget posé dans la moitié basse de l'écran grandit et rétrécit par le
-/// haut : son bord inférieur reste collé à la barre des tâches. Sans ça, il
-/// rétrécissait par le bas et laissait un espace vide au-dessus de la barre.
+/// haut, et dans la moitié droite, par la gauche : le bord collé à la barre
+/// des tâches ou au bord de l'écran reste en place.
 #[tauri::command]
-fn fit_widget(app: AppHandle, height: f64) {
+fn fit_widget(app: AppHandle, height: f64, width: Option<f64>) {
     let Some(win) = app.get_webview_window(WIDGET) else {
         return;
     };
@@ -214,20 +272,35 @@ fn fit_widget(app: AppHandle, height: f64) {
         return;
     };
 
-    let new_w = (WIDGET_WIDTH * scale).round() as u32;
-    let new_h = (height.max(40.0) * scale).round() as u32;
+    let logical_w = width.unwrap_or(WIDGET_WIDTH).clamp(120.0, 600.0);
+    let new_w = (logical_w * scale).round() as u32;
+    let new_h = (height.max(24.0) * scale).round() as u32;
     if new_w == size.width && new_h == size.height {
         return;
     }
 
-    let grow_up = work_area(&win)
-        .map(|(_, top, _, bottom, _)| pos.y + size.height as i32 / 2 > (top + bottom) / 2)
-        .unwrap_or(false);
+    let (grow_up, grow_left) = work_area(&win)
+        .map(|(left, top, right, bottom, _)| {
+            (
+                pos.y + size.height as i32 / 2 > (top + bottom) / 2,
+                pos.x + size.width as i32 / 2 > (left + right) / 2,
+            )
+        })
+        .unwrap_or((false, false));
 
     let _ = win.set_size(PhysicalSize::new(new_w, new_h));
-    if grow_up {
-        let old_bottom = pos.y + size.height as i32;
-        let _ = win.set_position(PhysicalPosition::new(pos.x, old_bottom - new_h as i32));
+    let x = if grow_left {
+        pos.x + size.width as i32 - new_w as i32
+    } else {
+        pos.x
+    };
+    let y = if grow_up {
+        pos.y + size.height as i32 - new_h as i32
+    } else {
+        pos.y
+    };
+    if x != pos.x || y != pos.y {
+        let _ = win.set_position(PhysicalPosition::new(x, y));
     }
 }
 
@@ -310,9 +383,11 @@ fn watch_fullscreen(app: AppHandle) {
 
 /* ---------- Notifications de l'app ---------- */
 
-/// Place la fenêtre de notification juste au-dessus du widget (ou en dessous
-/// s'il n'y a pas la place), alignée sur son bord gauche. Widget caché : en
-/// bas à gauche de l'écran, là où il se trouve d'habitude.
+/// Place la notification :
+/// - widget affiché : juste au-dessus de lui (en dessous s'il n'y a pas la
+///   place), alignée sur son bord gauche ;
+/// - widget caché (mode « notifications seulement », ou masqué) : en bas à
+///   gauche de l'écran, juste au-dessus de la barre des tâches.
 fn place_toast(app: &AppHandle) {
     let (Some(toast), Some(widget)) = (
         app.get_webview_window(TOAST),
@@ -357,32 +432,129 @@ fn notify(app: AppHandle, toast: serde_json::Value) {
     let _ = app.emit_to(TOAST, "toast", toast);
 }
 
-/* ---------- 9. Mises à jour automatiques ---------- */
+/* ---------- 9. Mises à jour ---------- */
 
-/// Cherche une nouvelle version publiée sur GitHub et l'installe. Le module
-/// vérifie la signature avec la clé publique de tauri.conf.json avant
-/// d'installer quoi que ce soit : une version non signée par nous est refusée.
-async fn install_update_if_any(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
-    if let Some(update) = app.updater()?.check().await? {
-        update.download_and_install(|_, _| {}, || {}).await?;
-        // Sous Windows, l'installateur ferme lui-même l'app pour la remplacer ;
-        // on ne passe ici que si ce n'est pas le cas.
-        app.restart();
-    }
-    Ok(())
+/// Mise à jour trouvée, en attente de l'accord de l'utilisateur. Rien n'est
+/// installé sans qu'il clique sur « Installer ».
+struct PendingUpdate(Mutex<Option<Update>>);
+
+/// Intervalle entre deux tentatives d'afficher la proposition de mise à jour
+/// quand un jeu est en plein écran.
+const UPDATE_PROMPT_RETRY: Duration = Duration::from_secs(60);
+
+/// Cherche une version plus récente ; si elle existe, la garde en attente et
+/// renvoie son numéro.
+async fn find_update(app: &AppHandle) -> Result<Option<String>, String> {
+    let found = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    let version = found.as_ref().map(|u| u.version.clone());
+    *app.state::<PendingUpdate>().0.lock().unwrap() = found;
+    Ok(version)
 }
 
+/// Résultat d'une recherche de mise à jour demandée depuis les réglages.
+#[derive(serde::Serialize)]
+struct UpdateCheck {
+    current: String,
+    /// Version disponible, en attente d'accord, ou `None` si l'app est à jour.
+    available: Option<String>,
+}
+
+/// Version installée, affichée dans les réglages.
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Bouton « Rechercher une mise à jour » : cherche seulement. L'installation
+/// attend que l'utilisateur accepte (commande `install_update`).
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<UpdateCheck, String> {
+    let current = app.package_info().version.to_string();
+    let available = find_update(&app).await?;
+    Ok(UpdateCheck { current, available })
+}
+
+/// L'utilisateur a accepté : on installe la mise à jour en attente. Le module
+/// vérifie sa signature avec la clé publique de tauri.conf.json avant tout ;
+/// une version non signée par nous est refusée. Puis l'app redémarre.
+#[tauri::command]
+async fn install_update(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<(), String> {
+    let update = pending
+        .0
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or_else(|| "aucune mise à jour en attente".to_string())?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    // Sous Windows, l'installateur ferme lui-même l'app pour la remplacer ;
+    // on ne passe ici que si ce n'est pas le cas.
+    app.restart();
+}
+
+/// Recherche automatique : 20 s après le démarrage, puis toutes les 6 h. Une
+/// version trouvée n'est pas installée : on propose de le faire, par une
+/// notification de l'app avec « Installer » et « Plus tard ».
 fn watch_updates(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(UPDATE_FIRST_CHECK).await;
         loop {
-            if let Err(err) = install_update_if_any(&app).await {
+            match find_update(&app).await {
+                Ok(Some(version)) => {
+                    // Pas pendant un jeu en plein écran : on attend qu'il finisse.
+                    while HIDE_FULLSCREEN.load(Ordering::SeqCst) && fullscreen_app_running() {
+                        tokio::time::sleep(UPDATE_PROMPT_RETRY).await;
+                    }
+                    place_toast(&app);
+                    let _ = app.emit_to(
+                        TOAST,
+                        "toast",
+                        serde_json::json!({ "kind": "update", "version": version }),
+                    );
+                }
+                Ok(None) => {}
                 // Pas de réseau, GitHub injoignable… on réessaiera plus tard.
-                eprintln!("mise à jour impossible pour l'instant : {err}");
+                Err(err) => eprintln!("recherche de mise à jour impossible : {err}"),
             }
             tokio::time::sleep(UPDATE_INTERVAL).await;
         }
     });
+}
+
+/* ---------- Affichage automatique du widget ---------- */
+
+/// Montre ou cache le widget selon le réglage « Widget » : Toujours, Pendant
+/// un match, Jamais (notifications seulement). Appelé par le widget lui-même,
+/// qui continue de relever les scores quand il est caché.
+///
+/// À montrer pendant un jeu en plein écran : on ne passe pas devant, on
+/// laisse la surveillance du plein écran l'afficher à la fin du jeu. Pas de
+/// demande de focus : il apparaît sans prendre le clavier.
+#[tauri::command]
+fn set_widget_visible(app: AppHandle, visible: bool) {
+    let Some(win) = app.get_webview_window(WIDGET) else {
+        return;
+    };
+    if visible {
+        if HIDE_FULLSCREEN.load(Ordering::SeqCst) && fullscreen_app_running() {
+            HIDDEN_FOR_FULLSCREEN.store(true, Ordering::SeqCst);
+            return;
+        }
+        if !win.is_visible().unwrap_or(false) {
+            let _ = win.show();
+        }
+    } else {
+        // Caché volontairement : la fin d'un jeu ne doit pas le faire revenir.
+        HIDDEN_FOR_FULLSCREEN.store(false, Ordering::SeqCst);
+        let _ = win.hide();
+    }
 }
 
 /* ---------- 8. Ouvrir la page ESPN d'un match ---------- */
@@ -526,8 +698,13 @@ pub fn run() {
             set_autostart,
             set_hide_fullscreen,
             open_espn,
-            notify
+            notify,
+            app_version,
+            check_update,
+            install_update,
+            set_widget_visible
         ])
+        .manage(PendingUpdate(Mutex::new(None)))
         .setup(move |app| {
             let handle = app.handle().clone();
 

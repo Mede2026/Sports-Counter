@@ -191,7 +191,7 @@ export async function fetchTeams(leagueId) {
   return teams;
 }
 
-function normalizeCompetitor(c) {
+function normalizeCompetitor(c, state) {
   const t = c?.team ?? {};
   return {
     id: String(t.id ?? ''),
@@ -200,7 +200,8 @@ function normalizeCompetitor(c) {
     logo: t.logo ?? t.logos?.[0]?.href ?? '',
     color: t.color ? `#${t.color}` : null,
     alt: t.alternateColor ? `#${t.alternateColor}` : null,
-    score: c?.score != null ? String(c.score) : '–',
+    // Avant le coup d'envoi, ESPN envoie « 0 » : on affiche « – ».
+    score: state !== 'pre' && c?.score != null ? String(c.score) : '–',
     winner: c?.winner === true,
   };
 }
@@ -252,6 +253,129 @@ function pickSession(event) {
   return upcoming[0] ?? comps[comps.length - 1];
 }
 
+/** Le jeu est-il un but / des points ? Selon la source, ESPN le dit autrement. */
+const isScoring = (p) => p?.scoringPlay === true || /goal|but/i.test(p?.type?.text ?? '');
+
+/** Nom du joueur qui a marqué, quelle que soit la forme de la donnée ESPN. */
+function scorerName(p) {
+  const people = p?.participants ?? [];
+  const scorer = people.find((x) => /scor/i.test(String(x?.type?.text ?? x?.type ?? ''))) ?? people[0];
+  return scorer?.athlete?.displayName
+    ?? p?.athletesInvolved?.[0]?.displayName
+    ?? p?.athletesInvolved?.[0]?.shortName
+    ?? '';
+}
+
+/**
+ * Dernier buteur de chaque équipe, si le tableau des scores le fournit
+ * (champ `details`, présent au soccer). Sinon, objet vide.
+ */
+function lastScorers(comp) {
+  const out = {};
+  for (const d of comp?.details ?? []) {
+    const team = d?.team?.id != null ? String(d.team.id) : null;
+    const name = isScoring(d) ? scorerName(d) : '';
+    if (team && name) out[team] = name;
+  }
+  return out;
+}
+
+/**
+ * Buteur du dernier but d'une équipe, lu dans le résumé détaillé du match.
+ * Sert quand le tableau des scores ne donne pas le nom (au hockey). Renvoie
+ * '' si ESPN ne le fournit pas ou si l'adresse est illisible depuis l'app.
+ */
+export async function fetchScorer(leagueId, eventId, teamId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !eventId) return '';
+  try {
+    const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
+    const pools = [data?.scoringPlays, data?.plays, data?.keyEvents, data?.header?.competitions?.[0]?.details];
+    let last = null;
+    for (const pool of pools) {
+      for (const p of pool ?? []) {
+        if (isScoring(p) && String(p?.team?.id ?? '') === String(teamId)) last = p;
+      }
+      if (last) break; // première source qui connaît le but : on s'y tient
+    }
+    return last ? scorerName(last) : '';
+  } catch {
+    return '';
+  }
+}
+
+/** Logo de la ligue fourni par ESPN (sert pour la F1), variante sombre d'abord. */
+function leagueLogo(data) {
+  const logos = data?.leagues?.[0]?.logos ?? [];
+  const dark = logos.find((l) => Array.isArray(l?.rel) && l.rel.includes('dark') && l.href);
+  return (dark ?? logos.find((l) => l?.href))?.href ?? '';
+}
+
+/* ---------- Hockey : statut en français et séries éliminatoires ---------- */
+
+const ordinal = (n) => (n === 1 ? '1re' : `${n}e`);
+
+/**
+ * Statut d'un match de hockey en français, à partir de la période. ESPN
+ * l'écrit en anglais (« 7:42 - 2nd », « Final/OT »). En saison, la 4e période
+ * est la prolongation et la 5e les tirs de barrage ; en séries, on joue des
+ * prolongations jusqu'au but gagnant (4e = 1re prolongation, 5e = 2e…).
+ */
+export function hockeyStatus({ state, period, clock, detail }, playoffs) {
+  const p = Number(period) || 0;
+  const periodName = (n) =>
+    n <= 3 ? `${ordinal(n)} période`
+    : playoffs ? `${ordinal(n - 3)} prolongation`
+    : n === 4 ? 'Prolongation' : 'Tirs de barrage';
+
+  if (state === 'post') {
+    if (p <= 3) return 'Final';
+    if (playoffs) return p === 4 ? 'Final (prol.)' : `Final (${ordinal(p - 3)} prol.)`;
+    return p === 4 ? 'Final (prol.)' : 'Final (TB)';
+  }
+  if (state === 'in' && p > 0) {
+    if (/end of|intermission/i.test(detail ?? '')) return `Fin de la ${periodName(p)}`;
+    return periodName(p);
+  }
+  return null; // à venir : l'heure est formatée ailleurs
+}
+
+const ROUNDS = [
+  [/stanley cup final/i, 'Finale de la Coupe Stanley'],
+  [/(conference|conf\.?|east|west)[^-]*final/i, "Finale d'association"],
+  [/2nd round|second round/i, '2e ronde'],
+  [/1st round|first round/i, '1re ronde'],
+];
+
+/**
+ * État d'une série éliminatoire, si ESPN la décrit (`series`, `notes`).
+ * Construit en français à partir des victoires de chaque équipe plutôt que
+ * de reprendre le résumé anglais. null hors séries.
+ */
+function seriesInfo(comp, homeC, awayC) {
+  const s = comp?.series;
+  if (!s) return null;
+  const wins = new Map((s.competitors ?? []).map((c) => [String(c?.id), Number(c?.wins ?? 0)]));
+  const h = homeC?.team ?? {};
+  const a = awayC?.team ?? {};
+  const hw = wins.get(String(h.id));
+  const aw = wins.get(String(a.id));
+  if (hw == null || aw == null) return null;
+
+  const hi = Math.max(hw, aw);
+  const lo = Math.min(hw, aw);
+  const leader = hw > aw ? h : aw > hw ? a : null;
+  // Série au meilleur de 7 : 4 victoires la gagnent.
+  const done = s.completed === true || hi >= 4;
+  const text = !leader ? `Série égale ${hw}-${aw}`
+    : `${leader.abbreviation} ${done ? 'remporte' : 'mène'} la série ${hi}-${lo}`;
+
+  const headline = comp?.notes?.[0]?.headline ?? '';
+  const game = Number(/game\s+(\d+)/i.exec(headline)?.[1]) || null;
+  const round = ROUNDS.find(([re]) => re.test(headline))?.[1] ?? '';
+  return { text, round, game, done, leaderId: leader ? String(leader.id) : null };
+}
+
 /** Page ESPN du match (feuille de match, statistiques), si l'API la fournit. */
 function pickLink(event) {
   const links = event?.links ?? [];
@@ -261,16 +385,23 @@ function pickLink(event) {
   return href.startsWith('https://') ? href : '';
 }
 
-function normalizeEvent(event, leagueId) {
+function normalizeEvent(event, leagueId, logo = '') {
   const comp = event?.competitions?.[0];
   const status = event?.status ?? comp?.status ?? {};
   const state = status?.type?.state ?? 'pre';
+  // Saison de type 3 = séries éliminatoires chez ESPN.
+  const playoffs = Number(event?.season?.type) === 3 || !!comp?.series;
+  const frStatus = leagueId === 'nhl'
+    ? hockeyStatus({ state, period: status?.period, clock: status?.displayClock, detail: status?.type?.shortDetail }, playoffs)
+    : null;
   const base = {
     id: String(event?.id ?? ''),
     leagueId,
     state,
-    statusText: status?.type?.shortDetail ?? status?.type?.description ?? '',
-    clock: state === 'in' ? status?.displayClock ?? '' : '',
+    statusText: frStatus ?? status?.type?.shortDetail ?? status?.type?.description ?? '',
+    playoffs,
+    // Entracte : ESPN laisse l'horloge à 0:00, inutile de l'afficher.
+    clock: state === 'in' && !frStatus?.startsWith('Fin de') ? status?.displayClock ?? '' : '',
     startsAt: event?.date ? new Date(event.date) : null,
     link: pickLink(event),
   };
@@ -280,13 +411,14 @@ function normalizeEvent(event, leagueId) {
   if (LEAGUES_BY_ID[leagueId]?.kind === 'event' || competitors.length !== 2) {
     const title = event?.shortName || event?.name || 'Évènement';
     const session = pickSession(event);
-    if (!session) return { ...base, kind: 'event', title };
+    if (!session) return { ...base, kind: 'event', title, logo };
 
     const sState = session.status?.type?.state ?? base.state;
     return {
       ...base,
       kind: 'event',
       title,
+      logo,
       state: sState,
       // Pas de classement avant le départ : il n'existe pas encore.
       top3: sState === 'pre' ? [] : topThree(session),
@@ -302,8 +434,10 @@ function normalizeEvent(event, leagueId) {
   return {
     ...base,
     kind: 'match',
-    home: normalizeCompetitor(home),
-    away: normalizeCompetitor(away),
+    home: normalizeCompetitor(home, base.state),
+    away: normalizeCompetitor(away, base.state),
+    scorers: lastScorers(comp),
+    series: seriesInfo(comp, home, away),
   };
 }
 
@@ -312,7 +446,8 @@ export async function fetchScoreboard(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league) return [];
   const data = await getJson(`${league.path}/scoreboard`);
-  return (data?.events ?? []).map((e) => normalizeEvent(e, leagueId));
+  const logo = leagueLogo(data);
+  return (data?.events ?? []).map((e) => normalizeEvent(e, leagueId, logo));
 }
 
 // Calendrier des jours à venir : il change peu, inutile de le redemander à
@@ -331,7 +466,8 @@ async function fetchDay(leagueId, offsetDays) {
   if (hit && Date.now() - hit.at < DAY_TTL) return hit.events;
 
   const data = await getJson(`${league.path}/scoreboard`, `?dates=${date}`);
-  const events = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId));
+  const logo = leagueLogo(data);
+  const events = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId, logo));
   dayCache.set(key, { at: Date.now(), events });
   return events;
 }

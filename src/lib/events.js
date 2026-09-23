@@ -44,19 +44,31 @@ function matchEvents(g, before) {
       const now = num(g[side].score);
       if (was === null || now === null || now <= was) continue;
       const team = g[side];
-      const title = SCORE_ALERTS[g.leagueId] === 'goal'
-        ? `But des ${team.name} !`
-        : `${team.name} marque (+${now - was})`;
+      const isGoal = SCORE_ALERTS[g.leagueId] === 'goal';
+      const scorer = isGoal ? g.scorers?.[team.id] ?? '' : '';
+      const title = !isGoal ? `${team.name} marque (+${now - was})`
+        : scorer ? `But de ${scorer} !` : `But des ${team.name} !`;
       const when = [g.clock, g.statusText].filter(Boolean).join(' · ');
-      out.push({ title, body: when ? `${scoreLine(g)} · ${when}` : scoreLine(g), team, link });
+      out.push({
+        title,
+        body: when ? `${scoreLine(g)} · ${when}` : scoreLine(g),
+        team,
+        link,
+        // Pour chercher le buteur ailleurs si le tableau des scores ne le donne pas.
+        goal: isGoal && !scorer ? { leagueId: g.leagueId, eventId: g.id, teamId: team.id } : null,
+      });
     }
   }
 
   if (before.state !== 'post' && g.state === 'post') {
     const winner = g.home.winner ? g.home : g.away.winner ? g.away : null;
     const tie = !winner && num(g.home.score) !== null && num(g.home.score) === num(g.away.score);
-    const title = winner ? `Victoire des ${winner.name}` : tie ? 'Match nul' : 'Match terminé';
-    out.push({ title, body: scoreLine(g), team: winner ?? g.home, link });
+    // Séries éliminatoires : le match qui termine la série a son propre titre.
+    const clinched = winner && g.series?.done && g.series.leaderId === winner.id;
+    const title = clinched ? `Les ${winner.name} remportent la série !`
+      : winner ? `Victoire des ${winner.name}` : tie ? 'Match nul' : 'Match terminé';
+    const body = g.series ? `${scoreLine(g)} · ${g.series.text}` : scoreLine(g);
+    out.push({ title, body, team: winner ?? g.home, link });
   }
   return out;
 }
@@ -64,7 +76,7 @@ function matchEvents(g, before) {
 function sessionEvents(g, before) {
   const out = [];
   const link = g.link ?? '';
-  const team = { abbr: 'F1', logo: '', color: '#ff4d6d' };
+  const team = { abbr: 'F1', logo: g.logo ?? '', color: '#ff4d6d' };
 
   // Une séance qui était en cours ne l'est plus : elle est finie, même si le
   // widget affiche maintenant la suivante (état « à venir »).
