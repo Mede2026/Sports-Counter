@@ -126,6 +126,16 @@ span.crest {
   text-overflow: ellipsis;
 }
 
+/* Résumé du matin : deux lignes de texte, un peu plus petites. */
+.toast--multi .toast__body {
+  white-space: normal;
+  font-size: 11px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* Temps restant avant disparition. */
 .toast__progress {
   position: absolute;

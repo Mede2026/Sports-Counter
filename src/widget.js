@@ -1,5 +1,5 @@
-import { fetchScoreboard, fetchNextGames, fetchGoal, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
-import { LEAGUES_BY_ID, isWholeLeague } from './lib/leagues.js';
+import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchYesterday, fetchMatchDetail, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
+import { LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
@@ -283,7 +283,7 @@ function emptyHtml() {
  * évènement (but, début, fin…). Le premier relevé sert seulement de référence.
  */
 function notifyEvents(games) {
-  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [] };
+  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [] };
   const events = detectEvents(seen, games, opts);
   seen = remember(seen, games, opts);
   if (!events.length || prefs.notifications === false || !inTauri()) return;
@@ -301,13 +301,15 @@ async function sendToast(e) {
   // du match, sans jamais retarder la notification de plus de 3 s.
   let scorer = e.scorer ?? '';
   let assists = [];
+  let goals = 0;
   if (e.goal) {
     const goal = await Promise.race([
       fetchGoal(e.goal.leagueId, e.goal.eventId, e.goal.teamId),
       new Promise((r) => setTimeout(() => r(null), SCORER_TIMEOUT_MS)),
     ]);
-    scorer = goal?.scorer ?? '';
+    scorer = goal?.scorer || scorer;
     assists = goal?.assists ?? [];
+    goals = goal?.goals ?? 0;
     if (scorer) e = { ...e, title: `But de ${scorer} !` };
   }
   // Un de tes joueurs favoris a marqué ou fait une passe : notification
@@ -317,9 +319,14 @@ async function sendToast(e) {
   const helper = star ? null : favs.find((p) => assists.some((a) => sameDriver(p, { name: a })));
   const lastName = (p) => p.name.split(/\s+/).pop().toUpperCase();
   const withPhoto = (p) => (p.photo ? { ...e.team, logo: p.photo, round: true } : e.team);
+  // Tour du chapeau : 3e but du même joueur dans le match.
+  const hatTrick = goals === 3;
   if (star) {
     const help = assists.length ? `Passes : ${assists.join(', ')}` : 'Sans passe';
-    e = { ...e, title: `🚨 BUT DE ${lastName(star)} !`, body: [help, e.body].filter(Boolean).join(' · '), team: withPhoto(star), big: true };
+    const title = hatTrick ? `🎩 TOUR DU CHAPEAU DE ${lastName(star)} !` : `🚨 BUT DE ${lastName(star)} !`;
+    e = { ...e, title, body: [help, e.body].filter(Boolean).join(' · '), team: withPhoto(star), big: true };
+  } else if (hatTrick && scorer) {
+    e = { ...e, title: `🎩 Tour du chapeau de ${scorer} !`, big: true };
   } else if (helper) {
     e = {
       ...e,
@@ -336,6 +343,7 @@ async function sendToast(e) {
     link: e.link,
     color,
     big: !!e.big,
+    multi: !!e.multi,
     theme: resolvedTheme(),
     team: { abbr: e.team?.abbr ?? '', logo: e.team?.logo ?? '', color, round: !!e.team?.round },
   };
@@ -455,6 +463,113 @@ function checkReminders() {
   }
   if (reminded) {
     try { localStorage.setItem(REMINDED_KEY, JSON.stringify(reminded)); } catch { /* plein */ }
+  }
+}
+
+/* ---------- Filet désert ---------- */
+
+// Clé « match:équipe » des filets déserts déjà annoncés (en mémoire : un
+// même match ne dure pas plus d'une soirée).
+const pulledSeen = new Set();
+
+/** Minutes restantes d'une horloge « 3:42 », ou null. */
+const clockMinutes = (clock) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(clock ?? '').trim());
+  return m ? Number(m[1]) + Number(m[2]) / 60 : null;
+};
+
+/**
+ * Hockey, fin de 3e période, une équipe tire de l'arrière d'un ou deux buts :
+ * on regarde dans les jeux si elle a retiré son gardien.
+ */
+async function checkEmptyNets(games) {
+  if (prefs.notifications === false || !inTauri()) return;
+  for (const g of games) {
+    if (g.kind !== 'match' || g.state !== 'in' || sportOf(g.leagueId) !== 'hockey' || g.period !== 3) continue;
+    const left = clockMinutes(g.clock);
+    const diff = Number(g.home.score) - Number(g.away.score);
+    if (left === null || left > 4 || !Number.isFinite(diff) || Math.abs(diff) < 1 || Math.abs(diff) > 2) continue;
+    const trailing = diff > 0 ? g.away : g.home;
+    const key = `${g.id}:${trailing.id}`;
+    if (pulledSeen.has(key)) continue;
+    const teams = await fetchPulledGoalies(g.leagueId, g.id);
+    if (!teams.includes(String(trailing.id))) continue;
+    pulledSeen.add(key);
+    sendToast({
+      title: `🥅 Filet désert : les ${trailing.name} retirent leur gardien`,
+      body: `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr} · ${g.clock} · 3e période`,
+      team: trailing,
+      link: g.link,
+    });
+  }
+}
+
+/* ---------- Résumé du matin ---------- */
+
+const DIGEST_KEY = 'sports-counter.digest';
+let digestRunning = false;
+
+/** « Suzuki 1 B 2 A » : la fiche d'un joueur favori dans le box score. */
+function favLine(detail) {
+  const favs = prefs.favPlayers ?? [];
+  const lines = [];
+  for (const team of detail?.box ?? []) {
+    for (const grp of team.groups) {
+      const col = (label) => grp.cols.findIndex((c) => c.label === label);
+      const [b, a] = [col('B'), col('A')];
+      if (b < 0 || a < 0) continue;
+      for (const p of grp.players) {
+        if (!favs.some((f) => sameDriver(f, p))) continue;
+        const last = p.name.split(/\s+/).pop();
+        lines.push(`${last} ${p.stats[b] || 0} B ${p.stats[a] || 0} A`);
+      }
+    }
+  }
+  return lines;
+}
+
+/**
+ * Une fois par jour, entre 6 h et midi : les résultats d'hier de tes équipes,
+ * avec la fiche de tes joueurs favoris.
+ */
+async function morningDigest() {
+  if (digestRunning || prefs.morningDigest === false || prefs.notifications === false || !inTauri()) return;
+  const now = new Date();
+  if (now.getHours() < 6 || now.getHours() >= 12) return;
+  const today = now.toDateString();
+  try { if (localStorage.getItem(DIGEST_KEY) === today) return; } catch { return; }
+  digestRunning = true;
+  try {
+    const leagues = selectedLeagues().filter((id) => LEAGUES_BY_ID[id]?.kind === 'team');
+    const days = await Promise.allSettled(leagues.map((id) => fetchYesterday(id)));
+    // Réseau absent : on réessaiera au prochain relevé.
+    if (days.every((d) => d.status === 'rejected') && leagues.length) return;
+    const isMine = (g) => (prefs.favorites ?? []).some((k) => k === `${g.leagueId}:${g.home.id}` || k === `${g.leagueId}:${g.away.id}`);
+    // Tes équipes d'abord, puis le reste des ligues suivies en entier.
+    const games = days.flatMap((d) => (d.status === 'fulfilled' ? d.value : []))
+      .filter((g) => g.kind === 'match' && g.state === 'post' && keepGame(g))
+      .sort((a, b) => isMine(b) - isMine(a));
+    try { localStorage.setItem(DIGEST_KEY, today); } catch { /* plein */ }
+    if (!games.length) return;
+
+    const scores = games.slice(0, 4).map((g) => `${g.away.abbr} ${g.away.score}-${g.home.score} ${g.home.abbr}`);
+    const stars = [];
+    if ((prefs.favPlayers ?? []).length) {
+      for (const g of games.filter((x) => sportOf(x.leagueId) === 'hockey').slice(0, 3)) {
+        try { stars.push(...favLine(await fetchMatchDetail(g.leagueId, g.id))); } catch { /* sans fiche */ }
+      }
+    }
+    const g = games[0];
+    const team = (prefs.favorites ?? []).includes(`${g.leagueId}:${g.home.id}`) ? g.home : g.away;
+    sendToast({
+      title: '☀️ Résultats d\'hier',
+      body: [...scores, ...stars].join(' · '),
+      team,
+      link: '',
+      multi: true,
+    });
+  } finally {
+    digestRunning = false;
   }
 }
 
@@ -805,6 +920,8 @@ async function doRefresh(force) {
   followed = nextOnly([...today, ...upcoming.filter((g) => !beyondHorizon(g))].sort(sortGames));
   notifyEvents(followed);
   checkReminders();
+  checkEmptyNets(followed);
+  morningDigest();
 
   const visible = followed.slice(0, prefs.maxGames);
   render(visible, error, offline);

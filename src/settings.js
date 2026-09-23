@@ -474,6 +474,7 @@ function bindOptions() {
 
   bindSwitch('optShowForm', 'showForm');
   bindSwitch('optTranslate', 'translate');
+  bindSwitch('optDigest', 'morningDigest');
   bindSwitch('optGpMode', 'gpMode');
 
   renderPlayerChips();

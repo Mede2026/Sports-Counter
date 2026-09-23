@@ -59,6 +59,11 @@ seulement les équipes que tu choisis.
 - **Taille du widget** : petit, moyen ou grand.
 - **Joueurs et pilotes favoris** : notification « 🚨 BUT DE … » ou « 🅰️ PASSE DE … »
   avec la photo du joueur ; en F1, « ⬆️ … dépasse … » pendant la course.
+- **Encore plus de notifications** : tour du chapeau 🎩, filet désert 🥅,
+  prolongation et tirs de barrage ⏱️, match 7, série gagnée ou élimination 🏆,
+  drapeau rouge, voiture de sécurité et arrêts aux puits en F1.
+- **Résumé du matin** ☀️ : entre 6 h et midi, une notification avec les
+  résultats d'hier de tes équipes et la fiche de tes joueurs favoris.
 - **Combattants favoris (UFC)** : choisis-les avec leur photo (Réglages → UFC).
   Leur combat est mis en évidence ⭐ dans le widget, la fenêtre Match et le
   calendrier, avec un rappel avant et une notification de victoire ou défaite.

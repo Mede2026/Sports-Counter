@@ -3,7 +3,7 @@
 
 import { F1_LOGO } from './f1-logo.js';
 import { sameDriver } from './api.js';
-import { MEDALS, rank as place } from './format.js';
+import { MEDALS, rank as place, ordinal } from './format.js';
 import { sportOf } from './leagues.js';
 
 // Ligues où chaque point mérite une notification. Au basket, le score change
@@ -40,14 +40,44 @@ function favPositions(g, favs) {
 
 /** Ce qu'il faut retenir d'un match pour le comparer au relevé suivant. */
 export function snapshot(g, opts = {}) {
-  if (g.kind === 'match') return { state: g.state, home: g.home.score, away: g.away.score };
+  if (g.kind === 'match') return { state: g.state, home: g.home.score, away: g.away.score, period: g.period ?? null };
   if (g.kind === 'card') {
     // État de chaque combat d'un combattant favori, pour voir son début et sa fin.
     const favs = Object.fromEntries(favFights(g, opts.favFighters).map(({ f }) => [f.id, f.state]));
     return { state: g.state, main: g.main?.state ?? 'pre', favs };
   }
-  return { state: g.state, session: g.session ?? '', favPos: favPositions(g, favList(opts)) };
+  const favs = favList(opts);
+  const pits = Object.fromEntries(favs.map((d) => [driverKey(d), (g.results ?? []).find((r) => sameDriver(r, d))?.pits ?? 0]));
+  return { state: g.state, session: g.session ?? '', favPos: favPositions(g, favs), flag: g.flag ?? '', pits };
 }
+
+// Nombre de périodes du temps réglementaire, par sport.
+const REGULATION = { hockey: 3, basketball: 4, football: 4, soccer: 2, baseball: 9 };
+
+/**
+ * Nom de la période supplémentaire qui commence, ou '' : « Prolongation »,
+ * « 2e prolongation », « Tirs de barrage », « Tirs au but », « Manches
+ * supplémentaires ».
+ */
+export function overtimeName(g, before) {
+  const sport = sportOf(g.leagueId);
+  const reg = REGULATION[sport];
+  const p = Number(g.period) || 0;
+  const was = Number(before.period) || 0;
+  if (!reg || !was || p <= was || p <= reg) return '';
+  if (sport === 'baseball') return was <= reg ? 'Manches supplémentaires' : '';
+  if (sport === 'hockey') {
+    // Saison : une prolongation (4e période), puis les tirs de barrage (5e).
+    if (!g.playoffs) return p === 4 ? 'Prolongation' : 'Tirs de barrage';
+    return p === 4 ? 'Prolongation' : `${ordinal(p - 3)} prolongation`;
+  }
+  if (sport === 'soccer') return p >= 5 ? 'Tirs au but' : p === 3 ? 'Prolongation' : '';
+  return p === reg + 1 ? 'Prolongation' : `${ordinal(p - reg)} prolongation`;
+}
+
+/** Une de tes équipes ? (clés « ligue:id » des réglages) */
+const isFavTeam = (g, t, opts) => (opts.favTeams ?? []).includes(`${g.leagueId}:${t.id}`);
+
 
 /** Met à jour le relevé : les matchs absents cette fois sont conservés. */
 export function remember(prev, games, opts = {}) {
@@ -58,12 +88,26 @@ export function remember(prev, games, opts = {}) {
 
 
 
-function matchEvents(g, before) {
+function matchEvents(g, before, opts = {}) {
   const out = [];
   const link = g.link ?? '';
 
   if (before.state === 'pre' && g.state === 'in') {
-    out.push({ title: 'Début du match', body: `${g.away.abbr} @ ${g.home.abbr}`, team: g.home, link });
+    // Match 7 d'une série : tout se joue ce soir.
+    const decisive = g.series?.game === 7;
+    out.push({
+      title: decisive ? '🔥 Match 7 : ça commence !' : 'Début du match',
+      body: decisive ? `${g.away.abbr} @ ${g.home.abbr} · ${g.series.text}` : `${g.away.abbr} @ ${g.home.abbr}`,
+      team: g.home,
+      link,
+      big: decisive,
+    });
+  }
+
+  // Prolongation, tirs de barrage, manches supplémentaires.
+  const extra = g.state === 'in' ? overtimeName(g, before) : '';
+  if (extra) {
+    out.push({ title: `⏱️ ${extra} !`, body: scoreLine(g), team: g.home, link });
   }
 
   if (g.state === 'in' && scoreAlert(g.leagueId)) {
@@ -83,8 +127,9 @@ function matchEvents(g, before) {
         team,
         link,
         scorer,
-        // Pour chercher le buteur ailleurs si le tableau des scores ne le donne pas.
-        goal: isGoal && !scorer ? { leagueId: g.leagueId, eventId: g.id, teamId: team.id } : null,
+        // Pour chercher le buteur (s'il manque), les passes et ses buts du
+        // match (tour du chapeau) dans le résumé détaillé.
+        goal: isGoal ? { leagueId: g.leagueId, eventId: g.id, teamId: team.id } : null,
       });
     }
   }
@@ -94,10 +139,23 @@ function matchEvents(g, before) {
     const tie = !winner && num(g.home.score) !== null && num(g.home.score) === num(g.away.score);
     // Séries éliminatoires : le match qui termine la série a son propre titre.
     const clinched = winner && g.series?.done && g.series.leaderId === winner.id;
-    const title = clinched ? `Les ${winner.name} remportent la série !`
-      : winner ? `Victoire des ${winner.name}` : tie ? 'Match nul' : 'Match terminé';
+    const loser = winner ? (winner === g.home ? g.away : g.home) : null;
+    const final = /finale de la coupe stanley|finale nba|finale de la nba|série mondiale|super bowl/i.test(g.series?.round ?? '');
+    let title = winner ? `Victoire des ${winner.name}` : tie ? 'Match nul' : 'Match terminé';
+    let team = winner ?? g.home;
+    let big = false;
+    if (clinched) {
+      // Série gagnée… ou perdue, si c'est ton équipe qui tombe.
+      if (isFavTeam(g, loser, opts) && !isFavTeam(g, winner, opts)) {
+        title = `💔 Les ${loser.name} sont éliminés`;
+        team = loser;
+      } else {
+        title = final ? `🏆 Les ${winner.name} sont champions !` : `🏆 Les ${winner.name} remportent la série !`;
+        big = true;
+      }
+    }
     const body = g.series ? `${scoreLine(g)} · ${g.series.text}` : scoreLine(g);
-    out.push({ title, body, team: winner ?? g.home, link });
+    out.push({ title, body, team, link, big });
   }
   return out;
 }
@@ -140,6 +198,26 @@ function sessionEvents(g, before, opts = {}) {
   }
   if (g.state === 'in' && (before.state !== 'in' || before.session !== g.session)) {
     out.push({ title: `${g.session || 'Séance'} : c'est parti`, body: g.title, team, link });
+  }
+  // Drapeau rouge, voiture de sécurité (réelle ou virtuelle).
+  if (g.state === 'in' && before.state === 'in' && before.session === g.session && g.flag && g.flag !== before.flag) {
+    const FLAGS = { red: '🟥 Drapeau rouge', sc: '🚨 Voiture de sécurité', vsc: '🟨 Voiture de sécurité virtuelle' };
+    out.push({ title: FLAGS[g.flag], body: `${g.session} · ${g.title}`, team, link });
+  }
+  // Un pilote favori s'arrête aux puits.
+  if (g.state === 'in' && before.state === 'in' && before.session === g.session) {
+    for (const d of favs) {
+      const r = (g.results ?? []).find((x) => sameDriver(x, d));
+      const was = before.pits?.[driverKey(d)] ?? 0;
+      if (r?.pits && r.pits > was) {
+        out.push({
+          title: `🔧 ${nameOf(d)} passe aux puits`,
+          body: `${r.pits === 1 ? '1er arrêt' : `${r.pits}e arrêt`} · ${place(r.pos)} · ${g.title}`,
+          team: faceOf(d),
+          link,
+        });
+      }
+    }
   }
   // Un pilote favori passe en tête pendant la séance, ou gagne des places
   // en course (en essais et en qualifs, l'ordre change à chaque tour rapide :
@@ -230,7 +308,7 @@ export function detectEvents(prev, games, opts = {}) {
   for (const g of games) {
     const before = prev.get(g.id);
     if (!before) continue; // match apparu : rien n'a « changé »
-    if (g.kind === 'match') out.push(...matchEvents(g, before));
+    if (g.kind === 'match') out.push(...matchEvents(g, before, opts));
     else if (g.kind === 'card') out.push(...cardEvents(g, before, opts));
     else out.push(...sessionEvents(g, before, opts));
   }

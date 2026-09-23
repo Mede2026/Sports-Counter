@@ -47,6 +47,8 @@ const DEFAULTS = {
   showForm: true,
   // Traduire en français les descriptions d'ESPN (Google Traduction, sans compte).
   translate: true,
+  // Résultats d'hier de tes équipes, en notification le matin.
+  morningDigest: true,
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).
   shortcuts: { ...DEFAULT_SHORTCUTS },
 };

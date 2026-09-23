@@ -1,6 +1,14 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.8.0': [
+    '🎩 Notification quand un joueur réussit un tour du chapeau (3 buts dans le match).',
+    '🥅 Filet désert : tu sais quand une équipe retire son gardien en fin de match.',
+    '⏱️ Prolongation, tirs de barrage, tirs au but et manches supplémentaires sont annoncés.',
+    '🏆 Séries : match 7, série gagnée, élimination de ton équipe et championnat.',
+    '🏎️ F1 : drapeau rouge, voiture de sécurité et arrêts aux puits de tes pilotes.',
+    '☀️ Le matin, un résumé des résultats d’hier de tes équipes (désactivable dans Réglages).',
+  ],
   '0.7.2': [
     '🏒 Au hockey, le statut ne s’affiche plus en anglais (« 20:00 - 3rd ») : il devient « Début de la 3e période ».',
     '⏱️ L’horloge ne s’affiche plus deux fois de suite, au hockey comme au basket et au football.',

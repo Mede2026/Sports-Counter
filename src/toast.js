@@ -56,6 +56,8 @@ function render(t) {
   el.title.textContent = t.title ?? '';
   el.body.textContent = t.body ?? '';
   el.body.hidden = false;
+  // Résumé du matin : le texte peut tenir sur deux lignes.
+  el.card.classList.toggle('toast--multi', !!t.multi);
   el.actions.hidden = true;
   el.card.title = t.link ? 'Ouvrir le match sur ESPN' : '';
   el.card.style.cursor = 'pointer';

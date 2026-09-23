@@ -294,7 +294,25 @@ function toDriver(c, i) {
     flag: a.flag?.href ?? '',
     team: c?.vehicle?.manufacturer ?? c?.team?.displayName ?? c?.team?.name ?? '',
     gap: gapOf(c),
+    // Arrêts aux puits, quand ESPN les compte (nom de statistique variable).
+    pits: Number(statOf(c?.statistics, PIT_STATS)) || 0,
   };
+}
+
+const PIT_STATS = ['pitStops', 'pits', 'pitstops', 'numPitStops', 'stops'];
+
+/**
+ * Drapeau d'une séance de F1 d'après le statut d'ESPN : 'red' (drapeau
+ * rouge), 'sc' (voiture de sécurité), 'vsc' (voiture de sécurité virtuelle)
+ * ou '' (course normale).
+ */
+export function flagOf(status) {
+  const t = status?.type ?? {};
+  const text = `${t.name ?? ''} ${t.description ?? ''} ${t.detail ?? ''} ${t.shortDetail ?? ''}`;
+  if (/red[ _-]?flag/i.test(text)) return 'red';
+  if (/virtual/i.test(text)) return 'vsc';
+  if (/safety[ _-]?car|caution|yellow[ _-]?flag/i.test(text)) return 'sc';
+  return '';
 }
 
 // Écart avec le meneur : ESPN le range sous des noms variables selon la séance.
@@ -388,20 +406,26 @@ function lastScorers(comp) {
  * hockey). Noms vides si ESPN ne les fournit pas ou si l'adresse est illisible.
  */
 export async function fetchGoal(leagueId, eventId, teamId) {
-  const none = { scorer: '', assists: [] };
+  const none = { scorer: '', assists: [], goals: 0 };
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || !eventId) return none;
   try {
     const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
     const pools = [data?.scoringPlays, data?.plays, data?.keyEvents, data?.header?.competitions?.[0]?.details];
     let last = null;
+    let used = [];
     for (const pool of pools) {
       for (const p of pool ?? []) {
         if (isScoring(p) && String(p?.team?.id ?? '') === String(teamId)) last = p;
       }
+      used = pool ?? [];
       if (last) break; // première source qui connaît le but : on s'y tient
     }
-    return last ? { scorer: scorerName(last), assists: assistNames(last) } : none;
+    if (!last) return none;
+    const scorer = scorerName(last);
+    // Buts de ce joueur dans le match, celui-ci compris (3 = tour du chapeau).
+    const goals = scorer ? used.filter((p) => isScoring(p) && scorerName(p) === scorer).length : 0;
+    return { scorer, assists: assistNames(last), goals };
   } catch {
     return none;
   }
@@ -595,6 +619,7 @@ function normalizeEvent(event, leagueId, logo = '') {
     statusText,
     playoffs,
     clock: liveClock(leagueId, state, frStatus, status?.displayClock, statusText),
+    period: Number(status?.period) || null,
     startsAt: event?.date ? new Date(event.date) : null,
     link: pickLink(event),
   };
@@ -624,6 +649,7 @@ function normalizeEvent(event, leagueId, logo = '') {
       // Tour en cours / total, quand ESPN le donne (course et sprint).
       laps: session.status?.period && session.laps ? `Tour ${session.status.period} / ${session.laps}` : '',
       session: sessionLabel(session),
+      flag: flagOf(session.status),
       statusText: statusFr(session.status?.type?.shortDetail ?? '') || base.statusText,
       startsAt: session.date ? new Date(session.date) : base.startsAt,
       clock: '',
@@ -1629,4 +1655,27 @@ export async function fetchBracket(leagueId) {
     if (rounds.length) return { year, rounds };
   }
   return null;
+}
+
+/** Matchs d'hier d'une ligue (résumé du matin). */
+export function fetchYesterday(leagueId) {
+  return fetchDay(leagueId, -1);
+}
+
+/**
+ * Équipes qui ont retiré leur gardien pour un attaquant de plus, d'après les
+ * jeux du match : [idÉquipe]. Vide si ESPN ne le signale pas.
+ */
+export async function fetchPulledGoalies(leagueId, eventId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !eventId) return [];
+  try {
+    const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
+    return [...new Set((data?.plays ?? [])
+      .filter((p) => /goalie pulled|pulled goalie|pulls? (the )?goalie|extra attacker|empty net(?! goal)/i.test(`${p?.type?.text ?? ''} ${p?.text ?? ''}`))
+      .map((p) => String(p?.team?.id ?? ''))
+      .filter(Boolean))];
+  } catch {
+    return [];
+  }
 }
