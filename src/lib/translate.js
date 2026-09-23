@@ -4,6 +4,9 @@
 //   2. à défaut, le traducteur intégré au moteur du navigateur (Edge /
 //      WebView2), qui travaille sur l'ordinateur, quand Windows le fournit.
 // Chaque phrase n'est traduite qu'une fois : le résultat est gardé.
+// Les petits textes qu'aucun dictionnaire ne connaît (statut rare, méthode de
+// victoire…) passent par autoFr : traduits en arrière-plan, puis l'évènement
+// « sports-counter:translated » demande à la fenêtre de se redessiner.
 
 const CACHE_KEY = 'sports-counter.translations.v1';
 const CACHE_MAX = 600;
@@ -31,6 +34,43 @@ function saveCache() {
 /** Traduction déjà connue, sinon le texte d'origine. */
 export function translated(text) {
   return loadCache().get(text) ?? text;
+}
+
+/** Traduction automatique activée dans les réglages (oui par défaut). */
+function enabled() {
+  try {
+    return JSON.parse(localStorage.getItem('sports-counter.prefs.v1') ?? '{}')?.translate !== false;
+  } catch {
+    return true;
+  }
+}
+
+export const TRANSLATED_EVENT = 'sports-counter:translated';
+
+const queue = new Set();
+let queueTimer = null;
+
+/**
+ * Texte en français : la traduction connue, sinon le texte tel quel ; un texte
+ * anglais inconnu est mis en file pour être traduit tout de suite après.
+ */
+export function autoFr(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw || !/[a-z]{2}/i.test(raw) || !enabled()) return raw;
+  // Dates et heures (« 9/24 - 7:00 PM EDT ») : affichées autrement ailleurs.
+  if (/\d+\/\d+|\d:\d\d\s*[ap]m\b/i.test(raw)) return raw;
+  const hit = loadCache().get(raw);
+  if (hit) return hit;
+  queue.add(raw);
+  if (!queueTimer && typeof window !== 'undefined') {
+    queueTimer = setTimeout(async () => {
+      queueTimer = null;
+      const list = [...queue];
+      queue.clear();
+      if (await translateAll(list)) window.dispatchEvent(new Event(TRANSLATED_EVENT));
+    }, 400);
+  }
+  return raw;
 }
 
 let onDevice; // traducteur intégré (créé une fois), null s'il n'existe pas

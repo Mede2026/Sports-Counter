@@ -1,6 +1,6 @@
 [package]
 name = "sports-counter"
-version = "0.6.3"
+version = "0.6.4"
 description = "Widget flottant de scores sportifs en direct"
 edition = "2021"
 rust-version = "1.77"

@@ -15,6 +15,7 @@ import { NHL_TEAMS } from './teams-nhl.js';
 import { ordinal } from './format.js';
 import { statusFr, weightFr, resultFr, segmentFr } from './status-fr.js';
 import { diskCache } from './cache.js';
+import { autoFr } from './translate.js';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 const BASE_V2 = 'https://site.api.espn.com/apis/v2/sports';
@@ -267,7 +268,7 @@ const SESSION_LABELS = {
 
 function sessionLabel(comp) {
   const abbr = String(comp?.type?.abbreviation ?? '').toUpperCase();
-  return SESSION_LABELS[abbr] ?? comp?.type?.text ?? '';
+  return SESSION_LABELS[abbr] ?? autoFr(comp?.type?.text ?? '');
 }
 
 /**
@@ -612,7 +613,7 @@ function normalizeEvent(event, leagueId, logo = '') {
       // Tour en cours / total, quand ESPN le donne (course et sprint).
       laps: session.status?.period && session.laps ? `Tour ${session.status.period} / ${session.laps}` : '',
       session: sessionLabel(session),
-      statusText: session.status?.type?.shortDetail ?? base.statusText,
+      statusText: statusFr(session.status?.type?.shortDetail ?? '') || base.statusText,
       startsAt: session.date ? new Date(session.date) : base.startsAt,
       clock: '',
     };
@@ -871,7 +872,7 @@ function gameLeaders(data, homeId, awayId) {
   const names = [...new Set([...home, ...away].map((c) => c?.name).filter(Boolean))];
   return names
     .map((name) => ({
-      label: LEADER_FR[name] ?? [...home, ...away].find((c) => c?.name === name)?.displayName ?? name,
+      label: LEADER_FR[name] ?? autoFr([...home, ...away].find((c) => c?.name === name)?.displayName ?? name),
       home: best(home, name),
       away: best(away, name),
     }))
@@ -920,7 +921,7 @@ const GROUP_FR = [
   [/atlantic/i, 'Atlantique'], [/metropolitan/i, 'Métropolitaine'], [/central/i, 'Centrale'],
   [/pacific/i, 'Pacifique'], [/american league|^al\b/i, 'Ligue américaine'], [/national league|^nl\b/i, 'Ligue nationale'],
 ];
-const groupFr = (name) => GROUP_FR.find(([re]) => re.test(name ?? ''))?.[1] ?? name ?? '';
+const groupFr = (name) => GROUP_FR.find(([re]) => re.test(name ?? ''))?.[1] ?? autoFr(name);
 
 const STANDINGS_TTL = 60 * 60 * 1000;
 // idLigue -> groupes du classement, gardés sur le disque 1 h.
@@ -1083,7 +1084,7 @@ export async function fetchLeagueLeaders(leagueId) {
   const cats = (data?.categories ?? [])
     .map((c) => ({
       name: c?.name ?? '',
-      label: LEADER_FR[c?.name] ?? c?.displayName ?? c?.name ?? '',
+      label: LEADER_FR[c?.name] ?? autoFr(c?.displayName ?? c?.name ?? ''),
       leaders: (c?.leaders ?? []).slice(0, 10).map((l, i) => ({
         rank: i + 1,
         value: l?.displayValue ?? String(l?.value ?? ''),

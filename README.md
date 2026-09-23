@@ -42,8 +42,9 @@ seulement les équipes que tu choisis.
   nouveautés en quelques phrases (à revoir en cliquant sur la version dans
   les réglages). Elles se trouvent dans `src/lib/changelog.js`.
 - **En français** : statuts traduits sur place (« Haut de la 4e », « 3e quart »,
-  « Mi-temps »…) et descriptions des jeux traduites par Google Traduction, sans
-  compte ni clé (désactivable dans les réglages).
+  « Mi-temps »…). Le reste (descriptions des jeux, statuts rares, résultats
+  UFC…) est traduit par Google Traduction, sans compte ni clé à créer
+  (désactivable dans les réglages).
 - **Sans Internet** : le widget le dit clairement (« vérifie ta connexion
   Internet »), garde les derniers scores connus et réessaie tout seul.
 - **Couleurs de ton équipe** sur la bordure du widget.

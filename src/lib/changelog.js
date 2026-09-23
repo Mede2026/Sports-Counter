@@ -1,6 +1,11 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.6.4': [
+    '🇫🇷 La traduction passe par un nouveau service de Google, plus fiable : l’ancien reste en secours.',
+    '🔤 Les textes anglais qui restaient (statuts rares, résultats UFC, catégories, séances F1…) sont maintenant traduits aussi.',
+    '🏎️ En F1, « Lap 23 of 57 » devient « Tour 23 / 57 ».',
+  ],
   '0.6.3': [
     '🥊 Tu peux choisir tes combattants favoris à l’UFC, avec leur photo, comme tes pilotes en F1.',
     '⭐ Leur combat est mis en évidence dans le widget, la fenêtre Match et le calendrier.',

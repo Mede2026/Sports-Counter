@@ -1,7 +1,9 @@
 // Traduction immédiate (sans réseau) des petits textes d'ESPN qui reviennent
 // sans cesse : statuts de match de chaque sport, termes de l'UFC. Les longues
 // descriptions de jeux passent par translate.js.
+// Ce qui reste inconnu part à Google Traduction (autoFr).
 // Au baseball, « Haut de la 4e » sous-entend « manche », comme à la radio.
+import { autoFr } from './translate.js';
 
 const ord = (n) => (Number(n) === 1 ? '1re' : `${n}e`);   // manche, demie, période
 const ordM = (n) => (Number(n) === 1 ? '1er' : `${n}e`);  // quart
@@ -30,6 +32,7 @@ const EXACT = {
   suspended: 'Suspendu',
   abandoned: 'Abandonné',
   scheduled: 'À venir',
+  tbd: 'À déterminer',
   'in progress': 'En cours',
   'end of period': 'Fin de période',
 };
@@ -66,7 +69,12 @@ export function statusFr(text) {
   // Hockey hors LNH, formes génériques : « End of 2nd Period », « 2nd Period ».
   if ((m = /^end of (\d)(?:st|nd|rd|th)\s*period$/i.exec(raw))) return `Fin de la ${ord(m[1])} période`;
   if ((m = /^(\d)(?:st|nd|rd|th)\s*period$/i.exec(raw))) return `${ord(m[1])} période`;
-  return raw;
+  // F1 : « Lap 23 », « Lap 23 of 57 ».
+  if ((m = /^lap\s+(\d+)(?:\s*(?:of|\/)\s*(\d+))?$/i.exec(raw))) return `Tour ${m[1]}${m[2] ? ` / ${m[2]}` : ''}`;
+  // UFC : « End of Round 2 », « Round 2 ».
+  if ((m = /^end of (?:round|rd) (\d)$/i.exec(raw))) return `Fin du round ${m[1]}`;
+  if ((m = /^(?:round|rd|r)\s*(\d)$/i.exec(raw))) return `Round ${m[1]}`;
+  return autoFr(raw);
 }
 
 /* ---------- UFC ---------- */
@@ -88,7 +96,7 @@ const WEIGHTS = [
 export function weightFr(text) {
   const raw = String(text ?? '').trim();
   const hit = WEIGHTS.find(([re]) => re.test(raw));
-  if (!hit) return raw;
+  if (!hit) return autoFr(raw);
   return /women/i.test(raw) ? `${hit[1]} (femmes)` : hit[1];
 }
 
@@ -107,7 +115,7 @@ const RESULTS = [
 /** Méthode de victoire : « Decision - Unanimous » → « Décision unanime ». */
 export function resultFr(text) {
   const raw = String(text ?? '').trim();
-  return RESULTS.find(([re]) => re.test(raw))?.[1] ?? raw;
+  return RESULTS.find(([re]) => re.test(raw))?.[1] ?? autoFr(raw);
 }
 
 /** Partie de la soirée : « Main Card » → « Carte principale ». */
@@ -116,5 +124,5 @@ export function segmentFr(text) {
   if (/early prelim/i.test(raw)) return 'Préliminaires hâtifs';
   if (/prelim/i.test(raw)) return 'Préliminaires';
   if (/main/i.test(raw)) return 'Carte principale';
-  return raw;
+  return autoFr(raw);
 }

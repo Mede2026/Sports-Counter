@@ -9,6 +9,7 @@ import { whenText, shortWhen, untilText, isDate, TIME_FMT } from './lib/time.js'
 import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
 import { diskCache } from './lib/cache.js';
+import { TRANSLATED_EVENT } from './lib/translate.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
@@ -852,6 +853,8 @@ window.addEventListener('storage', (e) => {
 
 // Retour du réseau (sortie de veille, Wi-Fi retrouvé) : relevé immédiat.
 window.addEventListener('online', () => refresh(true));
+// Statuts d'ESPN traduits entre-temps : on relit les scores pour les afficher en français.
+window.addEventListener(TRANSLATED_EVENT, () => refresh(true));
 
 syncFullscreenOption();
 setInterval(tick, TICK_MS);

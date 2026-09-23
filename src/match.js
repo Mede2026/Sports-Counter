@@ -10,7 +10,7 @@ import { visibleTeamColor } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
-import { translated, translateAll } from './lib/translate.js';
+import { translated, translateAll, TRANSLATED_EVENT } from './lib/translate.js';
 
 const REFRESH_LIVE_MS = 20_000;
 const REFRESH_IDLE_MS = 300_000;
@@ -534,5 +534,6 @@ window.addEventListener('storage', (e) => {
 
 // Retour du réseau : on recharge tout de suite.
 window.addEventListener('online', () => { lastHtml = ''; load(); });
+window.addEventListener(TRANSLATED_EVENT, () => load());
 
 load();

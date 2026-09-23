@@ -8,6 +8,7 @@ import { crestHtml, bindCrests } from './lib/crest.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { visibleTeamColor } from './lib/color.js';
 import { NHL_TEAMS } from './lib/teams-nhl.js';
+import { autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -32,6 +33,9 @@ const el = {
 
 let prefs = loadPrefs();
 let current = LEAGUES[0].id;
+// Textes d'ESPN traduits entre-temps : on redessine le classement affiché.
+window.addEventListener(TRANSLATED_EVENT, () => { if (view === 'standings') loadStandings(); });
+
 let view = 'teams'; // 'teams' (une ligue), 'prefs' (Réglages), 'calendar', 'players'
 let teams = [];
 let query = '';
@@ -147,7 +151,7 @@ function renderWhole(league) {
         <span class="check">${CHECK}</span>
         ${f.photo ? `<img class="face-sm" src="${f.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}
         <span class="team-row__name">${f.name}${f.record ? ` <small class="st__muted">${f.record}</small>` : ''}</span>
-        <span class="team-row__abbr">${f.weight ?? ''}</span>
+        <span class="team-row__abbr">${autoFr(f.weight)}</span>
       </div>`).join('') || `<div class="state">Aucun combattant ne correspond à « ${query} ».</div>`;
   }
 
@@ -732,10 +736,10 @@ async function renderLeaders() {
   const { leagueId, cats, teams } = leadersData;
   const cat = cats.find((c) => c.name === leaderCat) ?? cats[0];
   const chips = `<div class="cat-chips">${cats.map((c) => `
-    <button type="button" class="cat-chip${c.name === cat.name ? ' cat-chip--on' : ''}" data-cat="${c.name}">${c.label}</button>`).join('')}</div>`;
+    <button type="button" class="cat-chip${c.name === cat.name ? ' cat-chip--on' : ''}" data-cat="${c.name}">${autoFr(c.label)}</button>`).join('')}</div>`;
   const draw = (players) => {
     el.standings.innerHTML = chips + `<table class="st__table st__table--players">
-      <thead><tr><th class="st__rank">#</th><th class="st__team">Joueur</th><th>Équipe</th><th>${cat.label}</th></tr></thead>
+      <thead><tr><th class="st__rank">#</th><th class="st__team">Joueur</th><th>Équipe</th><th>${autoFr(cat.label)}</th></tr></thead>
       <tbody>${cat.leaders.map((l, i) => {
         const p = players[i];
         const t = teams.get(l.teamId);
@@ -775,7 +779,7 @@ function teamStandingsHtml(leagueId, groups) {
   const fav = (id) => prefs.favorites.includes(`${leagueId}:${id}`);
   return groups.map((g) => `
     <div class="st">
-      <div class="st__group">${g.name}</div>
+      <div class="st__group">${autoFr(g.name)}</div>
       <table class="st__table">
         <thead><tr><th class="st__rank">#</th><th class="st__team">Équipe</th>${cols.map(([, h]) => `<th>${h}</th>`).join('')}</tr></thead>
         <tbody>${g.rows.map((r) => `

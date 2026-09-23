@@ -141,6 +141,13 @@ async fn espn_get(path: String) -> Result<String, String> {
 /* ---------- Traduction (Google Traduction, sans clé ni compte) ---------- */
 
 const TRANSLATE_URL: &str = "https://translate.googleapis.com/translate_a/single";
+/// Service de traduction de pages de Google (celui du bouton « Traduire » de
+/// Chrome) : plusieurs textes par requête, sans compte. La clé est publique,
+/// la même pour tout le monde.
+const TRANSLATE_HTML_URL: &str = "https://translate-pa.googleapis.com/v1/translateHtml";
+const TRANSLATE_HTML_KEY: &str = "AIzaSyATBXajvzQLTDHEQbcpq0Ihe0vWDHmO520";
+/// Textes par requête au service de pages.
+const TRANSLATE_HTML_BATCH: usize = 64;
 /// Taille maximale d'un paquet de textes : l'adresse de la requête a une limite.
 const TRANSLATE_CHUNK: usize = 1500;
 
@@ -202,7 +209,117 @@ async fn translate_chunk(
     Ok(out)
 }
 
-/// Traduit des textes anglais d'ESPN en français (descriptions des jeux…).
+/// Le service de pages lit du HTML : on protège < > & à l'aller, on les
+/// rétablit au retour (avec les apostrophes et guillemets codés).
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn html_unescape(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        // Une entité est courte (« &#39; ») : au-delà, c'est un simple « & ».
+        let Some(end) = rest.find(';').filter(|&e| e <= 10) else {
+            out.push('&');
+            rest = &rest[1..];
+            continue;
+        };
+        let entity = &rest[1..end];
+        let ch = match entity {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            "nbsp" => Some(' '),
+            _ => entity
+                .strip_prefix("#x")
+                .and_then(|h| u32::from_str_radix(h, 16).ok())
+                .or_else(|| entity.strip_prefix('#').and_then(|d| d.parse().ok()))
+                .and_then(char::from_u32),
+        };
+        match ch {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[end + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Traduit un paquet de textes avec le service de pages : une réponse par
+/// texte, dans le même ordre.
+async fn translate_html(client: &reqwest::Client, texts: &[String]) -> Result<Vec<String>, String> {
+    let escaped: Vec<String> = texts.iter().map(|t| html_escape(t)).collect();
+    let payload = serde_json::json!([[escaped, "en", "fr"], "te_lib"]);
+    let body = client
+        .post(TRANSLATE_HTML_URL)
+        .header("Content-Type", "application/json+protobuf")
+        .header("X-Goog-API-Key", TRANSLATE_HTML_KEY)
+        .body(payload.to_string())
+        .send()
+        .await
+        .map_err(|e| format!("réseau : {e}"))?
+        .error_for_status()
+        .map_err(|e| e.to_string())?
+        .text()
+        .await
+        .map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let list = value
+        .get(0)
+        .and_then(|v| v.as_array())
+        .ok_or("réponse de traduction illisible")?;
+    if list.len() != texts.len() {
+        return Err("réponse de traduction incomplète".into());
+    }
+    Ok(list
+        .iter()
+        .map(|v| {
+            html_unescape(v.as_str().unwrap_or_default())
+                .trim()
+                .to_string()
+        })
+        .collect())
+}
+
+/// Ancien service (translate_a) : textes regroupés par paquets de taille
+/// limitée, l'adresse de la requête ayant une longueur maximale.
+async fn translate_gtx(
+    client: &reqwest::Client,
+    texts: Vec<String>,
+) -> Result<Vec<String>, String> {
+    let mut out = Vec::with_capacity(texts.len());
+    let mut chunk: Vec<String> = Vec::new();
+    let mut size = 0;
+    for t in texts {
+        if !chunk.is_empty() && size + t.len() > TRANSLATE_CHUNK {
+            out.extend(translate_chunk(client, &chunk).await?);
+            chunk.clear();
+            size = 0;
+        }
+        size += t.len() + 1;
+        chunk.push(t);
+    }
+    if !chunk.is_empty() {
+        out.extend(translate_chunk(client, &chunk).await?);
+    }
+    Ok(out)
+}
+
+/// Traduit des textes anglais d'ESPN en français (jeux, statuts, résultats…).
+/// Service de pages d'abord ; s'il refuse, l'ancien service de Google.
 #[tauri::command]
 async fn translate_text(texts: Vec<String>) -> Result<Vec<String>, String> {
     if texts.len() > 300 {
@@ -214,19 +331,18 @@ async fn translate_text(texts: Vec<String>) -> Result<Vec<String>, String> {
         .build()
         .map_err(|e| e.to_string())?;
     let mut out = Vec::with_capacity(texts.len());
-    let mut chunk: Vec<String> = Vec::new();
-    let mut size = 0;
-    for t in texts {
-        if !chunk.is_empty() && size + t.len() > TRANSLATE_CHUNK {
-            out.extend(translate_chunk(&client, &chunk).await?);
-            chunk.clear();
-            size = 0;
+    let mut failed = false;
+    for batch in texts.chunks(TRANSLATE_HTML_BATCH) {
+        match translate_html(&client, batch).await {
+            Ok(list) => out.extend(list),
+            Err(_) => {
+                failed = true;
+                break;
+            }
         }
-        size += t.len() + 1;
-        chunk.push(t);
     }
-    if !chunk.is_empty() {
-        out.extend(translate_chunk(&client, &chunk).await?);
+    if failed {
+        return translate_gtx(&client, texts).await;
     }
     Ok(out)
 }
