@@ -1,6 +1,11 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.4.4': [
+    '◀️ Dans cet écran, les flèches permettent de revoir les notes des versions précédentes.',
+    '🔋 En mode « Jamais (notifications) », le widget ne dessine plus rien pour rien : l’app travaille moins.',
+    '🧹 Le code de l’app a été rangé pour que les prochaines nouveautés arrivent plus vite et avec moins de bugs.',
+  ],
   '0.4.3': [
     '📝 Après chaque mise à jour, cet écran résume les nouveautés en quelques points.',
     '🔎 Tu peux le rouvrir quand tu veux en cliquant sur le numéro de version dans les réglages.',

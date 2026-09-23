@@ -7,13 +7,13 @@ import { visibleTeamColor } from './lib/color.js';
 import { detectEvents, remember } from './lib/events.js';
 import { whenText, shortWhen, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
+import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
 const TICK_MS = 30_000;           // comptes à rebours et rappels
 const DAY_MS = 24 * 3600 * 1000;
 const SIZES = { s: 0.85, m: 1, l: 1.2 };
-const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
 const el = {
   widget: document.getElementById('widget'),
@@ -33,7 +33,6 @@ const forms = new Map(); // "ligue:équipe" -> { at, list } : 5 derniers résult
 let lastRender = null; // [matchs, erreur] du dernier rendu, pour redessiner
 
 const inTauri = () => !!window.__TAURI__;
-const attr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 /* ---------- Rendu ---------- */
 
@@ -52,15 +51,12 @@ function teamRow(game, team, dim) {
     </div>`;
 }
 
-const FORM_ICONS = { V: '✅', D: '❌', N: '➖' };
-
 /** Les 5 derniers résultats d'une équipe favorite : ✅ ❌ ➖. */
 function formHtml(leagueId, teamId) {
   if (prefs.showForm === false) return '';
   const list = forms.get(`${leagueId}:${teamId}`)?.list;
   if (!list?.length) return '';
-  const tip = list.map((f) => `${f.res === 'V' ? 'Victoire' : f.res === 'D' ? 'Défaite' : 'Nul'} ${f.score} c. ${f.opp}`).join('\n');
-  return ` <span class="form" title="${attr(tip)}">${list.map((f) => FORM_ICONS[f.res]).join('')}</span>`;
+  return ` <span class="form" title="${attr(formTitle(list))}">${formIcons(list)}</span>`;
 }
 
 /** Compte à rebours, tenu à jour par la minuterie sans redemander les scores. */
@@ -293,7 +289,8 @@ let formsLoading = false;
 
 /** Charge (en arrière-plan) les 5 derniers résultats des équipes favorites. */
 async function loadForms() {
-  if (prefs.showForm === false || formsLoading) return;
+  // ✅ ❌ : seulement pour l'affichage, rien à charger si le widget ne sert pas.
+  if (prefs.showForm === false || formsLoading || widgetUnused()) return;
   const stale = prefs.favorites.filter((key) => {
     const [leagueId] = key.split(':');
     if (LEAGUES_BY_ID[leagueId]?.kind !== 'team') return false;
@@ -504,8 +501,15 @@ function footHtml(error, offline) {
   return error ? `<span class="foot__err">Partiel — ${error}</span>` : '';
 }
 
+/**
+ * Mode « Jamais (notifications) » : le widget n'est jamais montré, inutile
+ * de construire ses cartes. Le relevé et les notifications continuent.
+ */
+const widgetUnused = () => (prefs.widgetMode ?? 'always') === 'never';
+
 function render(games, error, offline = false) {
   lastRender = [games, error, offline];
+  if (widgetUnused()) return; // redessiné dès qu'on change de mode (réglages)
   applyLook(); // le thème décide des logos, avant de construire les cartes
   const html = games.length ? games.map(gameCard).join('') : emptyHtml();
   games.forEach((g) => shownIds.add(g.id));
@@ -736,6 +740,9 @@ window.addEventListener('storage', (e) => {
   if (!e.key?.startsWith('sports-counter.') || e.key === REMINDED_KEY || e.key === 'sports-counter.lastVersion') return;
   if (e.key.startsWith('sports-counter.teams.') || e.key.startsWith('sports-counter.drivers.')) return;
   prefs = loadPrefs();
+  // Redessiné avant d'être montré : en quittant le mode « Jamais », le widget
+  // n'apparaît pas vide ou avec d'anciens scores.
+  if (lastRender) render(...lastRender);
   shownByMode = undefined; // réglage peut-être changé : réappliquer
   if ((prefs.widgetMode ?? 'always') !== 'live') applyWidgetMode(false);
   syncFullscreenOption();

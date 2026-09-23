@@ -3,6 +3,7 @@
 
 import { F1_LOGO } from './f1-logo.js';
 import { sameDriver } from './api.js';
+import { MEDALS, rank as place } from './format.js';
 
 // Ligues où chaque point mérite une notification. Au basket, le score change
 // toutes les vingt secondes : on s'en tient au début et à la fin du match.
@@ -39,8 +40,7 @@ export function remember(prev, games, opts = {}) {
   return next;
 }
 
-const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
-const place = (n) => (n === 1 ? '1er' : `${n}e`);
+
 
 function matchEvents(g, before) {
   const out = [];

@@ -1,4 +1,6 @@
 // Préférences persistées dans localStorage (aucune dépendance, aucun fichier à gérer).
+import { DEFAULT_SHORTCUTS } from './shortcut.js';
+
 const KEY = 'sports-counter.prefs.v1';
 
 const DEFAULTS = {
@@ -42,7 +44,7 @@ const DEFAULTS = {
   // Les 5 derniers résultats (✅ ❌) à côté des équipes favorites.
   showForm: true,
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).
-  shortcuts: { toggle: 'Ctrl+Alt+KeyS', match: 'Ctrl+Alt+KeyM' },
+  shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 
 export function loadPrefs() {

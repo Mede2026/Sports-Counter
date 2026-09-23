@@ -1,7 +1,7 @@
 import { LEAGUES, LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
 import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchF1Calendar, demoEvents, sameDriver } from './lib/api.js';
-import { untilText, isDate, TIME_FMT } from './lib/time.js';
+import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -559,19 +559,6 @@ const DAY_MS = 24 * 3600 * 1000;
 const CAL_AHEAD = 30;
 let calLoading = false;
 
-const LONG_DAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
-
-function dayLabel(date) {
-  const today = new Date();
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return "Aujourd'hui";
-  if (date.toDateString() === tomorrow.toDateString()) return 'Demain';
-  if (date.toDateString() === yesterday.toDateString()) return 'Hier';
-  const s = LONG_DAY.format(date);
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 function showCalendar() {
   setView('calendar');
   loadCalendar(false);
@@ -675,7 +662,7 @@ function renderCalendar(games, errors) {
     const key = g.startsAt.toDateString();
     if (key !== day) {
       day = key;
-      html += `<div class="cal__day${key === todayKey ? ' cal__day--today' : ''}">${dayLabel(g.startsAt)}</div>`;
+      html += `<div class="cal__day${key === todayKey ? ' cal__day--today' : ''}">${dayName(g.startsAt)}</div>`;
     }
     html += calRow(g);
   }

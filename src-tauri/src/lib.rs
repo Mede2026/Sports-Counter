@@ -128,6 +128,42 @@ async fn espn_get(path: String) -> Result<String, String> {
         .map_err(|e| format!("lecture : {e}\n{url}"))
 }
 
+/// Fenêtre secondaire (réglages, match, notes) : sans cadre système,
+/// redimensionnable, centrée. Si elle existe déjà, on la ramène devant.
+/// `init` : script lancé avant la page, pour lui passer des paramètres.
+/// Renvoie vrai si la fenêtre existait déjà.
+fn open_window(
+    app: &AppHandle,
+    label: &str,
+    page: &str,
+    title: &str,
+    size: (f64, f64),
+    min: (f64, f64),
+    init: Option<String>,
+) -> Result<bool, String> {
+    if let Some(win) = app.get_webview_window(label) {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+        return Ok(true);
+    }
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(page.into()))
+        .title(title)
+        .inner_size(size.0, size.1)
+        .min_inner_size(min.0, min.1)
+        .decorations(false)
+        .transparent(false)
+        .additional_browser_args(BROWSER_ARGS)
+        .resizable(true)
+        .center();
+    if let Some(script) = init {
+        builder = builder.initialization_script(script);
+    }
+    let win = builder.build().map_err(|e| e.to_string())?;
+    let _ = win.set_focus();
+    Ok(false)
+}
+
 /// Identifiant de ligue ou de match venu de l'interface : lettres, chiffres,
 /// tirets seulement (il finit dans un script injecté dans la page).
 fn id_is_safe(s: &str) -> bool {
@@ -142,74 +178,19 @@ async fn open_match(app: AppHandle, league: String, event: String) -> Result<(),
         return Err("match invalide".into());
     }
     let target = serde_json::json!({ "league": league, "event": event });
-
-    if let Some(win) = app.get_webview_window(MATCH) {
+    let existed = open_window(
+        &app,
+        MATCH,
+        "match.html",
+        "Sports Counter — Match",
+        (400.0, 640.0),
+        (340.0, 420.0),
+        Some(format!("window.__MATCH__ = {target};")),
+    )?;
+    // Déjà ouverte : elle bascule sur le match demandé.
+    if existed {
         let _ = app.emit_to(MATCH, "match-open", target);
-        let _ = win.show();
-        let _ = win.unminimize();
-        let _ = win.set_focus();
-        return Ok(());
     }
-
-    let win = WebviewWindowBuilder::new(&app, MATCH, WebviewUrl::App("match.html".into()))
-        .title("Sports Counter — Match")
-        .initialization_script(format!("window.__MATCH__ = {target};"))
-        .inner_size(400.0, 640.0)
-        .min_inner_size(340.0, 420.0)
-        .decorations(false)
-        .transparent(false)
-        .additional_browser_args(BROWSER_ARGS)
-        .resizable(true)
-        .center()
-        .build()
-        .map_err(|e| e.to_string())?;
-    let _ = win.set_focus();
-    Ok(())
-}
-
-/// Lit un raccourci écrit comme « Ctrl+Alt+KeyS ». Une touche seule est
-/// refusée : elle se déclencherait à chaque fois qu'on tape du texte.
-fn parse_shortcut(text: &str) -> Result<Shortcut, String> {
-    let sc = Shortcut::from_str(text).map_err(|_| format!("raccourci invalide : {text}"))?;
-    if !sc
-        .mods
-        .intersects(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER)
-    {
-        return Err("Il faut au moins Ctrl ou Alt dans le raccourci.".into());
-    }
-    Ok(sc)
-}
-
-/// Remplace les raccourcis globaux. Si Windows refuse l'un d'eux (déjà pris
-/// par un autre logiciel), les anciens sont remis et l'erreur est rendue.
-#[tauri::command]
-fn set_shortcuts(app: AppHandle, toggle: String, match_key: String) -> Result<(), String> {
-    let new = [parse_shortcut(&toggle)?, parse_shortcut(&match_key)?];
-    if new[0] == new[1] {
-        return Err("Les deux raccourcis doivent être différents.".into());
-    }
-    let gs = app.global_shortcut();
-    let mut current = SHORTCUTS.lock().unwrap();
-    if *current == [Some(new[0]), Some(new[1])] {
-        return Ok(());
-    }
-    for old in current.iter().flatten() {
-        let _ = gs.unregister(*old);
-    }
-    for (i, sc) in new.iter().enumerate() {
-        if let Err(err) = gs.register(*sc) {
-            for done in &new[..i] {
-                let _ = gs.unregister(*done);
-            }
-            for old in current.iter().flatten() {
-                let _ = gs.register(*old);
-            }
-            return Err(format!(
-                "Ce raccourci est déjà utilisé par un autre logiciel. ({err})"
-            ));
-        }
-    }
-    *current = [Some(new[0]), Some(new[1])];
     Ok(())
 }
 
@@ -220,52 +201,32 @@ async fn open_notes(app: AppHandle, since: String) -> Result<(), String> {
     if since.len() > 20 || !since.chars().all(|c| c.is_ascii_digit() || c == '.') {
         return Err("version invalide".into());
     }
-    if let Some(win) = app.get_webview_window(NOTES) {
-        let _ = win.show();
-        let _ = win.unminimize();
-        let _ = win.set_focus();
-        return Ok(());
-    }
     let opts =
         serde_json::json!({ "since": since, "current": app.package_info().version.to_string() });
-    let win = WebviewWindowBuilder::new(&app, NOTES, WebviewUrl::App("notes.html".into()))
-        .title("Sports Counter — Notes de mise à jour")
-        .initialization_script(format!("window.__NOTES__ = {opts};"))
-        .inner_size(440.0, 500.0)
-        .min_inner_size(360.0, 360.0)
-        .decorations(false)
-        .transparent(false)
-        .additional_browser_args(BROWSER_ARGS)
-        .resizable(true)
-        .center()
-        .build()
-        .map_err(|e| e.to_string())?;
-    let _ = win.set_focus();
+    open_window(
+        &app,
+        NOTES,
+        "notes.html",
+        "Sports Counter — Notes de mise à jour",
+        (440.0, 500.0),
+        (360.0, 360.0),
+        Some(format!("window.__NOTES__ = {opts};")),
+    )?;
     Ok(())
 }
 
 /// Ouvre la fenêtre de réglages, ou la ramène devant si elle existe déjà.
 #[tauri::command]
 async fn open_settings(app: AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window(SETTINGS) {
-        let _ = win.show();
-        let _ = win.unminimize();
-        let _ = win.set_focus();
-        return Ok(());
-    }
-
-    WebviewWindowBuilder::new(&app, SETTINGS, WebviewUrl::App("settings.html".into()))
-        .title("Sports Counter — Réglages")
-        .inner_size(780.0, 540.0)
-        .min_inner_size(660.0, 440.0)
-        .decorations(false)
-        .transparent(false)
-        .additional_browser_args(BROWSER_ARGS)
-        .resizable(true)
-        .center()
-        .build()
-        .map_err(|e| e.to_string())?;
-
+    open_window(
+        &app,
+        SETTINGS,
+        "settings.html",
+        "Sports Counter — Réglages",
+        (780.0, 540.0),
+        (660.0, 440.0),
+        None,
+    )?;
     Ok(())
 }
 

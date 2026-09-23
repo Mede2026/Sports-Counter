@@ -9,10 +9,10 @@ import { crestHtml, bindCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
+import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
 
 const REFRESH_LIVE_MS = 20_000;
 const REFRESH_IDLE_MS = 300_000;
-const MEDALS = { 1: '🥇', 2: '🥈', 3: '🥉' };
 const DAY_FMT = new Intl.DateTimeFormat('fr-CA', { weekday: 'long' });
 
 const inTauri = () => !!window.__TAURI__;
@@ -33,11 +33,7 @@ let link = '';
 let lastHtml = '';
 let prefs = loadPrefs();
 const teamForms = new Map(); // idÉquipe -> 5 derniers résultats
-const FORM_ICONS = { V: '✅', D: '❌', N: '➖' };
 
-const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-const ordinal = (n) => (n === 1 ? '1re' : `${n}e`);
-const rankText = (n) => (n === 1 ? '1er' : `${n}e`);
 
 /* ---------- Morceaux communs ---------- */
 
@@ -141,7 +137,7 @@ function standingsHtml(g, table) {
     const parts = [s ? `${rankText(s.rank)} · ${s.group}` : '', s?.points ? `${s.points} pts` : '', t.record].filter(Boolean);
     const form = teamForms.get(String(t.id));
     const formHtml = form?.length
-      ? `<small class="form" title="${esc(form.map((f) => `${f.res} ${f.score} c. ${f.opp}`).join('\n'))}">${form.map((f) => FORM_ICONS[f.res]).join('')}</small>`
+      ? `<small class="form" title="${esc(formTitle(form))}">${formIcons(form)}</small>`
       : '';
     return `<div class="rank">${crestHtml(t, 'crest-xs')}<b>${esc(t.name)}</b>${formHtml}<span>${esc(parts.join(' · '))}</span></div>`;
   };

@@ -12,6 +12,7 @@ import { LEAGUES_BY_ID } from './leagues.js';
 import { DEMO_EVENTS } from './demo.js';
 import { errText } from './err.js';
 import { NHL_TEAMS } from './teams-nhl.js';
+import { ordinal } from './format.js';
 
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports';
 
@@ -404,7 +405,6 @@ function leagueLogo(data) {
 
 /* ---------- Hockey : statut en français et séries éliminatoires ---------- */
 
-const ordinal = (n) => (n === 1 ? '1re' : `${n}e`);
 
 /**
  * Statut d'un match de hockey en français, à partir de la période. ESPN

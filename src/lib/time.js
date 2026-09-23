@@ -41,3 +41,16 @@ export function untilText(date, now = Date.now(), short = false) {
   }
   return `${pre}${Math.round(min / (24 * 60))} j`;
 }
+
+const LONG_DAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
+
+/** En-tête de jour : « Aujourd'hui », « Demain », « Hier », « Samedi 27 septembre ». */
+export function dayName(date, now = new Date()) {
+  const shift = (d) => { const x = new Date(now); x.setDate(now.getDate() + d); return x.toDateString(); };
+  const key = date.toDateString();
+  if (key === shift(0)) return "Aujourd'hui";
+  if (key === shift(1)) return 'Demain';
+  if (key === shift(-1)) return 'Hier';
+  const s = LONG_DAY.format(date);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
