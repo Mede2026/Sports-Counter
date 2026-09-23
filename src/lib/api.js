@@ -150,6 +150,18 @@ async function teamsFromSchedule(league) {
     }
   }
 
+  // 3. Ligue hors saison (WNBA l'hiver, MLS en décembre) : on remonte le
+  //    temps par tranches de deux semaines, jusqu'à dix mois en arrière, pour
+  //    retrouver les équipes de la dernière saison.
+  const ranges = [];
+  for (let end = -31; end > -310; end -= 14) ranges.push([end - 13, end]);
+  for (let i = 0; i < ranges.length && seen.size < target; i += 4) {
+    const results = await Promise.allSettled(
+      ranges.slice(i, i + 4).map(([a, b]) => getJson(`${league.path}/scoreboard`, `?dates=${ymd(a)}-${ymd(b)}`)),
+    );
+    for (const r of results) if (r.status === 'fulfilled') absorb(r.value);
+  }
+
   if (!seen.size && errors.length) throw new Error(errors.join('\n'));
   return [...seen.values()];
 }
@@ -446,7 +458,7 @@ export async function fetchScoreboard(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league) return [];
   const data = await getJson(`${league.path}/scoreboard`);
-  const logo = leagueLogo(data);
+  const logo = league.logo || leagueLogo(data);
   return (data?.events ?? []).map((e) => normalizeEvent(e, leagueId, logo));
 }
 
@@ -466,7 +478,7 @@ async function fetchDay(leagueId, offsetDays) {
   if (hit && Date.now() - hit.at < DAY_TTL) return hit.events;
 
   const data = await getJson(`${league.path}/scoreboard`, `?dates=${date}`);
-  const logo = leagueLogo(data);
+  const logo = league.logo || leagueLogo(data);
   const events = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId, logo));
   dayCache.set(key, { at: Date.now(), events });
   return events;

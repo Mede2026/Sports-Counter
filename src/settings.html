@@ -65,10 +65,11 @@
           <label for="optTheme">Couleur</label>
           <select id="optTheme"></select>
         </div>
-        <div class="opt" title="Pendant un match : le widget apparaît quand un de tes matchs est en direct, et se cache sinon. Jamais : seulement les notifications.">
+        <div class="opt" title="Sur le bureau : le widget reste derrière tes fenêtres, les notifications passent devant. Pendant un match : le widget apparaît quand un de tes matchs est en direct, et se cache sinon. Jamais : seulement les notifications.">
           <label for="optWidgetMode">Widget</label>
           <select id="optWidgetMode">
-            <option value="always">Toujours</option>
+            <option value="always">Toujours devant</option>
+            <option value="desktop">Sur le bureau</option>
             <option value="live">Pendant un match</option>
             <option value="never">Jamais (notifications)</option>
           </select>

@@ -81,6 +81,9 @@ html, body {
 
 img.crest { filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)); }
 
+/* Logo en longueur (F1) : plus large qu'une pastille carrée. */
+.crest--wide { width: 52px; }
+
 img.crest--light {
   filter:
     drop-shadow(0 0 1px rgba(255, 255, 255, 0.55))

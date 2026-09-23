@@ -329,6 +329,29 @@ fn set_hide_fullscreen(enabled: bool) {
     HIDE_FULLSCREEN.store(enabled, Ordering::SeqCst);
 }
 
+/// Réglage « Widget » : faux pour « Sur le bureau ». Le widget reste alors sur le
+/// bureau, derrière les fenêtres ; les notifications passent toujours devant.
+static WIDGET_ON_TOP: AtomicBool = AtomicBool::new(true);
+
+/// Met le widget à son étage : devant tout, ou sur le bureau.
+fn place_layer(win: &WebviewWindow) {
+    if WIDGET_ON_TOP.load(Ordering::SeqCst) {
+        let _ = win.set_always_on_bottom(false);
+        to_front(win);
+    } else {
+        let _ = win.set_always_on_top(false);
+        let _ = win.set_always_on_bottom(true);
+    }
+}
+
+#[tauri::command]
+fn set_widget_on_top(app: AppHandle, on_top: bool) {
+    WIDGET_ON_TOP.store(on_top, Ordering::SeqCst);
+    if let Some(win) = app.get_webview_window(WIDGET) {
+        place_layer(&win);
+    }
+}
+
 /// Vrai quand Windows signale une application en plein écran : jeu, vidéo,
 /// présentation. On interroge directement shell32, sans bibliothèque en plus.
 #[cfg(windows)]
@@ -376,12 +399,23 @@ fn watch_fullscreen(app: AppHandle) {
             }
         } else if !busy && hidden_by_us {
             let _ = win.show();
+            place_layer(&win);
             HIDDEN_FOR_FULLSCREEN.store(false, Ordering::SeqCst);
         }
     });
 }
 
 /* ---------- Notifications de l'app ---------- */
+
+/// Remet une fenêtre « toujours au-dessus » en tête des fenêtres de ce type.
+/// Windows garde l'ordre d'empilement d'une fenêtre cachée : réaffichée, elle
+/// pouvait rester derrière une fenêtre passée au premier plan entre-temps.
+/// Retirer puis remettre l'attribut la replace tout devant, sans lui donner
+/// le clavier. (Le remettre seul ne fait rien : il est déjà actif.)
+fn to_front(win: &WebviewWindow) {
+    let _ = win.set_always_on_top(false);
+    let _ = win.set_always_on_top(true);
+}
 
 /// Place la notification :
 /// - widget affiché : juste au-dessus de lui (en dessous s'il n'y a pas la
@@ -430,6 +464,16 @@ fn notify(app: AppHandle, toast: serde_json::Value) {
     }
     place_toast(&app);
     let _ = app.emit_to(TOAST, "toast", toast);
+}
+
+/// Appelé par la fenêtre de notification quand elle affiche une carte : elle
+/// apparaît devant tout, sans prendre le clavier.
+#[tauri::command]
+fn show_toast(app: AppHandle) {
+    if let Some(win) = app.get_webview_window(TOAST) {
+        let _ = win.show();
+        to_front(&win);
+    }
 }
 
 /* ---------- 9. Mises à jour ---------- */
@@ -549,6 +593,7 @@ fn set_widget_visible(app: AppHandle, visible: bool) {
         }
         if !win.is_visible().unwrap_or(false) {
             let _ = win.show();
+            place_layer(&win);
         }
     } else {
         // Caché volontairement : la fin d'un jeu ne doit pas le faire revenir.
@@ -584,7 +629,7 @@ fn show_widget(app: &AppHandle) {
     if let Some(win) = app.get_webview_window(WIDGET) {
         let _ = win.show();
         let _ = win.unminimize();
-        let _ = win.set_always_on_top(true);
+        place_layer(&win);
         let _ = win.set_focus();
     }
 }
@@ -604,8 +649,17 @@ fn toggle_widget(app: &AppHandle) {
         let _ = win.hide();
     } else {
         let _ = win.show();
+        place_layer(&win);
         let _ = win.set_focus();
     }
+}
+
+/// Ouvre les réglages depuis l'icône près de l'horloge (clic gauche ou menu).
+fn spawn_settings(app: &AppHandle) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = open_settings(handle).await;
+    });
 }
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -623,31 +677,21 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .icon(icon)
         .tooltip("Sports Counter")
         .menu(&menu)
-        // Le menu ne doit sortir qu'au clic droit : le clic gauche sert au bascule.
+        // Le menu ne sort qu'au clic droit : le clic gauche ouvre les réglages.
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "toggle" => toggle_widget(app),
-            "settings" => {
-                let handle = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = open_settings(handle).await;
-                });
-            }
+            "settings" => spawn_settings(app),
             "quit" => app.exit(0),
             _ => {}
         })
-        .on_tray_icon_event(|tray, event| {
-            match event {
-                TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } => toggle_widget(tray.app_handle()),
-                // Le double-clic affiche toujours, sans jamais masquer : c'est le
-                // geste de secours quand on ne retrouve plus le widget.
-                TrayIconEvent::DoubleClick { .. } => show_widget(tray.app_handle()),
-                _ => {}
-            }
+        .on_tray_icon_event(|tray, event| match event {
+            TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } => spawn_settings(tray.app_handle()),
+            _ => {}
         })
         .build(app)?;
 
@@ -697,8 +741,10 @@ pub fn run() {
             get_autostart,
             set_autostart,
             set_hide_fullscreen,
+            set_widget_on_top,
             open_espn,
             notify,
+            show_toast,
             app_version,
             check_update,
             install_update,

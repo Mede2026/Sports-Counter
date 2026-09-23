@@ -64,7 +64,8 @@ async function next() {
   }
   busy = true;
   render(t);
-  if (inTauri()) await window.__TAURI__.window.getCurrentWindow().show();
+  // Rust l'affiche et la remet devant toutes les fenêtres.
+  if (inTauri()) await window.__TAURI__.core.invoke('show_toast').catch(() => {});
   // Relancer les animations : retirer puis remettre la classe.
   el.card.classList.remove('toast--in', 'toast--out');
   void el.card.offsetWidth;

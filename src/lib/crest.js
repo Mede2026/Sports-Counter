@@ -17,6 +17,10 @@ export function crestHtml(team, cls = 'crest') {
   const abbr = team.abbr || '?';
   if (!team.logo) return `<span class="${cls}" style="background:${color}">${abbr}</span>`;
 
+  // Logo intégré à l'app (le F1, en longueur) : déjà dessiné pour le fond
+  // sombre, et affiché plus large qu'une pastille carrée.
+  if (team.logo.startsWith('data:')) return `<img class="${cls} ${cls}--wide" src="${team.logo}" alt="" />`;
+
   const dark = darkLogo(team.logo);
   // Premier essai : logo sombre. En repli : logo normal, marqué --light pour
   // recevoir le halo qui le garde lisible sur le fond sombre du widget.

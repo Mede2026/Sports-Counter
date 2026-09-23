@@ -211,6 +211,9 @@ img.crest-sm--light {
     drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
 }
 
+/* Logo en longueur (F1) : plus large qu'une pastille carrée. */
+.crest-sm--wide { width: 44px; }
+
 span.crest-sm {
   border-radius: 7px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);

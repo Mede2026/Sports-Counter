@@ -62,10 +62,11 @@ function renderTeams() {
     el.teams.innerHTML = `
       <div class="team-row${on ? ' team-row--on' : ''}" data-league="${current}">
         <span class="check">${CHECK}</span>
-        <span class="crest-sm" style="background:${league.accent}">F1</span>
+        ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
         <span class="team-row__name">Suivre toute la ${league.label}</span>
       </div>
       <div class="state">Les courses n'ont pas d'équipes à cocher :<br />le widget affiche la course en cours ou la prochaine.</div>`;
+    bindCrests(el.teams);
     el.teams.querySelector('.team-row').addEventListener('click', toggleLeague);
     return;
   }

@@ -8,14 +8,14 @@ seulement les équipes que tu choisis.
 
 ## Ce que ça fait
 
-- **Toujours au-dessus** des autres fenêtres, sur tous les bureaux virtuels.
+- **Toujours au-dessus** des autres fenêtres (ou posé sur le bureau, au choix).
 - **Déplaçable** : tu attrapes la barre du haut, la position est retenue au prochain lancement.
 - **Impossible à perdre hors de l'écran** : le widget est ramené dans la zone
   visible s'il en dépasse, et ne passe jamais sous la barre des tâches.
 - **Collé en bas à gauche** au premier lancement, juste au-dessus de la barre
   des tâches. Posé dans la moitié basse de l'écran, il grandit vers le haut :
   son bord inférieur reste collé à la barre.
-- **Activable / désactivable** : `Ctrl + Alt + S`, ou clic sur l'icône dans la zone de notification.
+- **Activable / désactivable** : `Ctrl + Alt + S`, ou clic droit sur l'icône dans la zone de notification → Afficher / masquer. Un clic gauche sur l'icône ouvre les réglages.
 - **Logos des équipes** affichés à côté de chaque score.
 - **Choix des équipes** dans une fenêtre de réglages, ligue par ligue.
 - **Rafraîchissement adaptatif** : toutes les 25 s pendant un match, toutes les 5 min sinon.
@@ -30,8 +30,10 @@ seulement les équipes que tu choisis.
 - **Mises à jour** : l'app en cherche toute seule et **demande avant
   d'installer** (« Installer » / « Plus tard ») ; bouton « Rechercher une mise
   à jour » dans les réglages.
-- **Affichage du widget** : Toujours, Pendant un match (il apparaît quand un de
-  tes matchs est en direct), ou Jamais (notifications seulement).
+- **Affichage du widget** : Toujours devant, Sur le bureau (derrière tes
+  fenêtres ; les notifications passent quand même devant), Pendant un match (il
+  apparaît quand un de tes matchs est en direct), ou Jamais (notifications
+  seulement).
 - **Mode compact** : une ligne par match — logo, pointage | pointage, logo.
 - **Séries éliminatoires de la LNH** : ronde, numéro du match, état de la série,
   prolongations multiples ; statuts du hockey en français.
@@ -48,7 +50,7 @@ seulement les équipes que tu choisis.
 
 ## Ligues couvertes
 
-LNH, NBA, NFL, MLB, Premier League, Ligue des champions, Formule 1.
+LNH, NBA, WNBA, NFL, MLB, Premier League, Ligue des champions, MLS, Formule 1.
 
 Les données viennent de l'API publique d'ESPN : **aucun compte, aucune clé
 d'API**. En contrepartie, c'est une API non officielle, qui peut changer sans

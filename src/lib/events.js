@@ -1,9 +1,11 @@
 // Détection des évènements à notifier, par comparaison de deux relevés.
 // Module pur (sans fenêtre ni réseau) : testable isolément.
 
+import { F1_LOGO } from './f1-logo.js';
+
 // Ligues où chaque point mérite une notification. Au basket, le score change
 // toutes les vingt secondes : on s'en tient au début et à la fin du match.
-const SCORE_ALERTS = { nhl: 'goal', epl: 'goal', ucl: 'goal', nfl: 'points', mlb: 'points' };
+const SCORE_ALERTS = { nhl: 'goal', epl: 'goal', ucl: 'goal', mls: 'goal', nfl: 'points', mlb: 'points' };
 
 // Au-delà, une série d'évènements (retour de veille, par exemple) deviendrait
 // une avalanche : on garde les plus récents.
@@ -76,7 +78,7 @@ function matchEvents(g, before) {
 function sessionEvents(g, before) {
   const out = [];
   const link = g.link ?? '';
-  const team = { abbr: 'F1', logo: g.logo ?? '', color: '#ff4d6d' };
+  const team = { abbr: 'F1', logo: g.logo || F1_LOGO, color: '#ff4d6d' };
 
   // Une séance qui était en cours ne l'est plus : elle est finie, même si le
   // widget affiche maintenant la suivante (état « à venir »).

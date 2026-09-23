@@ -111,7 +111,7 @@ function compactCard(game) {
       ? shortWhen(game.startsAt) || game.statusText
       : game.session || game.statusText;
     return `<div class="${cls} game" title="${attr(tip)}"${link}>
-      ${crestHtml({ logo: game.logo, abbr: league?.short ?? '?', color: league?.accent })}
+      ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '?', color: league?.accent })}
       <span class="row__event">${when}</span>
     </div>`;
   }
@@ -146,7 +146,7 @@ function gameCard(game) {
   if (game.kind === 'event') {
     return `<div class="game${open}">${head}
       <div class="event">
-        ${crestHtml({ logo: game.logo, abbr: league?.short ?? '?', color: league?.accent })}
+        ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '?', color: league?.accent })}
         <span class="event__title">${game.title}</span>
       </div>${podiumHtml(game.top3)}</div>`;
   }
@@ -231,15 +231,16 @@ function applyTheme() {
 }
 
 /**
- * Réglage « Widget » : Toujours, Pendant un match (en direct), Jamais
- * (notifications seulement). On n'agit qu'aux changements : si tu montres ou
+ * Réglage « Widget » : Toujours devant, Sur le bureau (toujours affiché,
+ * derrière les fenêtres), Pendant un match (en direct), Jamais (notifications
+ * seulement). On n'agit qu'aux changements : si tu montres ou
  * caches le widget à la main, il le reste jusqu'au prochain début ou fin de
  * match. Le relevé des scores continue quand il est caché.
  */
 let shownByMode;
 function applyWidgetMode(hasLive) {
   const mode = prefs.widgetMode ?? 'always';
-  const want = mode === 'always' ? true : mode === 'never' ? false : !!hasLive;
+  const want = mode === 'never' ? false : mode === 'live' ? !!hasLive : true;
   if (want === shownByMode || !inTauri()) return;
   shownByMode = want;
   window.__TAURI__.core.invoke('set_widget_visible', { visible: want }).catch(() => {});
@@ -256,11 +257,13 @@ function flashEdges(edges) {
   }
 }
 
-/** Rust surveille le plein écran ; il faut lui dire si l'option est active. */
+/** Transmet à Rust les options qu'il applique lui-même : plein écran, premier plan. */
 async function syncFullscreenOption() {
   if (!inTauri()) return;
   try {
     await window.__TAURI__.core.invoke('set_hide_fullscreen', { enabled: prefs.hideFullscreen !== false });
+    // Premier plan ou bureau : réglé avant que le widget ne s'affiche.
+    await window.__TAURI__.core.invoke('set_widget_on_top', { onTop: prefs.widgetMode !== 'desktop' });
   } catch { /* version sans cette commande : sans conséquence */ }
 }
 
