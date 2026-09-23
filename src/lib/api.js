@@ -424,7 +424,12 @@ function leagueLogo(data) {
  * prolongations jusqu'au but gagnant (4e = 1re prolongation, 5e = 2e…).
  */
 export function hockeyStatus({ state, period, clock, detail }, playoffs) {
-  const p = Number(period) || 0;
+  // Période absente : on la lit dans le texte d'ESPN (« 20:00 - 3rd », « OT »).
+  let p = Number(period) || 0;
+  if (!p) {
+    const m = /\b(\d)(?:st|nd|rd|th)\b|\b(OT|SO)\b/i.exec(detail ?? '');
+    p = m ? (m[1] ? Number(m[1]) : m[2].toUpperCase() === 'OT' ? 4 : 5) : 0;
+  }
   const periodName = (n) =>
     n <= 3 ? `${ordinal(n)} période`
     : playoffs ? `${ordinal(n - 3)} prolongation`
@@ -437,6 +442,8 @@ export function hockeyStatus({ state, period, clock, detail }, playoffs) {
   }
   if (state === 'in' && p > 0) {
     if (/end of|intermission/i.test(detail ?? '')) return `Fin de la ${periodName(p)}`;
+    // Horloge encore à 20:00 : la période n'a pas commencé (fin de l'entracte).
+    if (p <= 3 && /^20:00$/.test(String(clock ?? '').trim())) return `Début de la ${periodName(p)}`;
     return periodName(p);
   }
   return null; // à venir : l'heure est formatée ailleurs
@@ -491,9 +498,11 @@ function pickLink(event) {
  * Horloge d'un match en cours. Vide à l'entracte (ESPN laisse 0:00) et au
  * baseball, qui n'a pas d'horloge (ESPN y met aussi 0:00).
  */
-function liveClock(leagueId, state, frStatus, clock) {
-  if (state !== 'in' || frStatus?.startsWith('Fin de')) return '';
+function liveClock(leagueId, state, frStatus, clock, statusText = '') {
+  if (state !== 'in' || /^(Fin|Début) de/.test(frStatus ?? '')) return '';
   if (LEAGUES_BY_ID[leagueId]?.path.startsWith('baseball/')) return '';
+  // Déjà dans le statut (« 7:42 · 3e quart ») : pas deux fois la même heure.
+  if (clock && String(statusText).includes(clock)) return '';
   return clock ?? '';
 }
 
@@ -578,13 +587,14 @@ function normalizeEvent(event, leagueId, logo = '') {
   const frStatus = leagueId === 'nhl'
     ? hockeyStatus({ state, period: status?.period, clock: status?.displayClock, detail: status?.type?.shortDetail }, playoffs)
     : null;
+  const statusText = frStatus ?? statusFr(status?.type?.shortDetail ?? status?.type?.description ?? '');
   const base = {
     id: String(event?.id ?? ''),
     leagueId,
     state,
-    statusText: frStatus ?? statusFr(status?.type?.shortDetail ?? status?.type?.description ?? ''),
+    statusText,
     playoffs,
-    clock: liveClock(leagueId, state, frStatus, status?.displayClock),
+    clock: liveClock(leagueId, state, frStatus, status?.displayClock, statusText),
     startsAt: event?.date ? new Date(event.date) : null,
     link: pickLink(event),
   };
@@ -794,13 +804,14 @@ export async function fetchMatchDetail(leagueId, eventId) {
     : null;
   const home = side(homeC);
   const away = side(awayC);
+  const statusText = frStatus ?? statusFr(status?.type?.shortDetail ?? '');
   return {
     id: String(eventId),
     leagueId,
     state,
     playoffs,
-    statusText: frStatus ?? statusFr(status?.type?.shortDetail ?? ''),
-    clock: liveClock(leagueId, state, frStatus, status?.displayClock),
+    statusText,
+    clock: liveClock(leagueId, state, frStatus, status?.displayClock, statusText),
     startsAt: comp?.date ? new Date(comp.date) : null,
     home,
     away,

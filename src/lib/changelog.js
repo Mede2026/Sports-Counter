@@ -1,6 +1,10 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.7.2': [
+    '🏒 Au hockey, le statut ne s’affiche plus en anglais (« 20:00 - 3rd ») : il devient « Début de la 3e période ».',
+    '⏱️ L’horloge ne s’affiche plus deux fois de suite, au hockey comme au basket et au football.',
+  ],
   '0.7.1': [
     '🅰️ Notification quand un de tes joueurs favoris fait une passe sur un but.',
     '⬆️ En course, notification quand un de tes pilotes favoris dépasse quelqu’un.',

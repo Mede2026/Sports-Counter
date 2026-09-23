@@ -58,10 +58,10 @@ export function statusFr(text) {
   // Prolongations multiples : « Final/2OT ».
   if ((m = /^final\/(\d)ot$/i.exec(raw))) return `Final (${ord(m[1])} prol.)`;
   // Basket, football : « 7:42 - 3rd Qtr », « 7:42 - 3rd Quarter ».
-  if ((m = /^(\d{1,2}:\d{2})\s*-\s*(\d)(?:st|nd|rd|th)(?:\s*(?:qtr|quarter))?$/i.exec(raw))) {
+  if ((m = /^(\d{1,2}:\d{2})\s*[-–—]\s*(\d)(?:st|nd|rd|th)(?:\s*(?:qtr|quarter))?$/i.exec(raw))) {
     return `${m[1]} · ${ordM(m[2])} quart`;
   }
-  if ((m = /^(\d{1,2}:\d{2})\s*-\s*(\d)?ot$/i.exec(raw))) return `${m[1]} · ${m[2] ? `${ord(m[2])} ` : ''}prolongation`;
+  if ((m = /^(\d{1,2}:\d{2})\s*[-–—]\s*(\d)?ot$/i.exec(raw))) return `${m[1]} · ${m[2] ? `${ord(m[2])} ` : ''}prolongation`;
   if ((m = /^end of (\d)(?:st|nd|rd|th)(?:\s*(?:qtr|quarter))?$/i.exec(raw))) return `Fin du ${ordM(m[1])} quart`;
   if ((m = /^(\d)(?:st|nd|rd|th)\s*(?:qtr|quarter)$/i.exec(raw))) return `${ordM(m[1])} quart`;
   // Soccer : « 1st Half », « 2nd Half ».
