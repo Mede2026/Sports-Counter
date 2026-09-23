@@ -179,3 +179,14 @@ span.crest {
   border-radius: 9px;
 }
 .crest--update svg { width: 18px; height: 18px; color: #06111f; }
+
+/* ---------- Thème clair (comme le widget) ---------- */
+
+.toast[data-theme="light"] {
+  --surface: rgba(248, 249, 252, 0.98);
+  --text: #14161c;
+  --text-muted: rgba(20, 22, 28, 0.62);
+}
+.toast[data-theme="light"] .btn { background: rgba(10, 14, 25, 0.06); border-color: rgba(10, 14, 25, 0.14); }
+.toast[data-theme="light"] .btn:hover { background: rgba(10, 14, 25, 0.1); }
+.toast[data-theme="light"] img.crest { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18)); }

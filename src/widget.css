@@ -29,6 +29,8 @@ html, body {
 .widget {
   position: relative;
   width: 300px;
+  /* Couleur du texte résolue ici : le thème clair redéfinit --text sur le widget. */
+  color: var(--text);
   background: var(--surface);
   backdrop-filter: blur(28px) saturate(150%);
   -webkit-backdrop-filter: blur(28px) saturate(150%);
@@ -472,3 +474,62 @@ span.crest {
   15%  { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* ---------- Mode Grand Prix : top 5 et écarts ---------- */
+
+.podium__name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.podium__gap {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.podium--gp { margin-right: 2px; }
+
+/* ---------- Derniers résultats : ✅ ❌ ➖ ---------- */
+
+.form {
+  margin-left: 5px;
+  font-size: 8.5px;
+  letter-spacing: -0.5px;
+  vertical-align: 1px;
+}
+
+/* ---------- Thème clair ---------- */
+
+.widget[data-theme="light"] {
+  --surface: rgba(248, 249, 252, 0.97);
+  --border: rgba(10, 14, 25, 0.1);
+  --border-strong: rgba(10, 14, 25, 0.18);
+  --text: #14161c;
+  --text-muted: rgba(20, 22, 28, 0.62);
+  --text-faint: rgba(20, 22, 28, 0.45);
+  --live: #e0243a;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.22),
+    0 2px 8px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.widget--team[data-theme="light"] {
+  box-shadow:
+    inset 0 3px 0 var(--team),
+    0 16px 40px rgba(0, 0, 0, 0.22),
+    0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.widget[data-theme="light"] .game,
+.widget[data-theme="light"] .row { border-bottom-color: rgba(10, 14, 25, 0.07); }
+.widget[data-theme="light"] .chip { background: rgba(10, 14, 25, 0.06); }
+.widget[data-theme="light"] .icon-btn:hover { background: rgba(10, 14, 25, 0.07); }
+.widget[data-theme="light"] .icon-btn:active { background: rgba(10, 14, 25, 0.12); }
+.widget[data-theme="light"] .game--link:hover { background: rgba(10, 14, 25, 0.035); }
+.widget[data-theme="light"] .row__sep,
+.widget[data-theme="light"] .shots i { background: rgba(10, 14, 25, 0.22); }
+.widget[data-theme="light"] .podium__pos,
+.widget[data-theme="light"] .face { background: rgba(10, 14, 25, 0.08); }
+.widget[data-theme="light"] .podium__extra { border-top-color: rgba(10, 14, 25, 0.12); }
+.widget[data-theme="light"] .until { color: #1c8c45; }
+.widget[data-theme="light"] .podium__fav { color: #d6301c; }
+.widget[data-theme="light"] .series { color: #a86a0c; }
+.widget[data-theme="light"] .empty button { background: rgba(10, 14, 25, 0.06); }
+.widget[data-theme="light"] img.crest { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18)); }

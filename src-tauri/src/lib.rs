@@ -742,6 +742,9 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 pub fn run() {
     // Ctrl + Alt + S : afficher/masquer le widget depuis n'importe où.
     let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyS);
+    // Ctrl + Alt + M : fenêtre Match du match en cours. Le widget sait lequel :
+    // on le lui demande, et il ouvre la fenêtre.
+    let match_key = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyM);
 
     tauri::Builder::default()
         // Relancer l'app alors qu'elle tourne déjà ne crée pas un second
@@ -767,8 +770,13 @@ pub fn run() {
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
-                    if event.state() == ShortcutState::Pressed && shortcut == &hotkey {
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    if shortcut == &hotkey {
                         toggle_widget(app);
+                    } else if shortcut == &match_key {
+                        let _ = app.emit_to(WIDGET, "shortcut-match", ());
                     }
                 })
                 .build(),
@@ -821,9 +829,11 @@ pub fn run() {
                 }
             }
 
-            if let Err(err) = app.global_shortcut().register(hotkey) {
-                // Un autre logiciel occupe peut-être déjà le raccourci : ce n'est pas fatal.
-                eprintln!("raccourci global indisponible : {err}");
+            for key in [hotkey, match_key] {
+                if let Err(err) = app.global_shortcut().register(key) {
+                    // Un autre logiciel occupe peut-être déjà le raccourci : ce n'est pas fatal.
+                    eprintln!("raccourci global indisponible : {err}");
+                }
             }
 
             if let Some(win) = app.get_webview_window(WIDGET) {

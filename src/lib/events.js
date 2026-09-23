@@ -66,6 +66,7 @@ function matchEvents(g, before) {
         body: when ? `${scoreLine(g)} · ${when}` : scoreLine(g),
         team,
         link,
+        scorer,
         // Pour chercher le buteur ailleurs si le tableau des scores ne le donne pas.
         goal: isGoal && !scorer ? { leagueId: g.leagueId, eventId: g.id, teamId: team.id } : null,
       });

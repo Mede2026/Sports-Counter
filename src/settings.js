@@ -1,6 +1,7 @@
 import { LEAGUES, LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchF1Calendar, demoEvents, sameDriver } from './lib/api.js';
+import { untilText, isDate, TIME_FMT } from './lib/time.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { errText } from './lib/err.js';
@@ -17,12 +18,17 @@ const el = {
   summary: document.getElementById('summary'),
   teamsView: document.getElementById('teamsView'),
   prefsView: document.getElementById('prefsView'),
+  calendarView: document.getElementById('calendarView'),
+  playersView: document.getElementById('playersView'),
   navPrefs: document.getElementById('navPrefs'),
+  navCalendar: document.getElementById('navCalendar'),
+  calendar: document.getElementById('calendar'),
+  players: document.getElementById('players'),
 };
 
 let prefs = loadPrefs();
 let current = LEAGUES[0].id;
-let view = 'teams'; // 'teams' (une ligue) ou 'prefs' (section Réglages)
+let view = 'teams'; // 'teams' (une ligue), 'prefs' (Réglages), 'calendar', 'players'
 let teams = [];
 let query = '';
 const cache = new Map(); // idLigue -> équipes
@@ -40,7 +46,8 @@ function countFor(id) {
 }
 
 function renderLeagues() {
-  el.navPrefs.classList.toggle('league--on', view === 'prefs');
+  el.navPrefs.classList.toggle('league--on', view === 'prefs' || view === 'players');
+  el.navCalendar.classList.toggle('league--on', view === 'calendar');
   el.leagues.innerHTML = LEAGUES.map((l) => {
     const n = countFor(l.id);
     return `<button class="league${view === 'teams' && l.id === current ? ' league--on' : ''}" data-id="${l.id}">
@@ -173,22 +180,27 @@ function renderFavDriver() {
 
 /* ---------- Navigation ---------- */
 
+/** Affiche un seul des panneaux de droite. */
+function setView(name) {
+  view = name;
+  el.teamsView.hidden = name !== 'teams';
+  el.prefsView.hidden = name !== 'prefs';
+  el.calendarView.hidden = name !== 'calendar';
+  el.playersView.hidden = name !== 'players';
+  renderLeagues();
+}
+
 function showLeague(id) {
-  view = 'teams';
   current = id;
   query = '';
   el.search.value = '';
-  el.teamsView.hidden = false;
-  el.prefsView.hidden = true;
   el.search.placeholder = LEAGUES_BY_ID[id]?.kind === 'event' ? 'Rechercher un pilote…' : 'Rechercher une équipe…';
+  setView('teams');
   selectLeague();
 }
 
 function showPrefs() {
-  view = 'prefs';
-  el.teamsView.hidden = true;
-  el.prefsView.hidden = false;
-  renderLeagues();
+  setView('prefs');
 }
 
 function forgetFavorite(key) {
@@ -342,12 +354,270 @@ function bindOptions() {
   renderFavDriver();
   document.getElementById('btnPickDriver').addEventListener('click', () => showLeague('f1'));
 
+  const look = document.getElementById('optWidgetTheme');
+  look.value = prefs.widgetTheme ?? 'dark';
+  look.addEventListener('change', () => { prefs.widgetTheme = look.value; savePrefs(prefs); });
+
+  bindSwitch('optShowForm', 'showForm');
+  bindSwitch('optGpMode', 'gpMode');
+
+  renderPlayerChips();
+  document.getElementById('btnPickPlayers').addEventListener('click', showPlayers);
+
   const notify = document.getElementById('optNotify');
   notify.checked = prefs.notifications !== false;
   notify.addEventListener('change', () => { prefs.notifications = notify.checked; savePrefs(prefs); });
   document.getElementById('btnTryToast').addEventListener('click', tryToast);
 
   bindAutostart();
+}
+
+/** Interrupteur lié à une préférence vraie par défaut. */
+function bindSwitch(id, key) {
+  const box = document.getElementById(id);
+  box.checked = prefs[key] !== false;
+  box.addEventListener('change', () => { prefs[key] = box.checked; savePrefs(prefs); });
+}
+
+/* ---------- Joueurs favoris (hockey) ---------- */
+
+const rosters = new Map(); // idÉquipe -> joueurs | Error
+let playerTeam = null;
+let playerQuery = '';
+
+const isFavPlayer = (p) => (prefs.favPlayers ?? []).some((f) => (f.id && f.id === p.id) || sameDriver(f, p));
+
+function renderPlayerChips() {
+  const box = document.getElementById('favPlayersChips');
+  const list = prefs.favPlayers ?? [];
+  box.innerHTML = list.length
+    ? list.map((p, i) => `<span class="chip-player">${p.photo ? `<img class="face-xs" src="${p.photo}" alt="" data-face />` : ''}${p.name}
+        <button type="button" data-i="${i}" title="Retirer">×</button></span>`).join('')
+    : '<small>Aucun</small>';
+  box.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+  box.querySelectorAll('button[data-i]').forEach((b) => b.addEventListener('click', (e) => {
+    e.preventDefault();
+    prefs.favPlayers.splice(Number(b.dataset.i), 1);
+    savePrefs(prefs);
+    renderPlayerChips();
+  }));
+}
+
+function showPlayers() {
+  setView('players');
+  const select = document.getElementById('playerTeam');
+  if (!select.options.length) {
+    // Tes équipes de la LNH d'abord, puis toute la ligue.
+    const mine = prefs.favorites.filter((k) => k.startsWith('nhl:')).map((k) => k.slice(4));
+    const byId = new Map(NHL_TEAMS.map((t) => [t.id, t]));
+    const sorted = [...NHL_TEAMS].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    select.innerHTML = [
+      ...mine.filter((id) => byId.has(id)).map((id) => `<option value="${id}">★ ${byId.get(id).name}</option>`),
+      ...sorted.filter((t) => !mine.includes(t.id)).map((t) => `<option value="${t.id}">${t.name}</option>`),
+    ].join('');
+    // Sans équipe favorite de la LNH : les Canadiens.
+    playerTeam = mine.find((id) => byId.has(id)) ?? NHL_TEAMS.find((t) => t.abbr === 'MTL')?.id;
+    select.value = playerTeam;
+  }
+  loadRoster(playerTeam);
+}
+
+async function loadRoster(teamId) {
+  playerTeam = teamId;
+  if (!rosters.has(teamId)) {
+    el.players.innerHTML = '<div class="state">Chargement des joueurs…</div>';
+    try {
+      rosters.set(teamId, IS_DEMO ? demoRoster(teamId) : await fetchRoster('nhl', teamId));
+    } catch (err) {
+      rosters.set(teamId, err instanceof Error ? err : new Error(String(err)));
+    }
+  }
+  if (playerTeam === teamId && view === 'players') renderPlayers();
+}
+
+function renderPlayers() {
+  const roster = rosters.get(playerTeam);
+  if (roster instanceof Error) {
+    el.players.innerHTML = `<div class="state state--err">ESPN ne donne pas l'alignement de cette équipe à l'app.<br />
+      <code class="state__code">${errText(roster)}</code><br />Ajoute ton joueur par son nom, juste au-dessus.</div>`;
+    return;
+  }
+  const q = playerQuery.trim().toLowerCase();
+  const list = (roster ?? []).filter((p) => !q || p.name.toLowerCase().includes(q));
+  el.players.innerHTML = list.map((p) => `
+    <div class="team-row${isFavPlayer(p) ? ' team-row--on' : ''}" data-player="${p.id}">
+      <span class="check">${CHECK}</span>
+      <img class="face-sm" src="${p.photo}" alt="" data-face />
+      <span class="team-row__name">${p.name}</span>
+      <span class="team-row__abbr">${[p.jersey ? `#${p.jersey}` : '', p.pos].filter(Boolean).join(' · ')}</span>
+    </div>`).join('') || `<div class="state">Aucun joueur ne correspond à « ${playerQuery} ».</div>`;
+  el.players.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => { img.style.visibility = 'hidden'; }, { once: true }));
+  el.players.querySelectorAll('.team-row').forEach((row) => row.addEventListener('click', () => {
+    const p = roster.find((x) => x.id === row.dataset.player);
+    togglePlayer({ id: p.id, name: p.name, photo: p.photo, teamId: p.teamId });
+  }));
+}
+
+function togglePlayer(p) {
+  prefs.favPlayers ??= [];
+  const i = prefs.favPlayers.findIndex((f) => (f.id && f.id === p.id) || sameDriver(f, p));
+  if (i === -1) prefs.favPlayers.push(p);
+  else prefs.favPlayers.splice(i, 1);
+  savePrefs(prefs);
+  renderPlayerChips();
+  if (view === 'players') renderPlayers();
+}
+
+function demoRoster(teamId) {
+  return [['1', 'Cole Caufield', '22', 'AD'], ['2', 'Nick Suzuki', '14', 'C'], ['3', 'Lane Hutson', '48', 'D'], ['4', 'Ivan Demidov', '93', 'AD']]
+    .map(([id, name, jersey, pos]) => ({ id, name, jersey, pos, photo: '', teamId }));
+}
+
+/* ---------- Calendrier ---------- */
+
+const DAY_MS = 24 * 3600 * 1000;
+const CAL_AHEAD = 30;
+let calLoading = false;
+
+const LONG_DAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' });
+
+function dayLabel(date) {
+  const today = new Date();
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Aujourd'hui";
+  if (date.toDateString() === tomorrow.toDateString()) return 'Demain';
+  if (date.toDateString() === yesterday.toDateString()) return 'Hier';
+  const s = LONG_DAY.format(date);
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function showCalendar() {
+  setView('calendar');
+  loadCalendar(false);
+}
+
+/** Matchs des équipes favorites et Grands Prix, du 1er du mois à dans 30 jours. */
+async function loadCalendar(force) {
+  if (calLoading) return;
+  calLoading = true;
+  const first = new Date(); first.setDate(1); first.setHours(0, 0, 0, 0);
+  const back = Math.ceil((Date.now() - first.getTime()) / DAY_MS);
+  const end = Date.now() + CAL_AHEAD * DAY_MS;
+  document.getElementById('calRange').textContent = `du ${first.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })} au ${new Date(end).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}`;
+  if (force || !el.calendar.innerHTML) el.calendar.innerHTML = '<div class="state">Chargement du calendrier…</div>';
+
+  const teamKeys = prefs.favorites.filter((k) => LEAGUES_BY_ID[k.split(':')[0]]?.kind === 'team');
+  const wantF1 = prefs.leagues.includes('f1') || !!prefs.favDriver;
+  if (!IS_DEMO && !teamKeys.length && !wantF1) {
+    el.calendar.innerHTML = '<div class="state">Choisis des équipes (ou la F1) pour remplir ton calendrier.</div>';
+    calLoading = false;
+    return;
+  }
+
+  let games = [];
+  const errors = [];
+  if (IS_DEMO) {
+    games = demoCalendar();
+  } else {
+    const jobs = teamKeys.map((k) => {
+      const [leagueId, teamId] = k.split(':');
+      return fetchTeamGames(leagueId, teamId, { back, ahead: CAL_AHEAD });
+    });
+    if (wantF1) jobs.push(fetchF1Calendar(-back, CAL_AHEAD));
+    for (const r of await Promise.allSettled(jobs)) {
+      if (r.status === 'fulfilled') games.push(...r.value);
+      else errors.push(errText(r.reason));
+    }
+  }
+
+  const seen = new Set();
+  games = games
+    .filter((g) => isDate(g.startsAt) && g.startsAt >= first && g.startsAt.getTime() <= end)
+    .filter((g) => (seen.has(g.id) ? false : seen.add(g.id)))
+    .sort((a, b) => a.startsAt - b.startsAt);
+  renderCalendar(games, errors);
+  calLoading = false;
+}
+
+function calRow(g) {
+  const league = LEAGUES_BY_ID[g.leagueId];
+  const chip = `<span class="cal__chip" style="color:${league?.accent ?? 'inherit'}">${league?.short ?? ''}</span>`;
+  const state = g.kind === 'event' ? g.raceState ?? g.state : g.state;
+  let when = TIME_FMT.format(g.startsAt);
+  if (state === 'in') when = '<span class="cal__live">En direct</span>';
+  else if (state === 'post') when = '<span class="cal__done">Final</span>';
+
+  let body;
+  if (g.kind === 'event') {
+    const winner = state === 'post' ? g.top3?.[0] : null;
+    body = `${crestHtml({ logo: league.logo, abbr: 'F1', color: league.accent }, 'crest-sm')}
+      <span class="cal__title">${g.title}</span>
+      ${winner ? `<span class="cal__res">🥇 ${winner.short || winner.name}</span>` : ''}`;
+  } else {
+    const fav = (t) => prefs.favorites.includes(`${g.leagueId}:${t.id}`);
+    const me = fav(g.home) ? g.home : fav(g.away) ? g.away : null;
+    const opp = me === g.home ? g.away : g.home;
+    let res = '';
+    if (state === 'post' && me) {
+      const r = me.winner ? 'V' : opp.winner ? 'D' : 'N';
+      res = `<span class="cal__badge cal__badge--${r}">${r}</span>`;
+    }
+    const score = state === 'pre' ? '' : `<span class="cal__score">${g.away.score} – ${g.home.score}</span>`;
+    body = `${crestHtml(g.away, 'crest-sm')}<span class="cal__abbr">${g.away.abbr}</span>
+      <span class="cal__at">@</span>
+      ${crestHtml(g.home, 'crest-sm')}<span class="cal__abbr">${g.home.abbr}</span>
+      ${score}${res}`;
+  }
+  const until = state === 'pre' && g.startsAt.getTime() - Date.now() < 2 * DAY_MS ? untilText(g.startsAt) : '';
+  return `<div class="cal__row${state === 'post' ? ' cal__row--past' : ''}" data-league="${g.leagueId}" data-event="${g.id}">
+    <span class="cal__when">${when}</span>${chip}${body}
+    ${until ? `<span class="cal__until">${until}</span>` : ''}
+  </div>`;
+}
+
+function renderCalendar(games, errors) {
+  if (!games.length) {
+    el.calendar.innerHTML = `<div class="state">Aucun match trouvé pour cette période.${
+      errors.length ? `<br /><code class="state__code">${errors[0]}</code>` : ''}</div>`;
+    return;
+  }
+  let html = '';
+  let day = '';
+  const todayKey = new Date().toDateString();
+  for (const g of games) {
+    const key = g.startsAt.toDateString();
+    if (key !== day) {
+      day = key;
+      html += `<div class="cal__day${key === todayKey ? ' cal__day--today' : ''}">${dayLabel(g.startsAt)}</div>`;
+    }
+    html += calRow(g);
+  }
+  if (errors.length) html += `<div class="state state--err">Certaines équipes n'ont pas pu être chargées.<br /><code class="state__code">${errors[0]}</code></div>`;
+  el.calendar.innerHTML = html;
+  bindCrests(el.calendar);
+  // Aujourd'hui en haut de la zone visible : le passé reste au-dessus.
+  el.calendar.querySelector('.cal__day--today')?.scrollIntoView({ block: 'start' });
+  el.calendar.querySelectorAll('.cal__row').forEach((row) => row.addEventListener('click', async () => {
+    const { league, event } = row.dataset;
+    if (!inTauri()) { window.open(`match.html?league=${league}&event=${encodeURIComponent(event)}`, '_blank'); return; }
+    try { await window.__TAURI__.core.invoke('open_match', { league, event }); } catch { /* indisponible */ }
+  }));
+}
+
+/** Aperçu navigateur : un mois factice autour d'aujourd'hui. */
+function demoCalendar() {
+  const [live, done, next, f1] = demoEvents();
+  const at = (days, h) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return d; };
+  const past = (g, days, hs, as, homeWin) => ({ ...g, id: `${g.id}-p${days}`, state: 'post', startsAt: at(days, 19),
+    home: { ...g.home, score: hs, winner: homeWin }, away: { ...g.away, score: as, winner: !homeWin } });
+  return [
+    past(live, -6, '4', '1', true), past(live, -3, '2', '3', false), { ...live, startsAt: at(0, 19) },
+    { ...next, id: 'demo-n2', state: 'pre', startsAt: at(2, 20) },
+    { ...live, id: 'demo-l3', state: 'pre', startsAt: at(4, 19), home: { ...live.home, score: '–' }, away: { ...live.away, score: '–' } },
+    { ...f1, id: 'demo-f1-cal', state: 'pre', raceState: 'pre', startsAt: at(9, 14), title: 'GP du Mexique' },
+    { ...done, id: 'demo-d2', startsAt: at(-1, 19) },
+  ];
 }
 
 /**
@@ -494,8 +764,23 @@ document.getElementById('btnClose').addEventListener('click', async () => {
 
 el.search.addEventListener('input', () => { query = el.search.value; renderTeams(); });
 el.navPrefs.addEventListener('click', showPrefs);
+el.navCalendar.addEventListener('click', showCalendar);
+document.getElementById('btnCalRefresh').addEventListener('click', () => loadCalendar(true));
+document.getElementById('playerTeam').addEventListener('change', (e) => loadRoster(e.target.value));
+document.getElementById('playerSearch').addEventListener('input', (e) => { playerQuery = e.target.value; renderPlayers(); });
+document.getElementById('playerAdd').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = document.getElementById('playerFree');
+  const name = input.value.trim().replace(/\s+/g, ' ');
+  if (name.length < 3) return;
+  if (!isFavPlayer({ name })) togglePlayer({ id: '', name, photo: '', teamId: '' });
+  input.value = '';
+});
 
 bindOptions();
-if (new URLSearchParams(location.search).get('view') === 'prefs') showPrefs();
+const startView = new URLSearchParams(location.search).get('view');
+if (startView === 'prefs') showPrefs();
+else if (startView === 'calendar') showCalendar();
+else if (startView === 'players') showPlayers();
 else if (new URLSearchParams(location.search).get('league')) showLeague(new URLSearchParams(location.search).get('league'));
 else selectLeague();

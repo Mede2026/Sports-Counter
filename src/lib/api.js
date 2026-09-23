@@ -212,13 +212,16 @@ function normalizeCompetitor(c, state) {
     logo: t.logo ?? t.logos?.[0]?.href ?? '',
     color: t.color ? `#${t.color}` : null,
     alt: t.alternateColor ? `#${t.alternateColor}` : null,
-    // Avant le coup d'envoi, ESPN envoie « 0 » : on affiche « – ».
-    score: state !== 'pre' && c?.score != null ? String(c.score) : '–',
+    // Avant le coup d'envoi, ESPN envoie « 0 » : on affiche « – ». Dans le
+    // calendrier d'une équipe, le score est un objet { value, displayValue }.
+    score: state !== 'pre' && c?.score != null ? scoreText(c.score) : '–',
     winner: c?.winner === true,
     record: recordOf(c),
     shots: statOf(c?.statistics, SHOT_STATS),
   };
 }
+
+const scoreText = (s) => (typeof s === 'object' ? String(s?.displayValue ?? s?.value ?? '–') : String(s));
 
 /** Fiche de l'équipe (« 12-5-3 »), sous l'une ou l'autre forme d'ESPN. */
 function recordOf(c) {
@@ -281,7 +284,17 @@ function toDriver(c, i) {
     photo: driverPhoto(a, id),
     flag: a.flag?.href ?? '',
     team: c?.vehicle?.manufacturer ?? c?.team?.displayName ?? c?.team?.name ?? '',
+    gap: gapOf(c),
   };
+}
+
+// Écart avec le meneur : ESPN le range sous des noms variables selon la séance.
+const GAP_STATS = ['behindTime', 'behind', 'gapToLeader', 'timeBehind', 'gap', 'interval'];
+
+function gapOf(c) {
+  const direct = c?.behindTime ?? c?.behind ?? c?.gap;
+  if (direct != null && typeof direct !== 'object' && String(direct) !== '') return String(direct);
+  return statOf(c?.statistics, GAP_STATS);
 }
 
 /**
@@ -796,6 +809,99 @@ export async function fetchDrivers() {
     try { localStorage.setItem(DRIVERS_KEY, JSON.stringify({ at: Date.now(), drivers })); } catch { /* plein */ }
   }
   return drivers;
+}
+
+/* ---------- Calendrier et historique d'une équipe ---------- */
+
+const TEAM_TTL = 3 * 3600 * 1000;
+const teamGamesCache = new Map(); // "ligue:équipe" -> { at, games }
+
+/**
+ * Matchs de la saison d'une équipe (passés et à venir), triés par date.
+ * Source : le calendrier de l'équipe chez ESPN ; s'il est illisible depuis
+ * l'app, on reconstitue autour d'aujourd'hui à partir des tableaux des scores.
+ */
+export async function fetchTeamGames(leagueId, teamId, { back = 21, ahead = 30 } = {}) {
+  const key = `${leagueId}:${teamId}`;
+  const hit = teamGamesCache.get(key);
+  if (hit && Date.now() - hit.at < TEAM_TTL && hit.back >= back && hit.ahead >= ahead) return hit.games;
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || league.kind !== 'team') return [];
+
+  let games = null;
+  let span = { back, ahead };
+  try {
+    const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/schedule`);
+    games = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId)).filter((g) => g.kind === 'match');
+    span = { back: Infinity, ahead: Infinity }; // toute la saison
+  } catch { /* calendrier illisible : on passe aux tableaux des scores */ }
+
+  if (!games?.length) {
+    const offsets = [];
+    for (let d = -back; d <= ahead; d += 1) offsets.push(d);
+    const found = [];
+    for (let i = 0; i < offsets.length; i += 7) {
+      const days = await Promise.allSettled(offsets.slice(i, i + 7).map((d) => fetchDay(leagueId, d)));
+      for (const r of days) {
+        if (r.status !== 'fulfilled') continue;
+        found.push(...r.value.filter((g) => g.kind === 'match' && (g.home.id === String(teamId) || g.away.id === String(teamId))));
+      }
+    }
+    games = found;
+  }
+  games.sort((a, b) => (a.startsAt?.getTime() ?? 0) - (b.startsAt?.getTime() ?? 0));
+  teamGamesCache.set(key, { at: Date.now(), games, ...span });
+  return games;
+}
+
+/**
+ * Les derniers résultats d'une équipe, du plus ancien au plus récent :
+ * { res: 'V' | 'D' | 'N', score, opp, date }.
+ */
+export async function fetchTeamForm(leagueId, teamId, n = 5) {
+  const games = await fetchTeamGames(leagueId, teamId, { back: 21, ahead: 0 });
+  return games
+    .filter((g) => g.state === 'post')
+    .slice(-n)
+    .map((g) => {
+      const me = g.home.id === String(teamId) ? g.home : g.away;
+      const opp = me === g.home ? g.away : g.home;
+      const res = me.winner ? 'V' : opp.winner ? 'D' : 'N';
+      return { res, score: `${me.score}-${opp.score}`, opp: opp.abbr, date: g.startsAt };
+    });
+}
+
+/** Grands Prix d'une période : une ligne par week-end, à la date de la course. */
+export async function fetchF1Calendar(fromOffset, toOffset) {
+  const data = await getJson(`${LEAGUES_BY_ID.f1.path}/scoreboard`, `?dates=${ymd(fromOffset)}-${ymd(toOffset)}`);
+  return (data?.events ?? []).map((e) => {
+    const g = normalizeEvent(e, 'f1', LEAGUES_BY_ID.f1.logo);
+    const race = (g.sessions ?? []).find((s) => /course/i.test(s.label)) ?? g.sessions?.at(-1);
+    return { ...g, startsAt: race?.startsAt ?? g.startsAt, raceState: race?.state ?? g.state };
+  });
+}
+
+/* ---------- Alignement d'une équipe (joueurs favoris) ---------- */
+
+/** Joueurs d'une équipe, avec photo. Lève une erreur si ESPN ne les donne pas à l'app. */
+export async function fetchRoster(leagueId, teamId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/roster`);
+  // Au hockey, les joueurs sont groupés par position ({ position, items }).
+  const flat = (data?.athletes ?? []).flatMap((a) => (Array.isArray(a?.items) ? a.items : [a]));
+  const sport = league.path.split('/')[1];
+  return flat
+    .filter((a) => a?.id && a?.displayName)
+    .map((a) => ({
+      id: String(a.id),
+      name: a.displayName,
+      short: a.shortName ?? a.displayName,
+      jersey: a.jersey ?? '',
+      pos: a.position?.abbreviation ?? '',
+      photo: a.headshot?.href ?? `https://a.espncdn.com/i/headshots/${sport}/players/full/${a.id}.png`,
+      teamId: String(teamId),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
 }
 
 /** Données factices : aperçu navigateur et première ouverture hors ligne. */

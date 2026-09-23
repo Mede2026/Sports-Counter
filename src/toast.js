@@ -1,11 +1,13 @@
 // Fenêtre de notification : reçoit les évènements du widget (via Rust),
 // les affiche l'un après l'autre, puis se cache.
-import { crestHtml, bindCrests } from './lib/crest.js';
+import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 
 const DURATION_MS = 6000;
 // Une proposition de mise à jour reste plus longtemps ; sans réponse, elle
 // compte comme « Plus tard » (l'app redemandera à la prochaine recherche).
 const UPDATE_DURATION_MS = 30000;
+// But d'un joueur favori : un peu plus longtemps à l'écran.
+const BIG_DURATION_MS = 10000;
 const UPDATE_COLOR = '#4aa3ff';
 const ARROW = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
   stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>`;
@@ -31,6 +33,8 @@ document.documentElement.style.setProperty('--duration', `${DURATION_MS}ms`);
 
 function render(t) {
   current = t;
+  el.card.dataset.theme = t.theme === 'light' ? 'light' : 'dark';
+  setLightCrests(t.theme === 'light');
   const isUpdate = t.kind === 'update';
   el.card.style.setProperty('--team', isUpdate ? UPDATE_COLOR : t.color || '#4aa3ff');
   if (isUpdate) {
@@ -73,7 +77,7 @@ async function next() {
   void el.card.offsetWidth;
   el.card.classList.add('toast--in');
   clearTimeout(timer);
-  const duration = t.kind === 'update' ? UPDATE_DURATION_MS : DURATION_MS;
+  const duration = t.kind === 'update' ? UPDATE_DURATION_MS : t.big ? BIG_DURATION_MS : DURATION_MS;
   el.card.style.setProperty('--duration', `${duration}ms`);
   timer = setTimeout(leave, duration);
 }

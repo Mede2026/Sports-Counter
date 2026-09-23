@@ -2,7 +2,7 @@
 // Hockey, basket, football, soccer : pointage par période, statistiques,
 // buts, pénalités, classement. F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
-import { fetchMatchDetail, fetchScoreboard, fetchStandings, demoEvents, sameDriver } from './lib/api.js';
+import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, demoEvents, sameDriver } from './lib/api.js';
 import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -32,6 +32,8 @@ let timer = null;
 let link = '';
 let lastHtml = '';
 let prefs = loadPrefs();
+const teamForms = new Map(); // idÉquipe -> 5 derniers résultats
+const FORM_ICONS = { V: '✅', D: '❌', N: '➖' };
 
 const esc = (v) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
 const ordinal = (n) => (n === 1 ? '1re' : `${n}e`);
@@ -114,6 +116,9 @@ function periodLabel(g, p) {
   return g.playoffs ? `${ordinal(p - 3)} prol.` : p === 4 ? 'Prol.' : 'TB';
 }
 
+/** Un de tes joueurs favoris ? */
+const isStar = (name) => !!name && (prefs.favPlayers ?? []).some((f) => sameDriver(f, { name }));
+
 function playsHtml(g, plays, withAssists) {
   if (!plays?.length) return '';
   const team = (id) => (String(g.home.id) === id ? g.home : g.away);
@@ -122,7 +127,7 @@ function playsHtml(g, plays, withAssists) {
       ${crestHtml(team(p.teamId), 'crest-xs')}
       <span class="plays__when">${esc([periodLabel(g, p.period), p.clock].filter(Boolean).join(' · '))}</span>
       <span class="plays__who">
-        <b>${esc(p.who || p.text)}</b>
+        <b>${isStar(p.who) ? '⭐ ' : ''}${esc(p.who || p.text)}</b>
         ${withAssists && p.assists.length ? `<small>Passes : ${esc(p.assists.join(', '))}</small>` : ''}
         ${!withAssists && p.who && p.text ? `<small>${esc(p.text)}</small>` : ''}
       </span>
@@ -134,7 +139,11 @@ function standingsHtml(g, table) {
     const s = table.get(String(t.id));
     if (!s && !t.record) return '';
     const parts = [s ? `${rankText(s.rank)} · ${s.group}` : '', s?.points ? `${s.points} pts` : '', t.record].filter(Boolean);
-    return `<div class="rank">${crestHtml(t, 'crest-xs')}<b>${esc(t.name)}</b><span>${esc(parts.join(' · '))}</span></div>`;
+    const form = teamForms.get(String(t.id));
+    const formHtml = form?.length
+      ? `<small class="form" title="${esc(form.map((f) => `${f.res} ${f.score} c. ${f.opp}`).join('\n'))}">${form.map((f) => FORM_ICONS[f.res]).join('')}</small>`
+      : '';
+    return `<div class="rank">${crestHtml(t, 'crest-xs')}<b>${esc(t.name)}</b>${formHtml}<span>${esc(parts.join(' · '))}</span></div>`;
   };
   return line(g.away) + line(g.home);
 }
@@ -178,6 +187,7 @@ function f1Html(g) {
       <span class="pos">${MEDALS[d.pos] ?? d.pos}</span>
       ${d.photo ? `<img class="face" src="${esc(d.photo)}" alt="" loading="lazy" data-face />` : '<span class="face"></span>'}
       <span class="drv"><b>${esc(d.name)}</b>${d.team ? `<small>${esc(d.team)}</small>` : ''}</span>
+      ${d.pos > 1 && d.gap ? `<span class="gap">${esc(String(d.gap).startsWith('+') ? d.gap : `+${d.gap}`)}</span>` : ''}
     </li>`;
   }).join('');
   const results = rows ? `<ol class="grid">${rows}</ol>` : '';
@@ -251,7 +261,23 @@ async function load() {
 
   link = g?.link ?? '';
   el.espn.hidden = !link;
+  if (g?.kind !== 'event' && g?.home && !IS_DEMO) loadForms(g);
   timer = setTimeout(load, g?.state === 'in' ? REFRESH_LIVE_MS : REFRESH_IDLE_MS);
+}
+
+/** Derniers résultats des deux équipes, chargés après coup (ils peuvent être lents). */
+async function loadForms(g) {
+  const missing = [g.away, g.home].filter((t) => !teamForms.has(String(t.id)));
+  if (!missing.length) return;
+  for (const t of missing) {
+    try {
+      teamForms.set(String(t.id), await fetchTeamForm(g.leagueId, t.id));
+    } catch {
+      teamForms.set(String(t.id), []);
+    }
+  }
+  lastHtml = '';
+  load();
 }
 
 /** Aperçu navigateur : un match de démonstration complet. */

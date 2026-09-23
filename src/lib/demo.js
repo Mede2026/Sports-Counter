@@ -47,7 +47,7 @@ const DEMO_GRID = [
   ['demo-nor', 'Lando Norris', 'L. Norris', 'McLaren'],
   ['demo-lec', 'Charles Leclerc', 'C. Leclerc', 'Ferrari'],
   ['demo-pia', 'Oscar Piastri', 'O. Piastri', 'McLaren'],
-].map(([id, name, short, team], i) => ({ id, pos: i + 1, name, short, team, photo: '' }));
+].map(([id, name, short, team], i) => ({ id, pos: i + 1, name, short, team, photo: '', gap: i ? (i * 1.874).toFixed(3) : '' }));
 
 export const DEMO_EVENTS = [
   {

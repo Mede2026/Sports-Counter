@@ -33,6 +33,14 @@ const DEFAULTS = {
   reminderMinutes: 15,
   // Pilote de F1 favori : { id, name, short, photo } ou null.
   favDriver: null,
+  // Mode Grand Prix : top 5 et écarts pendant une course.
+  gpMode: true,
+  // Joueurs de hockey favoris : [{ id, name, photo, teamId }].
+  favPlayers: [],
+  // Thème du widget et des notifications : 'dark', 'light' ou 'auto'.
+  widgetTheme: 'dark',
+  // Les 5 derniers résultats (✅ ❌) à côté des équipes favorites.
+  showForm: true,
 };
 
 export function loadPrefs() {

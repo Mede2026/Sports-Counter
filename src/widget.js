@@ -1,8 +1,8 @@
-import { fetchScoreboard, fetchNextGames, fetchScorer, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, fetchScorer, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText } from './lib/err.js';
-import { crestHtml, bindCrests } from './lib/crest.js';
+import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
 import { detectEvents, remember } from './lib/events.js';
 import { whenText, shortWhen, untilText, isDate, TIME_FMT } from './lib/time.js';
@@ -28,6 +28,8 @@ let seen = null; // relevé précédent, pour les notifications (null = premier)
 let followed = []; // tous les matchs suivis (pas seulement ceux affichés)
 let lastHtml = ''; // dernier rendu : on ne touche pas au DOM s'il est identique
 const shownIds = new Set(); // cartes déjà affichées : elles n'ont plus d'animation d'entrée
+const forms = new Map(); // "ligue:équipe" -> { at, list } : 5 derniers résultats
+let lastRender = null; // [matchs, erreur] du dernier rendu, pour redessiner
 
 const inTauri = () => !!window.__TAURI__;
 const attr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -44,9 +46,20 @@ function teamRow(game, team, dim) {
     <div class="team${dim ? ' team--loser' : ''}">
       ${crestHtml(team)}
       <span class="team__abbr">${team.abbr}</span>
-      <span class="team__name">${team.name}${record}</span>
+      <span class="team__name">${team.name}${record}${formHtml(game.leagueId, team.id)}</span>
       <span class="team__score${bumped ? ' team__score--bump' : ''}">${team.score}</span>
     </div>`;
+}
+
+const FORM_ICONS = { V: '✅', D: '❌', N: '➖' };
+
+/** Les 5 derniers résultats d'une équipe favorite : ✅ ❌ ➖. */
+function formHtml(leagueId, teamId) {
+  if (prefs.showForm === false) return '';
+  const list = forms.get(`${leagueId}:${teamId}`)?.list;
+  if (!list?.length) return '';
+  const tip = list.map((f) => `${f.res === 'V' ? 'Victoire' : f.res === 'D' ? 'Défaite' : 'Nul'} ${f.score} c. ${f.opp}`).join('\n');
+  return ` <span class="form" title="${attr(tip)}">${list.map((f) => FORM_ICONS[f.res]).join('')}</span>`;
 }
 
 /** Compte à rebours, tenu à jour par la minuterie sans redemander les scores. */
@@ -84,19 +97,30 @@ const photo = (d) => (d?.photo ? `<img class="face" src="${attr(d.photo)}" alt="
 function podiumHtml(game) {
   const top3 = game.top3 ?? [];
   if (!top3.length) return '';
+  // Mode Grand Prix : pendant une course ou un sprint, top 5 avec les écarts.
+  const gp = prefs.gpMode !== false && game.state === 'in' && /course|sprint/i.test(game.session ?? '');
+  const top = gp ? (game.results ?? top3).slice(0, 5) : top3;
   const fav = prefs.favDriver;
   const line = (d, extra = '') => {
     const isFav = sameDriver(d, fav);
     const medal = MEDALS[d.pos] ?? `<span class="podium__pos">${d.pos}</span>`;
+    const gap = gp && d.pos > 1 && d.gap ? `<span class="podium__gap">${gapText(d.gap)}</span>` : '';
     return `<li class="${isFav ? 'podium__fav' : ''}${extra}">
-      <span class="podium__medal">${medal}</span>${isFav ? photo(fav) : ''}${d.short || d.name}</li>`;
+      <span class="podium__medal">${medal}</span>${isFav ? photo(fav) : ''}<span class="podium__name">${d.short || d.name}</span>${gap}</li>`;
   };
-  let html = top3.map((d) => line(d)).join('');
-  const mine = fav && !top3.some((d) => sameDriver(d, fav))
+  let html = top.map((d) => line(d)).join('');
+  const mine = fav && !top.some((d) => sameDriver(d, fav))
     ? (game.results ?? []).find((d) => sameDriver(d, fav))
     : null;
   if (mine) html += line(mine, ' podium__extra');
-  return `<ol class="podium">${html}</ol>`;
+  return `<ol class="podium${gp ? ' podium--gp' : ''}">${html}</ol>`;
+}
+
+/** Écart affiché : « +2.345 », « +1 tour ». */
+function gapText(gap) {
+  const g = String(gap).trim();
+  if (/lap/i.test(g)) return `+${parseInt(g, 10) || 1} tour${parseInt(g, 10) > 1 ? 's' : ''}`;
+  return g.startsWith('+') ? g : `+${g}`;
 }
 
 /** Tirs au but (hockey), quand ESPN les donne dans le tableau des scores. */
@@ -217,12 +241,23 @@ const SCORER_TIMEOUT_MS = 3000;
 async function sendToast(e) {
   // But sans buteur connu : on le cherche dans le résumé du match, sans
   // jamais retarder la notification de plus de 3 s.
+  let scorer = e.scorer ?? '';
   if (e.goal) {
-    const name = await Promise.race([
+    scorer = await Promise.race([
       fetchScorer(e.goal.leagueId, e.goal.eventId, e.goal.teamId),
       new Promise((r) => setTimeout(() => r(''), SCORER_TIMEOUT_MS)),
     ]);
-    if (name) e = { ...e, title: `But de ${name} !` };
+    if (scorer) e = { ...e, title: `But de ${scorer} !` };
+  }
+  // Un de tes joueurs favoris a marqué : notification spéciale, avec sa photo.
+  const star = scorer ? (prefs.favPlayers ?? []).find((p) => sameDriver(p, { name: scorer })) : null;
+  if (star) {
+    e = {
+      ...e,
+      title: `🚨 BUT DE ${star.name.split(/\s+/).pop().toUpperCase()} !`,
+      team: star.photo ? { ...e.team, logo: star.photo, round: true } : e.team,
+      big: true,
+    };
   }
   const color = visibleTeamColor(e.team?.color, e.team?.alt) ?? '#4aa3ff';
   const toast = {
@@ -230,9 +265,55 @@ async function sendToast(e) {
     body: e.body,
     link: e.link,
     color,
+    big: !!e.big,
+    theme: resolvedTheme(),
     team: { abbr: e.team?.abbr ?? '', logo: e.team?.logo ?? '', color, round: !!e.team?.round },
   };
   await window.__TAURI__.core.invoke('notify', { toast }).catch(() => {});
+}
+
+/* ---------- Thème ---------- */
+
+const lightQuery = window.matchMedia?.('(prefers-color-scheme: light)');
+
+/** « Comme Windows » suit le mode clair ou sombre du système. */
+function resolvedTheme() {
+  const t = prefs.widgetTheme ?? 'dark';
+  if (t === 'auto') return lightQuery?.matches ? 'light' : 'dark';
+  return t;
+}
+
+lightQuery?.addEventListener?.('change', () => { lastHtml = ''; if (lastRender) render(...lastRender); });
+
+/* ---------- Derniers résultats des équipes favorites ---------- */
+
+const FORM_TTL = 3 * 3600 * 1000;
+let formsLoading = false;
+
+/** Charge (en arrière-plan) les 5 derniers résultats des équipes favorites. */
+async function loadForms() {
+  if (prefs.showForm === false || formsLoading) return;
+  const stale = prefs.favorites.filter((key) => {
+    const [leagueId] = key.split(':');
+    if (LEAGUES_BY_ID[leagueId]?.kind !== 'team') return false;
+    const f = forms.get(key);
+    return !f || Date.now() - f.at > FORM_TTL;
+  });
+  if (!stale.length) return;
+  formsLoading = true;
+  let changed = false;
+  for (const key of stale) {
+    const [leagueId, teamId] = key.split(':');
+    try {
+      const list = await fetchTeamForm(leagueId, teamId);
+      forms.set(key, { at: Date.now(), list });
+      changed ||= list.length > 0;
+    } catch {
+      forms.set(key, { at: Date.now(), list: [] }); // on réessaiera dans 3 h
+    }
+  }
+  formsLoading = false;
+  if (changed && lastRender) render(...lastRender);
 }
 
 /* ---------- Rappels avant le match ---------- */
@@ -339,6 +420,9 @@ function applyLook() {
   el.widget.classList.toggle('widget--compact', prefs.compact);
   el.widget.style.opacity = String(prefs.opacity ?? 1);
   el.widget.style.zoom = String(SIZES[prefs.widgetSize] ?? 1);
+  const theme = resolvedTheme();
+  el.widget.dataset.theme = theme;
+  setLightCrests(theme === 'light');
 }
 
 /**
@@ -380,8 +464,8 @@ async function syncFullscreenOption() {
 
 /** Remplace le contenu seulement s'il a changé : pas de clignotement ni de travail inutile. */
 function paint(html, footHtml) {
-  const key = `${html}|${footHtml}|${prefs.compact}|${prefs.widgetSize}|${prefs.opacity}|${prefs.theme}`;
   applyLook();
+  const key = `${html}|${footHtml}|${prefs.compact}|${prefs.widgetSize}|${prefs.opacity}|${prefs.theme}|${resolvedTheme()}`;
   if (key === lastHtml) return;
   lastHtml = key;
   el.games.innerHTML = html;
@@ -404,6 +488,8 @@ function renderError(message) {
 }
 
 function render(games, error) {
+  lastRender = [games, error];
+  applyLook(); // le thème décide des logos, avant de construire les cartes
   const html = games.length ? games.map(gameCard).join('') : emptyHtml();
   games.forEach((g) => shownIds.add(g.id));
 
@@ -579,6 +665,7 @@ async function doRefresh(force) {
 
   const visible = followed.slice(0, prefs.maxGames);
   render(visible, error);
+  loadForms();
   const hasLive = visible.some((g) => g.state === 'in');
   applyWidgetMode(hasLive);
   schedule(hasLive, followed);
@@ -633,8 +720,18 @@ window.addEventListener('online', () => refresh(true));
 syncFullscreenOption();
 setInterval(tick, TICK_MS);
 
+/** Ctrl + Alt + M : fenêtre Match du match en cours, sinon du prochain. */
+async function openCurrentMatch() {
+  const game = followed.find((g) => g.state === 'in') ?? followed.find((g) => g.state === 'pre') ?? followed[0];
+  if (!game || !inTauri()) return;
+  try {
+    await window.__TAURI__.core.invoke('open_match', { league: game.leagueId, event: game.id });
+  } catch { /* fenêtre indisponible */ }
+}
+
 if (inTauri()) {
   window.__TAURI__.event.listen('snapped', (e) => flashEdges(e.payload));
+  window.__TAURI__.event.listen('shortcut-match', openCurrentMatch);
   // Le widget démarre caché. « Toujours » : on l'affiche tout de suite.
   // « Pendant un match » : on attend le premier relevé pour savoir.
   if ((prefs.widgetMode ?? 'always') !== 'live') applyWidgetMode(false);

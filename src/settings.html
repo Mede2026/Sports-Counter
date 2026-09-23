@@ -26,6 +26,13 @@
     <nav class="leagues">
       <div id="leagues"></div>
       <div class="nav-sep"></div>
+      <button class="league league--prefs" id="navCalendar" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="5" width="18" height="16" rx="3" /><path d="M3 10h18" /><path d="M8 3v4" /><path d="M16 3v4" />
+        </svg>
+        <span>Calendrier</span>
+      </button>
       <button class="league league--prefs" id="navPrefs" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
              stroke-linecap="round" stroke-linejoin="round">
@@ -43,6 +50,30 @@
         <button class="ghost" id="btnClear">Tout décocher</button>
       </div>
       <div class="teams" id="teams"></div>
+    </div>
+
+    <!-- Calendrier : matchs de tes équipes et Grands Prix -->
+    <div class="panel" id="calendarView" hidden>
+      <div class="toolbar">
+        <span class="toolbar__title">Calendrier</span>
+        <span class="toolbar__sub" id="calRange"></span>
+        <button class="ghost" id="btnCalRefresh" type="button">Actualiser</button>
+      </div>
+      <div class="teams" id="calendar"></div>
+    </div>
+
+    <!-- Joueurs favoris (hockey) -->
+    <div class="panel" id="playersView" hidden>
+      <div class="toolbar">
+        <select id="playerTeam" title="Équipe"></select>
+        <input class="search" id="playerSearch" type="search" placeholder="Rechercher un joueur…" />
+      </div>
+      <form class="addrow" id="playerAdd">
+        <span>Pas dans la liste ?</span>
+        <input class="search" id="playerFree" type="text" placeholder="Nom du joueur (ex. Cole Caufield)" />
+        <button class="ghost" type="submit">Ajouter</button>
+      </form>
+      <div class="teams" id="players"></div>
     </div>
 
     <!-- Section Réglages -->
@@ -71,6 +102,14 @@
           </select>
         </div>
         <div class="pref">
+          <span class="pref__txt"><b>Thème</b><small>Pour le widget et les notifications.</small></span>
+          <select id="optWidgetTheme">
+            <option value="dark">Sombre</option>
+            <option value="light">Clair</option>
+            <option value="auto">Comme Windows</option>
+          </select>
+        </div>
+        <div class="pref">
           <span class="pref__txt"><b>Taille</b></span>
           <div class="seg" id="optSize">
             <button type="button" data-size="s">Petit</button>
@@ -89,6 +128,10 @@
         <label class="pref">
           <span class="pref__txt"><b>Cacher les matchs finis</b><small>Après 6 heures.</small></span>
           <input type="checkbox" class="switch" id="optHideOld" />
+        </label>
+        <label class="pref">
+          <span class="pref__txt"><b>Derniers résultats</b><small>✅ ❌ des 5 derniers matchs à côté de tes équipes.</small></span>
+          <input type="checkbox" class="switch" id="optShowForm" />
         </label>
         <div class="pref">
           <span class="pref__txt"><b>Opacité</b></span>
@@ -125,6 +168,25 @@
           <span class="pref__txt" id="favDriverTxt"><b>Pilote favori</b><small>Aucun</small></span>
           <button class="ghost ghost--small" id="btnPickDriver" type="button">Choisir</button>
         </div>
+        <label class="pref">
+          <span class="pref__txt"><b>Mode Grand Prix</b><small>Pendant une course : top 5 et écarts en direct dans le widget.</small></span>
+          <input type="checkbox" class="switch" id="optGpMode" />
+        </label>
+      </section>
+
+      <section class="prefs__group">
+        <h2>Hockey</h2>
+        <div class="pref">
+          <span class="pref__txt"><b>Joueurs favoris</b><small>Notification spéciale 🚨 quand l'un d'eux marque.</small>
+            <span class="chips" id="favPlayersChips"></span></span>
+          <button class="ghost ghost--small" id="btnPickPlayers" type="button">Choisir</button>
+        </div>
+      </section>
+
+      <section class="prefs__group">
+        <h2>Raccourcis clavier</h2>
+        <div class="pref"><span class="pref__txt"><b>Afficher / masquer le widget</b></span><kbd>Ctrl + Alt + S</kbd></div>
+        <div class="pref"><span class="pref__txt"><b>Ouvrir le match en cours</b><small>Sinon le prochain match suivi.</small></span><kbd>Ctrl + Alt + M</kbd></div>
       </section>
     </div>
   </div>

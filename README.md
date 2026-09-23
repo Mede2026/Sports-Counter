@@ -16,6 +16,7 @@ seulement les équipes que tu choisis.
   des tâches. Posé dans la moitié basse de l'écran, il grandit vers le haut :
   son bord inférieur reste collé à la barre.
 - **Activable / désactivable** : `Ctrl + Alt + S`, ou clic droit sur l'icône dans la zone de notification → Afficher / masquer. Un clic gauche sur l'icône ouvre les réglages.
+- **`Ctrl + Alt + M`** : ouvre la fenêtre Match du match en cours (sinon du prochain).
 - **Logos des équipes** affichés à côté de chaque score.
 - **Choix des équipes** dans une fenêtre de réglages, ligue par ligue.
 - **Rafraîchissement adaptatif** : toutes les 25 s pendant un match, toutes les 5 min sinon.
@@ -28,6 +29,13 @@ seulement les équipes que tu choisis.
 - **Compte à rebours** avant chaque match ou séance (« dans 2 h 15 »), et
   **rappel** par notification 5, 15, 30 ou 60 min avant (au choix).
 - **Fiche des équipes** (victoires-défaites) et **tirs au but** au hockey.
+- **Derniers résultats** : ✅ ❌ des 5 derniers matchs à côté de tes équipes.
+- **Mode Grand Prix** : pendant une course, top 5 et écarts en direct.
+- **Joueurs favoris au hockey** (choisis dans l'alignement, ou par leur nom) :
+  notification spéciale 🚨 quand l'un d'eux marque, ⭐ dans la fenêtre Match.
+- **Calendrier** : matchs de tes équipes et Grands Prix, du 1er du mois à
+  dans 30 jours, avec les résultats passés.
+- **Thème** du widget et des notifications : sombre, clair ou comme Windows.
 - **Couleurs de ton équipe** sur la bordure du widget.
 - **Clic sur un match** : ouvre la **fenêtre Match** — pointage par période,
   buts avec les passes, statistiques face à face, pénalités, classement des

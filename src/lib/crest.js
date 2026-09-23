@@ -12,14 +12,26 @@ export function darkLogo(url) {
   return url.replace('/500/', '/500-dark/');
 }
 
+import { F1_LOGO } from './f1-logo.js';
+
+// Thème clair : les logos normaux d'ESPN sont faits pour un fond clair.
+let lightCrests = false;
+export function setLightCrests(on) { lightCrests = !!on; }
+
 export function crestHtml(team, cls = 'crest') {
   const color = team.color || '#3b4150';
   const abbr = team.abbr || '?';
   if (!team.logo) return `<span class="${cls}" style="background:${color}">${abbr}</span>`;
 
-  // Logo intégré à l'app (le F1, en longueur) : déjà dessiné pour le fond
-  // sombre, et affiché plus large qu'une pastille carrée.
-  if (team.logo.startsWith('data:')) return `<img class="${cls} ${cls}--wide" src="${team.logo}" alt="" />`;
+  // Logo de la F1, intégré à l'app : en longueur, donc plus large qu'une
+  // pastille carrée. Lisible sur fond clair comme sombre.
+  if (team.logo === F1_LOGO) return `<img class="${cls} ${cls}--wide" src="${team.logo}" alt="" />`;
+  // Autres logos intégrés (aperçu) : rien à essayer d'autre.
+  if (team.logo.startsWith('data:')) return `<img class="${cls}" src="${team.logo}" alt="" />`;
+
+  if (lightCrests) {
+    return `<img class="${cls}" src="${team.logo}" alt="" data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
+  }
 
   const dark = darkLogo(team.logo);
   // Premier essai : logo sombre. En repli : logo normal, marqué --light pour
