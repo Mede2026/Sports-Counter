@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.7.0': [
+    '📊 Fenêtre Match → onglet Joueurs : les stats de chaque joueur (buts, passes, tirs, temps de jeu, arrêts…).',
+    '📜 Onglet Jeux : tous les jeux du match, les plus récents en haut, traduits en français.',
+    '🏆 Classements → Séries : le tableau des séries éliminatoires (LNH, NBA, WNBA, MLB, NFL).',
+    '⭐ Ton équipe et tes joueurs favoris sont mis en évidence partout.',
+  ],
   '0.6.4': [
     '🇫🇷 La traduction passe par un nouveau service de Google, plus fiable : l’ancien reste en secours.',
     '🔤 Les textes anglais qui restaient (statuts rares, résultats UFC, catégories, séances F1…) sont maintenant traduits aussi.',

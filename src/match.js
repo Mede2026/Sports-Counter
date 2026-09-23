@@ -1,6 +1,7 @@
 // Fenêtre « Match » : tout le détail d'un match suivi, dans l'app.
 // Hockey, basket, football, soccer : pointage par période, statistiques,
-// buts, pénalités, classement. F1 : classement complet de la séance, pilote
+// buts, pénalités, classement ; onglets « Joueurs » (box score) et « Jeux »
+// (tous les jeux du match). F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
 import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, demoEvents, sameDriver } from './lib/api.js';
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
@@ -10,7 +11,7 @@ import { visibleTeamColor } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
-import { translated, translateAll, TRANSLATED_EVENT } from './lib/translate.js';
+import { translated, translateAll, autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 
 const REFRESH_LIVE_MS = 20_000;
 const REFRESH_IDLE_MS = 300_000;
@@ -34,6 +35,14 @@ let link = '';
 let lastHtml = '';
 let prefs = loadPrefs();
 const teamForms = new Map(); // idÉquipe -> 5 derniers résultats
+
+// Onglet affiché ('summary', 'box', 'plays'), équipe du box score et nombre
+// de jeux montrés : gardés d'un rafraîchissement à l'autre.
+const PLAYS_STEP = 40;
+let tab = 'summary';
+let boxTeam = null;
+let playsShown = PLAYS_STEP;
+let shown = null; // { g, build } : le match affiché et de quoi le redessiner
 
 
 /* ---------- Morceaux communs ---------- */
@@ -155,8 +164,12 @@ function playsHtml(g, plays, withAssists) {
     </li>`).join('')}</ul>`;
 }
 
+/** Jeux visibles dans l'onglet « Jeux » : les plus récents d'abord. */
+const visiblePlays = (g) => [...(g?.allPlays ?? [])].reverse().slice(0, playsShown);
+
 /** Textes libres d'ESPN affichés dans la fenêtre : ceux à traduire. */
 function textsOf(g) {
+  if (tab === 'plays') return visiblePlays(g).map((p) => p.text).filter(Boolean);
   return [...(g?.goals ?? []), ...(g?.penalties ?? [])].map((p) => p.text)
     .concat((g?.videos ?? []).map((v) => v.title))
     .filter(Boolean);
@@ -228,9 +241,87 @@ function videosHtml(g) {
     </button>`).join('')}</div>`;
 }
 
+/* ---------- Onglets : Résumé, Joueurs, Jeux ---------- */
+
+function tabsHtml(g) {
+  const tabs = [['summary', 'Résumé'], g.box?.length ? ['box', 'Joueurs'] : null, g.allPlays?.length ? ['plays', 'Jeux'] : null]
+    .filter(Boolean);
+  if (tabs.length < 2) return '';
+  return `<nav class="tabs">${tabs.map(([id, label]) => `
+    <button type="button" class="tab${tab === id ? ' tab--on' : ''}" data-tab="${id}">${label}</button>`).join('')}</nav>`;
+}
+
+/** Box score : les stats de chaque joueur d'une équipe, groupe par groupe. */
+function boxHtml(g) {
+  const teams = g.box ?? [];
+  // Ton équipe d'abord, sinon l'équipe visiteuse.
+  const pick = teams.find((t) => t.teamId === boxTeam)
+    ?? teams.find((t) => (prefs.favorites ?? []).includes(`${g.leagueId}:${t.teamId}`))
+    ?? teams.find((t) => t.teamId === String(g.away.id)) ?? teams[0];
+  const sides = [g.away, g.home].filter((t) => teams.some((x) => x.teamId === String(t.id)));
+  const switcher = `<div class="teamseg">${sides.map((t) => `
+    <button type="button" data-box-team="${esc(t.id)}" class="${String(t.id) === pick.teamId ? 'teamseg--on' : ''}">${crestHtml(t, 'crest-xs')}${esc(t.name)}</button>`).join('')}</div>`;
+  const groups = pick.groups.map((grp) => `<section class="card">
+    ${grp.name ? `<h2>${esc(grp.name)}</h2>` : ''}
+    <div class="box__scroll"><table class="box">
+      <thead><tr><th class="box__name">Joueur</th>${grp.cols.map((c) => `<th title="${esc(autoFr(c.tip))}">${esc(c.label)}</th>`).join('')}</tr></thead>
+      <tbody>${grp.players.map((p) => {
+        const star = isStar(p.name);
+        return `<tr class="${star ? 'box--fav' : ''}">
+          <td class="box__name">${p.jersey ? `<small>${esc(p.jersey)}</small>` : ''}<b>${star ? '⭐ ' : ''}${esc(p.short || p.name)}</b>${p.pos ? `<i>${esc(p.pos)}</i>` : ''}</td>
+          ${p.stats.map((v) => `<td>${esc(v)}</td>`).join('')}
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div></section>`).join('');
+  return `${switcher}${groups}<p class="hint">Survole une colonne pour voir ce qu'elle veut dire.</p>`;
+}
+
+/** Nom complet d'une période, pour les intertitres de l'onglet « Jeux ». */
+function periodName(g, p) {
+  if (!p.period) return '';
+  const sport = sportOf(g.leagueId);
+  if (sport === 'baseball') {
+    const half = /top/i.test(p.half) ? 'Haut' : /bot/i.test(p.half) ? 'Bas' : '';
+    return half ? `${half} de la ${ordinal(p.period)} manche` : `${ordinal(p.period)} manche`;
+  }
+  if (sport === 'hockey' && (g.leagueId !== 'nhl' || p.period <= 3)) return `${ordinal(p.period)} période`;
+  if (sport === 'basketball' || sport === 'football') return p.period <= 4 ? `${rankText(p.period)} quart` : 'Prolongation';
+  if (sport === 'soccer') return p.period <= 2 ? `${ordinal(p.period)} demie` : 'Prolongation';
+  return periodLabel(g, p.period);
+}
+
+/** Tous les jeux du match, les plus récents en haut, par période. */
+function allPlaysHtml(g) {
+  const total = g.allPlays?.length ?? 0;
+  const team = (id) => (String(g.home.id) === id ? g.home : String(g.away.id) === id ? g.away : null);
+  let section = null;
+  const rows = visiblePlays(g).map((p) => {
+    const key = `${p.period}|${p.half ?? ''}`;
+    const head = p.period && key !== section ? `<li class="pl__period">${esc(periodName(g, p))}</li>` : '';
+    section = key;
+    const t = team(p.teamId);
+    const score = p.scoring && p.away != null && p.home != null
+      ? `<span class="pl__score">${esc(g.away.abbr)} ${esc(p.away)} – ${esc(p.home)} ${esc(g.home.abbr)}</span>` : '';
+    return `${head}<li class="pl${p.scoring ? ' pl--score' : ''}">
+      <span class="pl__clock">${esc(p.clock)}</span>
+      ${t ? crestHtml(t, 'crest-xs') : '<span class="pl__nocrest"></span>'}
+      <span class="pl__text">${esc(fr(p.text))}${score}</span>
+    </li>`;
+  }).join('');
+  const left = total - Math.min(total, playsShown);
+  const more = left > 0
+    ? `<button class="ghost pl__more" type="button" data-more-plays>Voir ${Math.min(PLAYS_STEP, left)} jeux de plus</button>` : '';
+  return section === null ? '' : `<section class="card"><h2>Tous les jeux · ${total}</h2><ul class="pl-list">${rows}</ul>${more}</section>`;
+}
+
 function matchHtml(g, table) {
+  if (tab === 'box' && !g.box?.length) tab = 'summary';
+  if (tab === 'plays' && !g.allPlays?.length) tab = 'summary';
+  const head = heroHtml(g) + tabsHtml(g);
+  if (tab === 'box') return head + boxHtml(g);
+  if (tab === 'plays') return head + allPlaysHtml(g);
   const goalsTitle = ['hockey', 'soccer'].includes(sportOf(g.leagueId)) ? 'Buts' : 'Jeux marquants';
-  return heroHtml(g)
+  return head
     + section('Chances de victoire', winProbHtml(g))
     + section('Faits saillants', videosHtml(g))
     + section('Les 3 étoiles', starsHtml(g))
@@ -418,16 +509,37 @@ async function load() {
   }
 
   paint(html);
-  // Textes d'ESPN en anglais : traduits en arrière-plan, puis redessinés.
-  if (build && prefs.translate !== false) {
-    translateAll(textsOf(g)).then((changed) => { if (changed) paint(build()); });
-  }
+  shown = build ? { g, build } : null;
+  translateShown();
 
   link = g?.link ?? '';
   el.espn.hidden = !link;
   if (g?.kind !== 'event' && g?.home && !IS_DEMO) loadForms(g);
   timer = setTimeout(load, g?.state === 'in' || !g ? REFRESH_LIVE_MS : REFRESH_IDLE_MS);
 }
+
+/** Textes d'ESPN en anglais : traduits en arrière-plan, puis redessinés. */
+function translateShown() {
+  if (!shown || prefs.translate === false) return;
+  const { g, build } = shown;
+  translateAll(textsOf(g)).then((changed) => { if (changed && shown?.g === g) paint(build()); });
+}
+
+/** Redessine le match affiché sans redemander les données (onglet changé…). */
+function repaint() {
+  if (!shown) return;
+  paint(shown.build());
+  translateShown();
+}
+
+// Onglets, équipe du box score, « Voir plus de jeux ».
+el.main.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-tab]');
+  if (t) { tab = t.dataset.tab; repaint(); el.main.scrollTop = 0; return; }
+  const b = e.target.closest('[data-box-team]');
+  if (b) { boxTeam = b.dataset.boxTeam; repaint(); return; }
+  if (e.target.closest('[data-more-plays]')) { playsShown += PLAYS_STEP; repaint(); }
+});
 
 function paint(html) {
   if (html === lastHtml) return;
@@ -495,6 +607,30 @@ function demoDetail() {
       { title: 'Caufield scores on the power play', thumb: '', href: 'https://www.espn.com/video/clip?id=1' },
       { title: 'Suzuki buries the go-ahead goal', thumb: '', href: 'https://www.espn.com/video/clip?id=2' },
     ],
+    box: [['10', [
+      ['14', 'N. Suzuki', 'C', ['1', '2', '3', '+2', '4', '19:42', '1', '0', '0', '11', '7', '61.1']],
+      ['13', 'C. Caufield', 'RW', ['2', '0', '2', '+1', '6', '17:10', '0', '1', '0', '0', '0', '0.0']],
+      ['20', 'J. Slafkovsky', 'LW', ['1', '0', '1', '+1', '3', '16:55', '4', '0', '2', '0', '0', '0.0']],
+      ['48', 'L. Hutson', 'D', ['0', '1', '1', '+2', '2', '23:31', '0', '2', '0', '0', '0', '0.0']],
+    ]], ['21', [
+      ['34', 'A. Matthews', 'C', ['1', '0', '1', '-1', '5', '20:14', '2', '1', '0', '9', '10', '47.4']],
+      ['88', 'W. Nylander', 'RW', ['1', '0', '1', '0', '4', '18:40', '0', '0', '0', '0', '0', '0.0']],
+    ]]].map(([teamId, rows]) => ({
+      teamId,
+      groups: [{
+        name: 'Attaquants',
+        cols: ['B', 'A', 'PTS', '+/-', 'TB', 'TG', 'MÉ', 'TBL', 'PUN', 'MJG', 'MJP', '%MJ'].map((label) => ({ label, tip: '' })),
+        players: rows.map(([jersey, short, pos, stats]) => ({ name: short, short, jersey, pos, stats })),
+      }],
+    })),
+    allPlays: [
+      { period: 1, clock: '0:00', teamId: '', text: 'Start of 1st Period' },
+      { period: 1, clock: '4:12', teamId: '10', text: 'Cole Caufield Goal (1) Wrist Shot, assists: Nick Suzuki (1), Lane Hutson (1)', scoring: true, away: '0', home: '1' },
+      { period: 1, clock: '9:30', teamId: '21', text: 'Auston Matthews Shot on Goal saved by Sam Montembeault' },
+      { period: 2, clock: '2:30', teamId: '21', text: 'Auston Matthews Goal (1) Snap Shot, assists: Mitch Marner (1)', scoring: true, away: '1', home: '1' },
+      { period: 2, clock: '9:14', teamId: '21', text: 'Morgan Rielly Hooking against Nick Suzuki' },
+      { period: 2, clock: '11:48', teamId: '10', text: 'Juraj Slafkovsky Goal (1) Tip-In, assists: Ivan Demidov (1)', scoring: true, away: '1', home: '2' },
+    ],
   };
 }
 
@@ -522,6 +658,9 @@ if (inTauri()) {
   window.__TAURI__.event.listen('match-open', (e) => {
     current = e.payload;
     lastHtml = '';
+    tab = 'summary';
+    boxTeam = null;
+    playsShown = PLAYS_STEP;
     el.main.innerHTML = '<div class="state">Chargement…</div>';
     load();
   });

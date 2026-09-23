@@ -382,3 +382,95 @@ span.crest-xs { border-radius: 4px; }
 .favfighter { border-color: rgba(232, 54, 61, 0.35); }
 .favdriver__txt .st-rec { font-size: 11px; font-weight: 500; color: var(--text-faint); }
 .fight--fav { background: rgba(242, 197, 92, 0.08); box-shadow: inset 3px 0 0 #f2c55c; }
+
+/* ---------- Onglets : Résumé, Joueurs, Jeux ---------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tab {
+  flex: 1;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 650 12.5px var(--font);
+  cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab--on { background: rgba(255, 255, 255, 0.1); color: var(--text); }
+
+/* Choix de l'équipe du box score */
+.teamseg { display: flex; gap: 6px; flex-shrink: 0; }
+.teamseg button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font: 650 12px var(--font);
+  cursor: pointer;
+}
+.teamseg button:hover { color: var(--text); }
+.teamseg .teamseg--on { color: var(--text); background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.3); }
+
+/* Box score : le nom reste visible quand on fait défiler les colonnes */
+.box__scroll { overflow-x: auto; margin: 0 -12px; padding: 0 12px; }
+.box { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; min-width: 100%; }
+.box th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-faint);
+  padding: 0 6px 6px;
+  text-align: center;
+  white-space: nowrap;
+  cursor: help;
+}
+.box td { padding: 5px 6px; text-align: center; border-top: 1px solid var(--border); white-space: nowrap; }
+.box .box__name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  text-align: left;
+  background: var(--panel);
+  padding-left: 0;
+  cursor: default;
+}
+.box td.box__name small { display: inline-block; min-width: 20px; color: var(--text-faint); font-size: 10.5px; }
+.box td.box__name i { font-style: normal; margin-left: 6px; color: var(--text-faint); font-size: 10.5px; }
+.box--fav td { background: rgba(242, 197, 92, 0.1); }
+.box--fav td.box__name { background: #2a2a24; }
+.hint { font-size: 11px; color: var(--text-faint); text-align: center; padding: 2px 0 6px; }
+
+/* Tous les jeux */
+.pl-list { list-style: none; display: flex; flex-direction: column; }
+.pl__period {
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 12px 0 6px;
+}
+.pl__period:first-child { padding-top: 0; }
+.pl { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; border-top: 1px solid var(--border); }
+.pl__period + .pl { border-top: 0; }
+.pl__clock { width: 40px; flex-shrink: 0; font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; padding-top: 1px; }
+.pl__nocrest { width: 18px; flex-shrink: 0; }
+.pl__text { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; }
+.pl--score .pl__text { font-weight: 650; }
+.pl--score { box-shadow: inset 3px 0 0 var(--gold); padding-left: 8px; }
+.pl__score { display: block; margin-top: 3px; font-size: 11px; font-weight: 750; color: var(--gold); }
+.pl__more { display: block; margin: 10px auto 0; }

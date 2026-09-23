@@ -52,6 +52,10 @@ seulement les équipes que tu choisis.
   buts avec les passes, statistiques face à face, pénalités, classement des
   deux équipes. En F1 : classement complet, ton pilote, programme du
   week-end. Un bouton y ouvre aussi la page ESPN.
+- **Fenêtre Match, onglets** : Résumé, **Joueurs** (box score : les stats de
+  chaque joueur) et **Jeux** (tous les jeux du match, traduits en français).
+- **Séries éliminatoires** : Classements → Séries. Le tableau complet (LNH,
+  NBA, WNBA, MLB, NFL), reconstruit à partir des matchs éliminatoires d'ESPN.
 - **Taille du widget** : petit, moyen ou grand.
 - **Combattants favoris (UFC)** : choisis-les avec leur photo (Réglages → UFC).
   Leur combat est mis en évidence ⭐ dans le widget, la fenêtre Match et le

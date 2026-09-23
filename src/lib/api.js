@@ -812,7 +812,168 @@ export async function fetchMatchDetail(leagueId, eventId) {
     leaders: gameLeaders(data, home.id, away.id),
     winProb: winProbability(data, state),
     videos: highlights(data),
+    box: boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]),
+    allPlays: allPlays(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]),
   };
+}
+
+/* ---------- Fenêtre Match : box score et tous les jeux ---------- */
+
+// Nom français des groupes de joueurs d'ESPN.
+const BOX_GROUPS = [
+  [/forward/i, 'Attaquants'], [/defen[cs]e/i, 'Défenseurs'], [/goalie|goalkeep/i, 'Gardiens'],
+  [/batting/i, 'Frappeurs'], [/pitching/i, 'Lanceurs'],
+  [/passing/i, 'Passes'], [/rushing/i, 'Course'], [/receiving/i, 'Réception'], [/fumble/i, 'Échappés'],
+  [/defensive/i, 'Défense'], [/interception/i, 'Interceptions'], [/kickreturn/i, 'Retours de botté'],
+  [/puntreturn/i, 'Retours de dégagement'], [/kicking/i, 'Placements'], [/punting/i, 'Dégagements'],
+];
+
+// Colonnes du box score : abréviation française (le détail est en infobulle).
+// Les colonnes sans intérêt pour suivre un match sont cachées (null).
+const BOX_LABELS = {
+  hockey: {
+    G: 'B', A: 'A', PTS: 'PTS', '+/-': '+/-', SOG: 'TB', S: 'T', SM: 'TR', TOI: 'TG', HT: 'MÉ', BS: 'TBL',
+    PIM: 'PUN', FW: 'MJG', FL: 'MJP', 'FO%': '%MJ', GV: 'REV', TK: 'RP', PN: 'PÉN', SHFT: 'PRÉS',
+    SA: 'TC', GA: 'BA', SV: 'ARR', 'SV%': '%ARR',
+    YTDG: null, PPTOI: null, SHTOI: null, ESTOI: null, ESSV: null, PPSV: null, SHSV: null,
+  },
+  basketball: {
+    MIN: 'MIN', PTS: 'PTS', FG: 'TIRS', '3PT': '3PTS', FT: 'LF', REB: 'REB', OREB: 'RO', DREB: 'RD',
+    AST: 'PD', STL: 'INT', BLK: 'CT', TO: 'BP', PF: 'F', '+/-': '+/-',
+  },
+  baseball: {
+    'H-AB': 'CS-VB', AB: 'VB', R: 'P', H: 'CS', RBI: 'PP', HR: 'CC', BB: 'BB', K: 'RB', AVG: 'MOY',
+    IP: 'ML', ER: 'PM', ERA: 'MPM', 'PC-ST': 'LAN-PR', '#P': 'LAN',
+  },
+  football: {
+    'C/ATT': 'RÉU/ESS', YDS: 'VG', AVG: 'MOY', TD: 'TC', INT: 'INT', SACKS: 'SACS', CAR: 'PORT',
+    REC: 'RÉC', LONG: 'LONG', TGTS: 'CIB', TOT: 'PLAQ', SOLO: 'SEUL', TFL: 'PLAQ-P', PD: 'PD',
+  },
+};
+
+// Soccer : ESPN n'a pas de box score, mais la feuille de match des joueurs.
+const SOCCER_COLS = [
+  ['totalGoals', 'B', 'Buts'], ['goalAssists', 'PD', 'Passes décisives'], ['totalShots', 'T', 'Tirs'],
+  ['shotsOnTarget', 'TC', 'Tirs cadrés'], ['foulsCommitted', 'F', 'Fautes commises'],
+  ['yellowCards', '🟨', 'Cartons jaunes'], ['redCards', '🟥', 'Cartons rouges'], ['saves', 'ARR', 'Arrêts'],
+];
+
+function boxPlayer(x) {
+  const a = x?.athlete ?? {};
+  return {
+    id: String(a.id ?? ''),
+    name: a.displayName ?? a.shortName ?? '',
+    short: a.shortName ?? a.displayName ?? '',
+    jersey: String(x?.jersey ?? a.jersey ?? ''),
+    pos: a.position?.abbreviation ?? x?.position?.abbreviation ?? '',
+    starter: x?.starter === true,
+  };
+}
+
+/**
+ * Stats de chaque joueur : [{ teamId, groups: [{ name, cols: [{ label, tip }],
+ * players: [{ name, jersey, pos, stats: [...] }] }] }]. Vide si ESPN n'en a pas.
+ */
+function boxScore(data, sport) {
+  const teams = data?.boxscore?.players ?? [];
+  if (teams.length) {
+    return teams.map((t) => ({
+      teamId: String(t?.team?.id ?? ''),
+      groups: (t?.statistics ?? []).map((grp) => {
+        const labels = grp?.labels ?? [];
+        const map = BOX_LABELS[sport] ?? {};
+        // Colonnes gardées : leur position dans les stats d'ESPN.
+        const keep = labels.map((l, i) => [l, i]).filter(([l]) => map[String(l).toUpperCase()] !== null);
+        return {
+          name: BOX_GROUPS.find(([re]) => re.test(`${grp?.name ?? ''} ${grp?.type ?? ''}`))?.[1] ?? '',
+          cols: keep.map(([l, i]) => ({ label: map[String(l).toUpperCase()] ?? l, tip: grp?.descriptions?.[i] ?? '' })),
+          players: (grp?.athletes ?? [])
+            .filter((x) => x?.athlete && (x.stats ?? []).length && x.didNotPlay !== true)
+            .map((x) => ({ ...boxPlayer(x), stats: keep.map(([, i]) => String(x.stats[i] ?? '')) })),
+        };
+      }).filter((grp) => grp.players.length && grp.cols.length),
+    })).filter((t) => t.teamId && t.groups.length);
+  }
+
+  // Soccer : partants puis remplaçants entrés en jeu.
+  return (data?.rosters ?? []).map((r) => {
+    const roster = (r?.roster ?? []).filter((x) => x?.athlete);
+    const statsOf = (x) => new Map((x?.stats ?? []).map((st) => [st?.name, String(st?.displayValue ?? st?.value ?? '')]));
+    const cols = SOCCER_COLS.filter(([name]) => roster.some((x) => statsOf(x).has(name)));
+    const group = (name, list) => ({
+      name,
+      cols: cols.map(([, label, tip]) => ({ label, tip })),
+      players: list.map((x) => {
+        const st = statsOf(x);
+        return { ...boxPlayer(x), stats: cols.map(([n]) => st.get(n) ?? '') };
+      }),
+    });
+    return {
+      teamId: String(r?.team?.id ?? ''),
+      groups: [
+        group('Partants', roster.filter((x) => x.starter)),
+        group('Remplaçants', roster.filter((x) => !x.starter && x.subbedIn)),
+      ].filter((grp) => grp.players.length && grp.cols.length),
+    };
+  }).filter((t) => t.teamId && t.groups.length);
+}
+
+function basePlay(p) {
+  const score = (v) => (v == null || v === '' ? null : String(v));
+  return {
+    id: String(p?.id ?? ''),
+    text: String(p?.text ?? p?.shortText ?? '').trim(),
+    period: Number(p?.period?.number ?? p?.period) || null,
+    // Baseball : « Top » ou « Bottom » de la manche.
+    half: String(p?.period?.type ?? ''),
+    clock: p?.clock?.displayValue ?? '',
+    teamId: String(p?.team?.id ?? ''),
+    scoring: p?.scoringPlay === true,
+    type: String(p?.type?.text ?? p?.type?.type ?? ''),
+    away: score(p?.awayScore),
+    home: score(p?.homeScore),
+  };
+}
+
+// Baseball : ESPN décrit chaque lancer (« Pitch 3 : Ball 2 ») et les débuts
+// de présence au bâton ; on garde seulement le résultat de chaque jeu.
+const BASEBALL_NOISE = /^(pitch \d+\s*:|(start|end) (batter|inning|game))/i;
+
+/**
+ * Tous les jeux du match, du premier au dernier :
+ * [{ id, text, period, clock, teamId, scoring, away, home }].
+ */
+function allPlays(data, sport) {
+  let raw;
+  if (sport === 'soccer') {
+    raw = [...(data?.commentary ?? [])]
+      .sort((x, y) => (Number(x?.sequence) || 0) - (Number(y?.sequence) || 0))
+      .map((c) => ({
+        ...basePlay(c?.play ?? {}),
+        id: String(c?.sequence ?? c?.play?.id ?? ''),
+        text: String(c?.text ?? c?.play?.text ?? '').trim(),
+        clock: c?.time?.displayValue ?? c?.play?.clock?.displayValue ?? '',
+        scoring: c?.play?.scoringPlay === true || /^goal!/i.test(c?.text ?? ''),
+      }));
+    if (!raw.length) raw = (data?.keyEvents ?? []).map(basePlay);
+  } else if (sport === 'football') {
+    const drives = [...(data?.drives?.previous ?? []), ...(data?.drives?.current ? [data.drives.current] : [])];
+    raw = drives.flatMap((d) => (d?.plays ?? []).map((p) => ({
+      ...basePlay(p),
+      teamId: String(p?.team?.id ?? p?.start?.team?.id ?? d?.team?.id ?? ''),
+    })));
+    if (!raw.length) raw = (data?.plays ?? []).map(basePlay);
+  } else {
+    raw = (data?.plays ?? []).map(basePlay);
+  }
+
+  const seen = new Set();
+  return raw.filter((p) => {
+    if (!p.text) return false;
+    if (sport === 'baseball' && (BASEBALL_NOISE.test(p.text) || /^(start|end)[ -]/i.test(p.type))) return false;
+    const key = p.id || `${p.period}|${p.clock}|${p.text}`;
+    return seen.has(key) ? false : seen.add(key);
+  });
 }
 
 /* ---------- Fenêtre Match : étoiles, meneurs, chances, vidéos ---------- */
@@ -1315,4 +1476,145 @@ export async function fetchRoster(leagueId, teamId) {
 /** Données factices : aperçu navigateur et première ouverture hors ligne. */
 export function demoEvents() {
   return DEMO_EVENTS.map((e) => ({ ...e, startsAt: e.startsAt ? new Date(e.startsAt) : null }));
+}
+
+/* ---------- Séries éliminatoires : le tableau ---------- */
+
+// Ligues qui ont un tableau des séries : quand il se joue (mois et jour, de
+// `from` à `to`), le nom de chaque ronde et les victoires qu'il faut pour
+// la gagner. Une ronde absente de la ligue vaut null.
+const BRACKETS = {
+  nhl: { from: '0410', to: '0630', wins: [4, 4, 4, 4],
+    rounds: ['1re ronde', '2e ronde', "Finales d'association", 'Finale de la Coupe Stanley'] },
+  nba: { from: '0412', to: '0625', wins: [4, 4, 4, 4],
+    rounds: ['1re ronde', 'Demi-finales de conférence', 'Finales de conférence', 'Finale de la NBA'] },
+  wnba: { from: '0910', to: '1025', wins: [2, 3, null, 4],
+    rounds: ['1re ronde', 'Demi-finales', null, 'Finale de la WNBA'] },
+  mlb: { from: '0928', to: '1108', wins: [2, 3, 4, 4],
+    rounds: ['Meilleurs deuxièmes', 'Séries de division', 'Séries de championnat', 'Série mondiale'] },
+  nfl: { from: '0108', to: '0215', wins: [1, 1, 1, 1],
+    rounds: ['Meilleurs deuxièmes', 'Matchs de division', 'Finales de conférence', 'Super Bowl'] },
+};
+
+export const hasBracket = (leagueId) => !!BRACKETS[leagueId];
+
+/** Ronde d'un match éliminatoire (0 = 1re ronde … 3 = finale), d'après ESPN. */
+function roundOf(headline) {
+  const h = String(headline ?? '');
+  if (!h || /play-?in|pro bowl/i.test(h)) return null;
+  if (/stanley cup final|nba finals|wnba finals|world series|super bowl/i.test(h)) return 3;
+  if (/\b(conference|conf\.?|east(ern)?|west(ern)?|afc|nfc|al|nl)\s+(finals?|championship)|\b(alcs|nlcs)\b|championship series/i.test(h)) return 2;
+  if (/2nd round|second round|semi|\b(alds|nlds)\b|division(al)?\b/i.test(h)) return 1;
+  if (/1st round|first round|wild ?card/i.test(h)) return 0;
+  return null;
+}
+
+/** Côté du tableau : association, conférence ou ligue. */
+function confOf(headline) {
+  const h = String(headline ?? '');
+  if (/\beast/i.test(h)) return 'Est';
+  if (/\bwest/i.test(h)) return 'Ouest';
+  if (/\bafc\b/i.test(h)) return 'AFC';
+  if (/\bnfc\b/i.test(h)) return 'NFC';
+  if (/\b(al|alds|alcs|american)\b/i.test(h)) return 'Américaine';
+  if (/\b(nl|nlds|nlcs|national)\b/i.test(h)) return 'Nationale';
+  return '';
+}
+
+const bracketCache = diskCache('bracket', 15 * 60 * 1000);
+
+/** Les matchs éliminatoires d'une année, regroupés en séries. */
+function buildBracket(events, leagueId) {
+  const cfg = BRACKETS[leagueId];
+  const series = new Map();
+  for (const e of events) {
+    const comp = e?.competitions?.[0];
+    const headline = comp?.notes?.[0]?.headline ?? comp?.series?.title ?? e?.name ?? '';
+    const round = roundOf(headline);
+    if (round == null || !cfg.rounds[round]) continue;
+    const state = e?.status?.type?.state ?? comp?.status?.type?.state ?? 'pre';
+    const cs = comp?.competitors ?? [];
+    const away = cs.find((c) => c.homeAway === 'away') ?? cs[1];
+    const home = cs.find((c) => c.homeAway === 'home') ?? cs[0];
+    const a = normalizeCompetitor(away, state);
+    const h = normalizeCompetitor(home, state);
+    if (!a.id || !h.id) continue;
+
+    const key = `${round}:${[a.id, h.id].sort().join('-')}`;
+    if (!series.has(key)) {
+      const total = Number(comp?.series?.totalCompetitions) || 0;
+      series.set(key, {
+        key, round, conf: confOf(headline),
+        teams: [h, a], // l'équipe qui reçoit le 1er match : la mieux classée
+        wins: { [h.id]: 0, [a.id]: 0 },
+        need: total ? Math.floor(total / 2) + 1 : cfg.wins[round] ?? 4,
+        games: [],
+      });
+    }
+    const s = series.get(key);
+    const winner = state === 'post'
+      ? (h.winner ? h.id : a.winner ? a.id : Number(h.score) > Number(a.score) ? h.id : Number(a.score) > Number(h.score) ? a.id : null)
+      : null;
+    if (winner) s.wins[winner] = (s.wins[winner] ?? 0) + 1;
+    s.games.push({ id: String(e?.id ?? ''), state, date: e?.date ?? null, away: a.score, home: h.score, awayId: a.id, homeId: h.id });
+  }
+
+  // Une ronde par colonne, les séries rangées pour que chaque paire de la
+  // ronde précédente mène à la série suivante (comme un vrai tableau).
+  const byRound = new Map();
+  for (const s of series.values()) {
+    s.games.sort((x, y) => new Date(x.date) - new Date(y.date));
+    const [t1, t2] = s.teams;
+    const w1 = s.wins[t1.id] ?? 0;
+    const w2 = s.wins[t2.id] ?? 0;
+    s.winnerId = w1 >= s.need ? t1.id : w2 >= s.need ? t2.id : null;
+    s.next = s.games.find((g) => g.state !== 'post') ?? null;
+    s.last = [...s.games].reverse().find((g) => g.state === 'post') ?? null;
+    if (!byRound.has(s.round)) byRound.set(s.round, []);
+    byRound.get(s.round).push(s);
+  }
+  const indexes = [...byRound.keys()].sort((x, y) => x - y);
+  const confRank = (c) => ['Est', 'Américaine', 'AFC', '', 'Ouest', 'Nationale', 'NFC'].indexOf(c);
+  for (const i of indexes) byRound.get(i).sort((x, y) => confRank(x.conf) - confRank(y.conf));
+  for (let k = indexes.length - 2; k >= 0; k--) {
+    const later = byRound.get(indexes[k + 1]);
+    const pool = [...byRound.get(indexes[k])];
+    const ordered = [];
+    for (const s of later) {
+      for (const t of s.teams) {
+        const i = pool.findIndex((p) => p.teams.some((x) => x.id === t.id));
+        if (i >= 0) ordered.push(...pool.splice(i, 1));
+      }
+    }
+    byRound.set(indexes[k], [...ordered, ...pool]);
+  }
+  return indexes.map((i) => ({ index: i, label: cfg.rounds[i], series: byRound.get(i) }));
+}
+
+/**
+ * Tableau des séries éliminatoires de la saison en cours, ou de la dernière
+ * jouée : { year, rounds: [{ label, series: [{ teams, wins, need, winnerId,
+ * conf, next, last, games }] }] }. null si ESPN n'a aucun match éliminatoire.
+ */
+export async function fetchBracket(leagueId) {
+  const cfg = BRACKETS[leagueId];
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!cfg || !league) return null;
+  const now = new Date();
+  const today = `${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  // Pas encore commencées cette année : on montre celles de l'an dernier.
+  const thisYear = now.getFullYear();
+  const years = today >= cfg.from ? [thisYear, thisYear - 1] : [thisYear - 1];
+
+  for (const year of years) {
+    const key = `${leagueId}:${year}`;
+    let rounds = bracketCache.get(key);
+    if (!rounds) {
+      const data = await getJson(`${league.path}/scoreboard`, `?seasontype=3&limit=1000&dates=${year}${cfg.from}-${year}${cfg.to}`);
+      rounds = buildBracket(data?.events ?? [], leagueId);
+      bracketCache.set(key, rounds);
+    }
+    if (rounds.length) return { year, rounds };
+  }
+  return null;
 }

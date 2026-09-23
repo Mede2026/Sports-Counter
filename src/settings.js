@@ -1,6 +1,6 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -664,7 +664,7 @@ function demoRoster(teamId) {
 /* ---------- Classements ---------- */
 
 let standingsLeague = null;
-let standingsMode = 'teams'; // 'teams' ou 'players'
+let standingsMode = 'teams'; // 'teams', 'players' ou 'bracket' (séries)
 let leaderCat = null; // catégorie choisie dans le classement des joueurs
 
 function showStandings() {
@@ -687,8 +687,11 @@ async function loadStandings() {
   const leagueId = standingsLeague;
   // La F1 n'a qu'un classement (pilotes, constructeurs) : pas de choix Équipes/Joueurs.
   document.getElementById('standingsMode').hidden = leagueId === 'f1';
+  document.getElementById('modeBracket').hidden = !hasBracket(leagueId);
+  if (standingsMode === 'bracket' && !hasBracket(leagueId)) standingsMode = 'teams';
   document.querySelectorAll('#standingsMode button').forEach((b) => b.classList.toggle('seg--on', b.dataset.mode === standingsMode));
   if (standingsMode === 'players' && leagueId !== 'f1') { loadPlayerLeaders(leagueId); return; }
+  if (standingsMode === 'bracket') { loadBracket(leagueId); return; }
   el.standings.innerHTML = '<div class="state">Chargement du classement…</div>';
   try {
     const html = leagueId === 'f1'
@@ -790,6 +793,83 @@ function teamStandingsHtml(leagueId, groups) {
           </tr>`).join('')}</tbody>
       </table>
     </div>`).join('');
+}
+
+/* ---------- Séries éliminatoires : le tableau ---------- */
+
+const SERIES_DATE = new Intl.DateTimeFormat('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' });
+
+async function loadBracket(leagueId) {
+  el.standings.innerHTML = '<div class="state">Chargement des séries…</div>';
+  try {
+    const bracket = IS_DEMO ? demoBracket() : await fetchBracket(leagueId);
+    if (standingsLeague !== leagueId || standingsMode !== 'bracket') return;
+    el.standings.innerHTML = bracket
+      ? bracketHtml(leagueId, bracket)
+      : '<div class="state">ESPN ne donne pas encore de séries éliminatoires pour cette ligue.</div>';
+    bindCrests(el.standings);
+    el.standings.querySelector('.br__series--fav')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  } catch (err) {
+    if (standingsLeague === leagueId) el.standings.innerHTML = errorBlock('Séries indisponibles.', err);
+  }
+}
+
+/** Où en est la série : « MTL gagne 4-2 », « TOR mène 2-1 », « Match 3 · sam. 26 avr. »… */
+function seriesStatus(s) {
+  const [t1, t2] = s.teams;
+  const w1 = s.wins[t1.id] ?? 0;
+  const w2 = s.wins[t2.id] ?? 0;
+  const hi = Math.max(w1, w2);
+  const lo = Math.min(w1, w2);
+  const lead = w1 > w2 ? t1 : w2 > w1 ? t2 : null;
+  if (s.winnerId) return s.need > 1 ? `${lead.abbr} gagne ${hi}-${lo}` : 'Final';
+  if (s.next?.state === 'in') return 'En cours';
+  const score = !(w1 + w2) ? '' : lead ? `${lead.abbr} mène ${hi}-${lo}` : `Égalité ${w1}-${w2}`;
+  const date = s.next?.date ? new Date(s.next.date) : null;
+  const next = date && !Number.isNaN(date.getTime())
+    ? `${s.need > 1 ? `Match ${s.games.indexOf(s.next) + 1} · ` : ''}${SERIES_DATE.format(date)}` : '';
+  return [score, next].filter(Boolean).join(' · ');
+}
+
+function seriesHtml(leagueId, s) {
+  const fav = (t) => prefs.favorites.includes(`${leagueId}:${t.id}`);
+  // Un seul match (NFL) : le pointage ; sinon, les victoires dans la série.
+  const value = (t) => {
+    if (s.need > 1) return s.wins[t.id] ?? 0;
+    if (!s.last) return '';
+    return t.id === s.last.homeId ? s.last.home : s.last.away;
+  };
+  const row = (t) => `<div class="br__team${s.winnerId && s.winnerId !== t.id ? ' br__team--out' : ''}${s.winnerId === t.id ? ' br__team--win' : ''}">
+    ${crestHtml(t, 'crest-sm')}<span>${t.abbr}</span><b>${value(t)}</b></div>`;
+  const mine = s.teams.some(fav);
+  return `<div class="br__series${mine ? ' br__series--fav' : ''}">
+    ${row(s.teams[0])}${row(s.teams[1])}
+    <div class="br__status">${[s.conf, seriesStatus(s)].filter(Boolean).join(' · ')}</div>
+  </div>`;
+}
+
+function bracketHtml(leagueId, { year, rounds }) {
+  const season = leagueId === 'nfl' ? `saison ${year - 1}` : String(year);
+  return `<div class="br__title">Séries éliminatoires · ${season}</div>
+    <div class="br">${rounds.map((r) => `
+      <div class="br__col">
+        <div class="br__round">${r.label}</div>
+        <div class="br__list">${r.series.map((s) => seriesHtml(leagueId, s)).join('')}</div>
+      </div>`).join('')}</div>`;
+}
+
+function demoBracket() {
+  const t = (id, abbr) => ({ id, abbr, name: abbr, logo: '' });
+  const s = (conf, a, b, wa, wb, need = 4) => ({
+    conf, teams: [a, b], wins: { [a.id]: wa, [b.id]: wb }, need, games: [],
+    winnerId: wa >= need ? a.id : wb >= need ? b.id : null, next: null, last: null,
+  });
+  const [MTL, TOR, TBL, FLA, WSH, CAR, NJD, OTT] = [['10', 'MTL'], ['21', 'TOR'], ['17', 'TBL'], ['26', 'FLA'], ['23', 'WSH'], ['7', 'CAR'], ['1', 'NJD'], ['9', 'OTT']].map(([id, a]) => t(id, a));
+  return { year: 2026, rounds: [
+    { label: '1re ronde', series: [s('Est', MTL, OTT, 4, 2), s('Est', TOR, TBL, 3, 4), s('Est', WSH, NJD, 4, 1), s('Est', CAR, FLA, 2, 4)] },
+    { label: '2e ronde', series: [s('Est', MTL, TBL, 4, 3), s('Est', WSH, FLA, 1, 4)] },
+    { label: "Finales d'association", series: [s('Est', MTL, FLA, 2, 1)] },
+  ] };
 }
 
 /** Championnat de F1 : pilotes (tes favoris en évidence) et constructeurs. */

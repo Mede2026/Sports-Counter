@@ -9,7 +9,9 @@
 // « sports-counter:translated » demande à la fenêtre de se redessiner.
 
 const CACHE_KEY = 'sports-counter.translations.v1';
-const CACHE_MAX = 600;
+const CACHE_MAX = 3000;
+// Textes par demande au relais Rust (qui en refuse plus de 300).
+const BATCH = 250;
 
 let cache = null; // Map anglais -> français
 
@@ -102,7 +104,10 @@ export async function translateAll(texts) {
   let results = null;
   if (globalThis.window?.__TAURI__) {
     try {
-      results = await window.__TAURI__.core.invoke('translate_text', { texts: todo });
+      results = [];
+      for (let i = 0; i < todo.length; i += BATCH) {
+        results.push(...await window.__TAURI__.core.invoke('translate_text', { texts: todo.slice(i, i + BATCH) }));
+      }
     } catch {
       results = null; // Google injoignable : on essaie le traducteur intégré
     }
