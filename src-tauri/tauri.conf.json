@@ -48,7 +48,7 @@
   },
   "bundle": {
     "active": true,
-    "copyright": "© 2026 Xuan Vien Do. Tous droits réservés.",
+    "copyright": "© 2026 Médéric Do. Tous droits réservés.",
     "targets": [
       "nsis"
     ],
