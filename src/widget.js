@@ -1,4 +1,4 @@
-import { fetchScoreboard, fetchNextGames, fetchScorer, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, fetchGoal, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID, isWholeLeague } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
@@ -297,23 +297,35 @@ function notifyEvents(games) {
 const SCORER_TIMEOUT_MS = 3000;
 
 async function sendToast(e) {
-  // But sans buteur connu : on le cherche dans le résumé du match, sans
-  // jamais retarder la notification de plus de 3 s.
+  // But sans buteur connu : on le cherche (avec les passes) dans le résumé
+  // du match, sans jamais retarder la notification de plus de 3 s.
   let scorer = e.scorer ?? '';
+  let assists = [];
   if (e.goal) {
-    scorer = await Promise.race([
-      fetchScorer(e.goal.leagueId, e.goal.eventId, e.goal.teamId),
-      new Promise((r) => setTimeout(() => r(''), SCORER_TIMEOUT_MS)),
+    const goal = await Promise.race([
+      fetchGoal(e.goal.leagueId, e.goal.eventId, e.goal.teamId),
+      new Promise((r) => setTimeout(() => r(null), SCORER_TIMEOUT_MS)),
     ]);
+    scorer = goal?.scorer ?? '';
+    assists = goal?.assists ?? [];
     if (scorer) e = { ...e, title: `But de ${scorer} !` };
   }
-  // Un de tes joueurs favoris a marqué : notification spéciale, avec sa photo.
-  const star = scorer ? (prefs.favPlayers ?? []).find((p) => sameDriver(p, { name: scorer })) : null;
+  // Un de tes joueurs favoris a marqué ou fait une passe : notification
+  // spéciale, avec sa photo.
+  const favs = prefs.favPlayers ?? [];
+  const star = scorer ? favs.find((p) => sameDriver(p, { name: scorer })) : null;
+  const helper = star ? null : favs.find((p) => assists.some((a) => sameDriver(p, { name: a })));
+  const lastName = (p) => p.name.split(/\s+/).pop().toUpperCase();
+  const withPhoto = (p) => (p.photo ? { ...e.team, logo: p.photo, round: true } : e.team);
   if (star) {
+    const help = assists.length ? `Passes : ${assists.join(', ')}` : 'Sans passe';
+    e = { ...e, title: `🚨 BUT DE ${lastName(star)} !`, body: [help, e.body].filter(Boolean).join(' · '), team: withPhoto(star), big: true };
+  } else if (helper) {
     e = {
       ...e,
-      title: `🚨 BUT DE ${star.name.split(/\s+/).pop().toUpperCase()} !`,
-      team: star.photo ? { ...e.team, logo: star.photo, round: true } : e.team,
+      title: `🅰️ PASSE DE ${lastName(helper)} !`,
+      body: [scorer ? `But de ${scorer}` : '', e.body].filter(Boolean).join(' · '),
+      team: withPhoto(helper),
       big: true,
     };
   }

@@ -141,11 +141,26 @@ function sessionEvents(g, before, opts = {}) {
   if (g.state === 'in' && (before.state !== 'in' || before.session !== g.session)) {
     out.push({ title: `${g.session || 'Séance'} : c'est parti`, body: g.title, team, link });
   }
-  // Un pilote favori passe en tête pendant la séance.
+  // Un pilote favori passe en tête pendant la séance, ou gagne des places
+  // en course (en essais et en qualifs, l'ordre change à chaque tour rapide :
+  // ce serait une avalanche).
   if (g.state === 'in' && before.state === 'in' && before.session === g.session) {
+    const race = /course|sprint/i.test(g.session ?? '');
     for (const d of favs) {
-      if (now[driverKey(d)] === 1 && was[driverKey(d)] !== 1) {
+      const pos = now[driverKey(d)];
+      const prev = was[driverKey(d)];
+      if (pos === 1 && prev !== 1) {
         out.push({ title: `${nameOf(d)} prend la tête !`, body: `${g.session} · ${g.title}`, team: faceOf(d), link });
+      } else if (race && pos && prev && pos < prev) {
+        const gained = prev - pos;
+        // Une seule place : on nomme le pilote dépassé (celui juste derrière).
+        const passed = gained === 1 ? (g.results ?? []).find((r) => r.pos === pos + 1) : null;
+        out.push({
+          title: passed ? `⬆️ ${nameOf(d)} dépasse ${nameOf(passed)}` : `⬆️ ${nameOf(d)} gagne ${gained} places`,
+          body: `${place(pos)} · ${g.session} · ${g.title}`,
+          team: faceOf(d),
+          link,
+        });
       }
     }
   }

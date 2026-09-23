@@ -57,6 +57,8 @@ seulement les équipes que tu choisis.
 - **Séries éliminatoires** : Classements → Séries. Le tableau complet (LNH,
   NBA, WNBA, MLB, NFL), reconstruit à partir des matchs éliminatoires d'ESPN.
 - **Taille du widget** : petit, moyen ou grand.
+- **Joueurs et pilotes favoris** : notification « 🚨 BUT DE … » ou « 🅰️ PASSE DE … »
+  avec la photo du joueur ; en F1, « ⬆️ … dépasse … » pendant la course.
 - **Combattants favoris (UFC)** : choisis-les avec leur photo (Réglages → UFC).
   Leur combat est mis en évidence ⭐ dans le widget, la fenêtre Match et le
   calendrier, avec un rappel avant et une notification de victoire ou défaite.
@@ -248,3 +250,11 @@ Barre des tâches → Autres icônes de la barre d'état système*.
 - Le chiffrement des connexions passe par Schannel, le composant TLS de
   Windows, plutôt que par une bibliothèque embarquée. L'app est plus légère,
   mais elle suit le magasin de certificats du système.
+
+## Licence
+
+**Tous droits réservés.** Tu peux télécharger l'app depuis les versions
+officielles et l'utiliser pour toi. Copier, modifier, redistribuer ou
+réutiliser le code, les images ou la conception est interdit sans
+autorisation écrite. Le code est visible sur GitHub, mais ce n'est **pas** un
+logiciel libre. Détails : [`LICENSE`](LICENSE).

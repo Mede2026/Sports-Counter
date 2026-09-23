@@ -383,13 +383,14 @@ function lastScorers(comp) {
 }
 
 /**
- * Buteur du dernier but d'une équipe, lu dans le résumé détaillé du match.
- * Sert quand le tableau des scores ne donne pas le nom (au hockey). Renvoie
- * '' si ESPN ne le fournit pas ou si l'adresse est illisible depuis l'app.
+ * Dernier but d'une équipe, lu dans le résumé détaillé du match : { scorer,
+ * assists }. Sert quand le tableau des scores ne donne pas les noms (au
+ * hockey). Noms vides si ESPN ne les fournit pas ou si l'adresse est illisible.
  */
-export async function fetchScorer(leagueId, eventId, teamId) {
+export async function fetchGoal(leagueId, eventId, teamId) {
+  const none = { scorer: '', assists: [] };
   const league = LEAGUES_BY_ID[leagueId];
-  if (!league || !eventId) return '';
+  if (!league || !eventId) return none;
   try {
     const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
     const pools = [data?.scoringPlays, data?.plays, data?.keyEvents, data?.header?.competitions?.[0]?.details];
@@ -400,9 +401,9 @@ export async function fetchScorer(leagueId, eventId, teamId) {
       }
       if (last) break; // première source qui connaît le but : on s'y tient
     }
-    return last ? scorerName(last) : '';
+    return last ? { scorer: scorerName(last), assists: assistNames(last) } : none;
   } catch {
-    return '';
+    return none;
   }
 }
 

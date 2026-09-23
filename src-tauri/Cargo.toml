@@ -1,9 +1,11 @@
 [package]
 name = "sports-counter"
-version = "0.7.0"
+version = "0.7.1"
 description = "Widget flottant de scores sportifs en direct"
 edition = "2021"
 rust-version = "1.77"
+license-file = "../LICENSE"
+publish = false
 
 [lib]
 name = "sports_counter_lib"

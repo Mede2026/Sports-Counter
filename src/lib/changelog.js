@@ -1,6 +1,11 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.7.1': [
+    '🅰️ Notification quand un de tes joueurs favoris fait une passe sur un but.',
+    '⬆️ En course, notification quand un de tes pilotes favoris dépasse quelqu’un.',
+    '📄 L’app a maintenant une licence : tu peux la télécharger et l’utiliser, mais pas copier son code.',
+  ],
   '0.7.0': [
     '📊 Fenêtre Match → onglet Joueurs : les stats de chaque joueur (buts, passes, tirs, temps de jeu, arrêts…).',
     '📜 Onglet Jeux : tous les jeux du match, les plus récents en haut, traduits en français.',
