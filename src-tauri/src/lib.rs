@@ -194,6 +194,52 @@ async fn open_match(app: AppHandle, league: String, event: String) -> Result<(),
     Ok(())
 }
 
+/// Lit un raccourci écrit comme « Ctrl+Alt+KeyS ». Une touche seule est
+/// refusée : elle se déclencherait à chaque fois qu'on tape du texte.
+fn parse_shortcut(text: &str) -> Result<Shortcut, String> {
+    let sc = Shortcut::from_str(text).map_err(|_| format!("raccourci invalide : {text}"))?;
+    if !sc
+        .mods
+        .intersects(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER)
+    {
+        return Err("Il faut au moins Ctrl ou Alt dans le raccourci.".into());
+    }
+    Ok(sc)
+}
+
+/// Remplace les raccourcis globaux. Si Windows refuse l'un d'eux (déjà pris
+/// par un autre logiciel), les anciens sont remis et l'erreur est rendue.
+#[tauri::command]
+fn set_shortcuts(app: AppHandle, toggle: String, match_key: String) -> Result<(), String> {
+    let new = [parse_shortcut(&toggle)?, parse_shortcut(&match_key)?];
+    if new[0] == new[1] {
+        return Err("Les deux raccourcis doivent être différents.".into());
+    }
+    let gs = app.global_shortcut();
+    let mut current = SHORTCUTS.lock().unwrap();
+    if *current == [Some(new[0]), Some(new[1])] {
+        return Ok(());
+    }
+    for old in current.iter().flatten() {
+        let _ = gs.unregister(*old);
+    }
+    for (i, sc) in new.iter().enumerate() {
+        if let Err(err) = gs.register(*sc) {
+            for done in &new[..i] {
+                let _ = gs.unregister(*done);
+            }
+            for old in current.iter().flatten() {
+                let _ = gs.register(*old);
+            }
+            return Err(format!(
+                "Ce raccourci est déjà utilisé par un autre logiciel. ({err})"
+            ));
+        }
+    }
+    *current = [Some(new[0]), Some(new[1])];
+    Ok(())
+}
+
 /// Ouvre l'écran « Notes de mise à jour ». `since` : dernière version vue
 /// (vide si inconnue) ; l'écran montre tout ce qui est arrivé depuis.
 #[tauri::command]
