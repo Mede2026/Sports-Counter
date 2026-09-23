@@ -17,6 +17,8 @@ seulement les équipes que tu choisis.
   son bord inférieur reste collé à la barre.
 - **Activable / désactivable** : `Ctrl + Alt + S`, ou clic droit sur l'icône dans la zone de notification → Afficher / masquer. Un clic gauche sur l'icône ouvre les réglages.
 - **`Ctrl + Alt + M`** : ouvre la fenêtre Match du match en cours (sinon du prochain).
+- **Raccourcis au choix** : Réglages → Raccourcis clavier → « Modifier », puis
+  taper la combinaison (avec Ctrl ou Alt).
 - **Logos des équipes** affichés à côté de chaque score.
 - **Choix des équipes** dans une fenêtre de réglages, ligue par ligue.
 - **Rafraîchissement adaptatif** : toutes les 25 s pendant un match, toutes les 5 min sinon.

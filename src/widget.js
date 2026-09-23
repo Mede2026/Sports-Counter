@@ -6,6 +6,7 @@ import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
 import { detectEvents, remember } from './lib/events.js';
 import { whenText, shortWhen, untilText, isDate, TIME_FMT } from './lib/time.js';
+import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
@@ -452,14 +453,19 @@ function flashEdges(edges) {
   }
 }
 
-/** Transmet à Rust les options qu'il applique lui-même : plein écran, premier plan. */
+/** Transmet à Rust les options qu'il applique lui-même : plein écran, premier plan, raccourcis. */
 async function syncFullscreenOption() {
+  const keys = { ...DEFAULT_SHORTCUTS, ...prefs.shortcuts };
+  document.getElementById('btnHide').title = `Masquer (${shortcutLabel(keys.toggle)})`;
   if (!inTauri()) return;
+  const { invoke } = window.__TAURI__.core;
   try {
-    await window.__TAURI__.core.invoke('set_hide_fullscreen', { enabled: prefs.hideFullscreen !== false });
+    await invoke('set_hide_fullscreen', { enabled: prefs.hideFullscreen !== false });
     // Premier plan ou bureau : réglé avant que le widget ne s'affiche.
-    await window.__TAURI__.core.invoke('set_widget_on_top', { onTop: prefs.widgetMode !== 'desktop' });
+    await invoke('set_widget_on_top', { onTop: prefs.widgetMode !== 'desktop' });
   } catch { /* version sans cette commande : sans conséquence */ }
+  // Raccourcis choisis dans les réglages (refusés : Rust garde les précédents).
+  invoke('set_shortcuts', { toggle: keys.toggle, matchKey: keys.match }).catch(() => {});
 }
 
 /** Remplace le contenu seulement s'il a changé : pas de clignotement ni de travail inutile. */

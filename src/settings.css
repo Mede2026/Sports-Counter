@@ -478,3 +478,8 @@ kbd {
 .cal__badge--V { background: #7bd88f; }
 .cal__badge--D { background: #ff6b6b; }
 .cal__badge--N { background: #c9ced6; }
+
+/* Raccourcis : enregistrement en cours, message d'erreur */
+.kbd--rec { color: var(--accent); border-color: var(--accent); animation: rec 1.2s ease-in-out infinite; }
+@keyframes rec { 50% { opacity: 0.55; } }
+.kbd-msg--err { color: #ff8a7a !important; }

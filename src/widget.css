@@ -1,5 +1,7 @@
 :root {
-  --surface: rgba(18, 20, 27, 0.97);
+  /* Opaque : à 97 %, le texte des fenêtres derrière transparaissait. Le
+     réglage « Opacité » reste là pour qui veut de la transparence. */
+  --surface: #12141b;
   --surface-solid: #12141b;
   --border: rgba(255, 255, 255, 0.09);
   --border-strong: rgba(255, 255, 255, 0.16);
@@ -44,14 +46,18 @@ html, body {
   transition: opacity 160ms ease;
 }
 
-/* Couleurs de l'équipe choisie : liseré en haut, bordure teintée.
+/* Couleurs de l'équipe choisie : un liseré fin en haut et une légère teinte
+   qui s'efface vers le bas. La bordure garde sa couleur neutre : teintée
+   tout autour, elle faisait un cadre trop voyant.
    Le liseré est une ombre intérieure et non un élément ajouté : une ombre
    suit toujours les coins arrondis, alors qu'un élément ajouté débordait par
    endroits sous WebView2 et se voyait à plat par-dessus les coins. */
 .widget--team {
-  border-color: color-mix(in srgb, var(--team) 55%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--team) 13%, transparent), transparent 64px),
+    var(--surface);
   box-shadow:
-    inset 0 3px 0 var(--team),
+    inset 0 2px 0 var(--team),
     0 18px 48px rgba(0, 0, 0, 0.5),
     0 2px 8px rgba(0, 0, 0, 0.3);
 }
@@ -499,7 +505,7 @@ span.crest {
 /* ---------- Thème clair ---------- */
 
 .widget[data-theme="light"] {
-  --surface: rgba(248, 249, 252, 0.97);
+  --surface: #f8f9fc;
   --border: rgba(10, 14, 25, 0.1);
   --border-strong: rgba(10, 14, 25, 0.18);
   --text: #14161c;
@@ -513,7 +519,7 @@ span.crest {
 }
 .widget--team[data-theme="light"] {
   box-shadow:
-    inset 0 3px 0 var(--team),
+    inset 0 2px 0 var(--team),
     0 16px 40px rgba(0, 0, 0, 0.22),
     0 2px 8px rgba(0, 0, 0, 0.12);
 }

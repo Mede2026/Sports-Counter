@@ -771,12 +771,13 @@ export async function fetchStandings(leagueId) {
 
 /* ---------- Pilotes de F1 (réglages) ---------- */
 
-const DRIVERS_KEY = 'sports-counter.drivers.f1.v1';
+const DRIVERS_KEY = 'sports-counter.drivers.f1.v2';
 const FULL_GRID = 20;
 
 /**
- * Pilotes de la saison, pour choisir son favori. Tirés des séances : celles
- * du week-end en cours, sinon des Grands Prix précédents.
+ * Pilotes titulaires, pour choisir son favori : ceux de la dernière course
+ * (ou des dernières qualifications). Les essais libres sont ignorés : des
+ * pilotes de réserve y roulent, qui ne sont pas sur la grille.
  */
 export async function fetchDrivers() {
   try {
@@ -785,29 +786,33 @@ export async function fetchDrivers() {
   } catch { /* cache illisible */ }
 
   const league = LEAGUES_BY_ID.f1;
-  const found = new Map();
+  // Séances de course et de qualifications trouvées : { rank, date, drivers }.
+  const sessions = [];
   const absorb = (data) => {
     for (const ev of data?.events ?? []) {
       for (const comp of ev?.competitions ?? []) {
-        (comp?.competitors ?? []).forEach((c, i) => {
-          const d = toDriver(c, i);
-          if (d.id && d.name && !found.has(d.id)) found.set(d.id, { id: d.id, name: d.name, short: d.short, photo: d.photo, team: d.team });
-        });
+        const abbr = String(comp?.type?.abbreviation ?? '').toUpperCase();
+        const rank = abbr === 'RACE' ? 2 : abbr === 'QUAL' ? 1 : 0;
+        const list = (comp?.competitors ?? []).map(toDriver).filter((d) => d.id && d.name);
+        if (!rank || list.length < FULL_GRID - 2) continue;
+        sessions.push({ rank, date: new Date(comp.date ?? ev.date ?? 0).getTime(), drivers: list });
       }
     }
   };
   let lastErr = null;
   try { absorb(await getJson(`${league.path}/scoreboard`)); } catch (err) { lastErr = err; }
   // Entre deux Grands Prix, on remonte le calendrier par tranches d'un mois.
-  for (let end = 0; end > -240 && found.size < FULL_GRID; end -= 30) {
+  for (let end = 0; end > -240 && !sessions.some((x) => x.rank === 2); end -= 30) {
     try { absorb(await getJson(`${league.path}/scoreboard`, `?dates=${ymd(end - 29)}-${ymd(end)}`)); } catch (err) { lastErr = err; }
   }
-  if (!found.size) throw lastErr ?? new Error('aucun pilote trouvé');
+  if (!sessions.length) throw lastErr ?? new Error('aucun pilote trouvé');
 
-  const drivers = [...found.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-  if (drivers.length >= FULL_GRID) {
-    try { localStorage.setItem(DRIVERS_KEY, JSON.stringify({ at: Date.now(), drivers })); } catch { /* plein */ }
-  }
+  // La course la plus récente d'abord ; à défaut, les qualifications.
+  sessions.sort((x, y) => y.rank - x.rank || y.date - x.date);
+  const drivers = sessions[0].drivers
+    .map(({ id, name, short, photo, team }) => ({ id, name, short, photo, team }))
+    .sort((x, y) => x.name.localeCompare(y.name, 'fr'));
+  try { localStorage.setItem(DRIVERS_KEY, JSON.stringify({ at: Date.now(), drivers })); } catch { /* plein */ }
   return drivers;
 }
 

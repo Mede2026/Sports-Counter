@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -9,7 +10,7 @@ use tauri::{
     WebviewWindowBuilder,
 };
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -49,6 +50,11 @@ const SETTLE_DELAY: Duration = Duration::from_millis(250);
 
 /// Numéro du dernier déplacement : seul le plus récent déclenche le recadrage.
 static SETTLE_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Raccourcis clavier globaux, choisis dans les réglages : [afficher/masquer
+/// le widget, fenêtre Match]. Par défaut Ctrl + Alt + S et Ctrl + Alt + M.
+static SHORTCUTS: Mutex<[Option<Shortcut>; 2]> = Mutex::new([None, None]);
+const DEFAULT_SHORTCUTS: [&str; 2] = ["Ctrl+Alt+KeyS", "Ctrl+Alt+KeyM"];
 
 /// Option « Cacher pendant les jeux plein écran », transmise par l'interface.
 static HIDE_FULLSCREEN: AtomicBool = AtomicBool::new(true);
@@ -157,6 +163,52 @@ async fn open_match(app: AppHandle, league: String, event: String) -> Result<(),
         .build()
         .map_err(|e| e.to_string())?;
     let _ = win.set_focus();
+    Ok(())
+}
+
+/// Lit un raccourci écrit comme « Ctrl+Alt+KeyS ». Une touche seule est
+/// refusée : elle se déclencherait à chaque fois qu'on tape du texte.
+fn parse_shortcut(text: &str) -> Result<Shortcut, String> {
+    let sc = Shortcut::from_str(text).map_err(|_| format!("raccourci invalide : {text}"))?;
+    if !sc
+        .mods
+        .intersects(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SUPER)
+    {
+        return Err("Il faut au moins Ctrl ou Alt dans le raccourci.".into());
+    }
+    Ok(sc)
+}
+
+/// Remplace les raccourcis globaux. Si Windows refuse l'un d'eux (déjà pris
+/// par un autre logiciel), les anciens sont remis et l'erreur est rendue.
+#[tauri::command]
+fn set_shortcuts(app: AppHandle, toggle: String, match_key: String) -> Result<(), String> {
+    let new = [parse_shortcut(&toggle)?, parse_shortcut(&match_key)?];
+    if new[0] == new[1] {
+        return Err("Les deux raccourcis doivent être différents.".into());
+    }
+    let gs = app.global_shortcut();
+    let mut current = SHORTCUTS.lock().unwrap();
+    if *current == [Some(new[0]), Some(new[1])] {
+        return Ok(());
+    }
+    for old in current.iter().flatten() {
+        let _ = gs.unregister(*old);
+    }
+    for (i, sc) in new.iter().enumerate() {
+        if let Err(err) = gs.register(*sc) {
+            for done in &new[..i] {
+                let _ = gs.unregister(*done);
+            }
+            for old in current.iter().flatten() {
+                let _ = gs.register(*old);
+            }
+            return Err(format!(
+                "Ce raccourci est déjà utilisé par un autre logiciel. ({err})"
+            ));
+        }
+    }
+    *current = [Some(new[0]), Some(new[1])];
     Ok(())
 }
 
@@ -740,12 +792,6 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Ctrl + Alt + S : afficher/masquer le widget depuis n'importe où.
-    let hotkey = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyS);
-    // Ctrl + Alt + M : fenêtre Match du match en cours. Le widget sait lequel :
-    // on le lui demande, et il ouvre la fenêtre.
-    let match_key = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyM);
-
     tauri::Builder::default()
         // Relancer l'app alors qu'elle tourne déjà ne crée pas un second
         // exemplaire : ça réaffiche le widget. C'est le moyen le plus simple de
@@ -769,13 +815,17 @@ pub fn run() {
         )
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |app, shortcut, event| {
+                .with_handler(|app, shortcut, event| {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    if shortcut == &hotkey {
+                    let [toggle, match_key] = *SHORTCUTS.lock().unwrap();
+                    if Some(*shortcut) == toggle {
+                        // Afficher/masquer le widget depuis n'importe où.
                         toggle_widget(app);
-                    } else if shortcut == &match_key {
+                    } else if Some(*shortcut) == match_key {
+                        // Fenêtre Match : le widget sait quel match est en
+                        // cours, on le lui demande et il ouvre la fenêtre.
                         let _ = app.emit_to(WIDGET, "shortcut-match", ());
                     }
                 })
@@ -790,6 +840,7 @@ pub fn run() {
             set_autostart,
             set_hide_fullscreen,
             set_widget_on_top,
+            set_shortcuts,
             open_espn,
             open_match,
             notify,
@@ -829,10 +880,18 @@ pub fn run() {
                 }
             }
 
-            for key in [hotkey, match_key] {
-                if let Err(err) = app.global_shortcut().register(key) {
-                    // Un autre logiciel occupe peut-être déjà le raccourci : ce n'est pas fatal.
-                    eprintln!("raccourci global indisponible : {err}");
+            // Raccourcis par défaut ; le widget envoie ensuite ceux des réglages.
+            {
+                let mut current = SHORTCUTS.lock().unwrap();
+                for (i, text) in DEFAULT_SHORTCUTS.iter().enumerate() {
+                    let Ok(key) = parse_shortcut(text) else {
+                        continue;
+                    };
+                    match app.global_shortcut().register(key) {
+                        Ok(()) => current[i] = Some(key),
+                        // Un autre logiciel occupe peut-être déjà le raccourci : ce n'est pas fatal.
+                        Err(err) => eprintln!("raccourci global indisponible : {err}"),
+                    }
                 }
             }
 

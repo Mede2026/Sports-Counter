@@ -2,6 +2,7 @@ import { LEAGUES, LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
 import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchF1Calendar, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, TIME_FMT } from './lib/time.js';
+import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { errText } from './lib/err.js';
@@ -364,12 +365,80 @@ function bindOptions() {
   renderPlayerChips();
   document.getElementById('btnPickPlayers').addEventListener('click', showPlayers);
 
+  bindShortcuts();
+
   const notify = document.getElementById('optNotify');
   notify.checked = prefs.notifications !== false;
   notify.addEventListener('change', () => { prefs.notifications = notify.checked; savePrefs(prefs); });
   document.getElementById('btnTryToast').addEventListener('click', tryToast);
 
   bindAutostart();
+}
+
+/* ---------- Raccourcis clavier ---------- */
+
+const KEY_IDS = { toggle: ['kbdToggle', 'msgToggle', ''], match: ['kbdMatch', 'msgMatch', 'Sinon le prochain match suivi.'] };
+let recording = null; // 'toggle' | 'match' | null
+
+const currentKeys = () => ({ ...DEFAULT_SHORTCUTS, ...prefs.shortcuts });
+
+function renderKeys() {
+  const keys = currentKeys();
+  for (const [which, [kbdId]] of Object.entries(KEY_IDS)) {
+    const kbd = document.getElementById(kbdId);
+    kbd.textContent = recording === which ? 'Tape ta combinaison…' : shortcutLabel(keys[which]);
+    kbd.classList.toggle('kbd--rec', recording === which);
+  }
+}
+
+function keyMessage(which, text, isErr) {
+  const msg = document.getElementById(KEY_IDS[which][1]);
+  msg.textContent = text;
+  msg.classList.toggle('kbd-msg--err', !!isErr);
+}
+
+/** Enregistre de nouveaux raccourcis : Rust d'abord, qui peut refuser. */
+async function applyKeys(next, which) {
+  if (inTauri()) {
+    try {
+      await window.__TAURI__.core.invoke('set_shortcuts', { toggle: next.toggle, matchKey: next.match });
+    } catch (err) {
+      keyMessage(which, errText(err), true);
+      renderKeys();
+      return;
+    }
+  }
+  prefs.shortcuts = next;
+  savePrefs(prefs);
+  keyMessage(which, `Enregistré : ${shortcutLabel(next[which])}`, false);
+  renderKeys();
+}
+
+function bindShortcuts() {
+  renderKeys();
+  document.querySelectorAll('[data-record]').forEach((b) => b.addEventListener('click', () => {
+    recording = recording === b.dataset.record ? null : b.dataset.record;
+    keyMessage(b.dataset.record, KEY_IDS[b.dataset.record][2], false);
+    renderKeys();
+  }));
+  document.getElementById('btnKeysReset').addEventListener('click', () => {
+    recording = null;
+    applyKeys({ ...DEFAULT_SHORTCUTS }, 'toggle');
+  });
+  window.addEventListener('keydown', (e) => {
+    if (!recording) return;
+    e.preventDefault();
+    const which = recording;
+    if (e.code === 'Escape') { recording = null; renderKeys(); return; }
+    const combo = comboFromEvent(e);
+    if (combo === null) return; // seulement Ctrl, Alt ou Maj pour l'instant
+    if (combo === '') { keyMessage(which, 'Ajoute Ctrl ou Alt à la touche.', true); return; }
+    const next = { ...currentKeys(), [which]: combo };
+    const other = which === 'toggle' ? 'match' : 'toggle';
+    if (next[other] === combo) { keyMessage(which, "C'est déjà l'autre raccourci.", true); return; }
+    recording = null;
+    applyKeys(next, which);
+  }, true);
 }
 
 /** Interrupteur lié à une préférence vraie par défaut. */

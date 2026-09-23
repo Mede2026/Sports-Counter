@@ -185,8 +185,20 @@
 
       <section class="prefs__group">
         <h2>Raccourcis clavier</h2>
-        <div class="pref"><span class="pref__txt"><b>Afficher / masquer le widget</b></span><kbd>Ctrl + Alt + S</kbd></div>
-        <div class="pref"><span class="pref__txt"><b>Ouvrir le match en cours</b><small>Sinon le prochain match suivi.</small></span><kbd>Ctrl + Alt + M</kbd></div>
+        <div class="pref">
+          <span class="pref__txt"><b>Afficher / masquer le widget</b><small class="kbd-msg" id="msgToggle"></small></span>
+          <kbd id="kbdToggle"></kbd>
+          <button class="ghost ghost--small" type="button" data-record="toggle">Modifier</button>
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Ouvrir le match en cours</b><small class="kbd-msg" id="msgMatch">Sinon le prochain match suivi.</small></span>
+          <kbd id="kbdMatch"></kbd>
+          <button class="ghost ghost--small" type="button" data-record="match">Modifier</button>
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><small>Clique sur « Modifier », puis tape ta combinaison (avec Ctrl ou Alt). Échap pour annuler.</small></span>
+          <button class="ghost ghost--small" type="button" id="btnKeysReset">Par défaut</button>
+        </div>
       </section>
     </div>
   </div>

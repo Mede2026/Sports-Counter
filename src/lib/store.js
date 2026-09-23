@@ -41,6 +41,8 @@ const DEFAULTS = {
   widgetTheme: 'dark',
   // Les 5 derniers résultats (✅ ❌) à côté des équipes favorites.
   showForm: true,
+  // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).
+  shortcuts: { toggle: 'Ctrl+Alt+KeyS', match: 'Ctrl+Alt+KeyM' },
 };
 
 export function loadPrefs() {
