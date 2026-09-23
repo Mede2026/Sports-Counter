@@ -7,7 +7,7 @@ import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
-import { errText } from './lib/err.js';
+import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
 
 const REFRESH_LIVE_MS = 20_000;
@@ -247,8 +247,11 @@ async function load() {
       html = matchHtml(g, table);
     }
   } catch (err) {
-    html = `<div class="state state--err"><b>Détails indisponibles</b><br /><code>${esc(errText(err))}</code><br />
-      <button class="ghost" id="btnRetry">Réessayer</button></div>`;
+    html = isOffline(err)
+      ? `<div class="state"><div class="state__icon">📡</div><b>${OFFLINE_TITLE}</b><br />${OFFLINE_HINT}<br />
+        <button class="ghost" id="btnRetry">Réessayer</button></div>`
+      : `<div class="state state--err"><b>Détails indisponibles</b><br /><code>${esc(errText(err))}</code><br />
+        <button class="ghost" id="btnRetry">Réessayer</button></div>`;
   }
 
   if (html !== lastHtml) {
@@ -262,7 +265,7 @@ async function load() {
   link = g?.link ?? '';
   el.espn.hidden = !link;
   if (g?.kind !== 'event' && g?.home && !IS_DEMO) loadForms(g);
-  timer = setTimeout(load, g?.state === 'in' ? REFRESH_LIVE_MS : REFRESH_IDLE_MS);
+  timer = setTimeout(load, g?.state === 'in' || !g ? REFRESH_LIVE_MS : REFRESH_IDLE_MS);
 }
 
 /** Derniers résultats des deux équipes, chargés après coup (ils peuvent être lents). */
@@ -338,5 +341,8 @@ if (inTauri()) {
 window.addEventListener('storage', (e) => {
   if (e.key === 'sports-counter.ping') { lastHtml = ''; load(); }
 });
+
+// Retour du réseau : on recharge tout de suite.
+window.addEventListener('online', () => { lastHtml = ''; load(); });
 
 load();

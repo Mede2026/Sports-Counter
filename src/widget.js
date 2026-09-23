@@ -1,7 +1,7 @@
 import { fetchScoreboard, fetchNextGames, fetchScorer, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
-import { errText } from './lib/err.js';
+import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
 import { detectEvents, remember } from './lib/events.js';
@@ -482,26 +482,37 @@ function paint(html, footHtml) {
   fitWindow();
 }
 
-function renderError(message) {
+function renderError(err) {
   el.title.textContent = 'Sports Counter';
-  paint(`
-    <div class="empty">
-      <strong>Scores indisponibles</strong><br />
-      <span class="empty__detail">${message}</span>
-      <br /><button id="btnRetry">Réessayer</button>
-    </div>`, '');
+  const body = isOffline(err)
+    ? `<div class="empty__icon">📡</div>
+      <strong>${OFFLINE_TITLE}</strong><br />
+      <span class="empty__hint">${OFFLINE_HINT}</span>`
+    : `<strong>Scores indisponibles</strong><br />
+      <span class="empty__detail">${errText(err)}</span>`;
+  paint(`<div class="empty">${body}<br /><button id="btnRetry">Réessayer</button></div>`, '');
   document.getElementById('btnRetry')?.addEventListener('click', () => refresh(true));
 }
 
-function render(games, error) {
-  lastRender = [games, error];
+/** Pied du widget : relevé partiel, ou hors ligne avec l'heure des derniers scores. */
+function footHtml(error, offline) {
+  if (offline) {
+    const at = Math.max(0, ...[...boards.values()].map((b) => b.at));
+    const when = at ? ` · scores de ${TIME_FMT.format(new Date(at))}` : '';
+    return `<span class="foot__err">📡 Pas de connexion — vérifie ton Internet${when}</span>`;
+  }
+  return error ? `<span class="foot__err">Partiel — ${error}</span>` : '';
+}
+
+function render(games, error, offline = false) {
+  lastRender = [games, error, offline];
   applyLook(); // le thème décide des logos, avant de construire les cartes
   const html = games.length ? games.map(gameCard).join('') : emptyHtml();
   games.forEach((g) => shownIds.add(g.id));
 
   const live = games.filter((g) => g.state === 'in').length;
   el.title.textContent = live ? `${live} match${live > 1 ? 's' : ''} en direct` : 'Sports Counter';
-  paint(html, error ? `<span class="foot__err">Partiel — ${error}</span>` : '');
+  paint(html, footHtml(error, offline));
 }
 
 /** Ajuste la taille de la fenêtre au contenu réel (zoom compris). */
@@ -638,27 +649,37 @@ async function doRefresh(force) {
     return;
   }
 
-  // Hors ligne : inutile d'insister, on reprend au retour du réseau.
+  // Hors ligne sans rien en mémoire : on le dit, et on reprend au retour du réseau.
   if (navigator.onLine === false && !boards.size) {
-    renderError('Pas de connexion Internet.');
-    schedule(false, []);
+    renderError(new Error('hors ligne'));
+    schedule(false, [], true);
     return;
   }
 
   const results = await Promise.allSettled(leagues.map((id) => loadBoard(id, force)));
   const games = [];
   let error = null;
+  let offline = false;
+  let lastErr = null;
 
-  for (const r of results) {
-    if (r.status === 'fulfilled') games.push(...r.value);
-    else error = errText(r.reason);
-  }
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') { games.push(...r.value); return; }
+    lastErr = r.reason;
+    if (isOffline(r.reason)) {
+      offline = true;
+      // Pas de réseau : on garde les derniers scores connus de cette ligue.
+      const hit = boards.get(leagues[i]);
+      if (hit) games.push(...hit.games);
+    } else {
+      error = errText(r.reason);
+    }
+  });
 
   // Tout a échoué : on le dit. Afficher des données de démonstration ferait
   // passer de faux scores pour de vrais.
-  if (!games.length && error) {
-    renderError(error);
-    schedule(false, []);
+  if (!games.length && lastErr) {
+    renderError(lastErr);
+    schedule(false, [], offline);
     return;
   }
 
@@ -670,20 +691,21 @@ async function doRefresh(force) {
   checkReminders();
 
   const visible = followed.slice(0, prefs.maxGames);
-  render(visible, error);
-  loadForms();
+  render(visible, error, offline);
+  if (!offline) loadForms();
   const hasLive = visible.some((g) => g.state === 'in');
   applyWidgetMode(hasLive);
-  schedule(hasLive, followed);
+  schedule(hasLive, followed, offline);
 }
 
 /**
  * Prochain relevé : 25 s pendant un match, sinon 5 min — mais jamais après
  * l'heure de départ d'un match suivi, pour le voir commencer à temps.
  */
-function schedule(hasLive, games) {
+function schedule(hasLive, games, offline = false) {
   clearTimeout(timer);
-  let delay = hasLive ? REFRESH_LIVE_MS : REFRESH_IDLE_MS;
+  // Sans réseau : nouvel essai toutes les 30 s (et tout de suite au retour du Wi-Fi).
+  let delay = offline ? 30_000 : hasLive ? REFRESH_LIVE_MS : REFRESH_IDLE_MS;
   const now = Date.now();
   for (const g of games) {
     if (g.state !== 'pre' || !isDate(g.startsAt)) continue;

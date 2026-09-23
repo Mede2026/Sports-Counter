@@ -77,6 +77,7 @@ body {
 /* ---------- Colonne des ligues ---------- */
 
 .leagues {
+  user-select: none;
   width: 172px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
@@ -483,3 +484,5 @@ kbd {
 .kbd--rec { color: var(--accent); border-color: var(--accent); animation: rec 1.2s ease-in-out infinite; }
 @keyframes rec { 50% { opacity: 0.55; } }
 .kbd-msg--err { color: #ff8a7a !important; }
+
+.state__icon { font-size: 26px; margin-bottom: 8px; }

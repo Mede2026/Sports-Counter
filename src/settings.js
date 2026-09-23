@@ -5,7 +5,7 @@ import { untilText, isDate, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
-import { errText } from './lib/err.js';
+import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { visibleTeamColor } from './lib/color.js';
 import { NHL_TEAMS } from './lib/teams-nhl.js';
 
@@ -102,6 +102,15 @@ function renderTeams() {
   });
 }
 
+/** Bloc d'erreur : message clair quand c'est la connexion Internet. */
+function errorBlock(title, err, extra = '') {
+  if (isOffline(err)) {
+    return `<div class="state"><div class="state__icon">📡</div><strong>${OFFLINE_TITLE}</strong><br />${OFFLINE_HINT}${extra}</div>`;
+  }
+  return `<div class="state state--err"><strong>${title}</strong><br />
+    <code class="state__code">${errText(err)}</code>${extra}</div>`;
+}
+
 /* ---------- F1 : suivre la saison, choisir son pilote ---------- */
 
 function renderF1(league) {
@@ -110,9 +119,8 @@ function renderF1(league) {
   const fav = prefs.favDriver;
   let list = '';
   if (driversErr) {
-    list = `<div class="state state--err">Impossible de charger les pilotes.<br />
-      <code class="state__code">${errText(driversErr)}</code><br />
-      <button class="ghost" id="btnRetryDrivers">Réessayer</button></div>`;
+    list = errorBlock('Impossible de charger les pilotes.', driversErr,
+      '<br /><button class="ghost" id="btnRetryDrivers">Réessayer</button>');
   } else if (!drivers) {
     list = '<div class="state">Chargement des pilotes…</div>';
   } else {
@@ -282,10 +290,8 @@ async function selectLeague() {
     renderTeams();
   } catch (err) {
     teams = [];
-    el.teams.innerHTML = `<div class="state state--err">
-      <strong>Impossible de charger les équipes.</strong><br />
-      <code class="state__code">${errText(err)}</code><br />
-      <button class="ghost" id="btnRetryTeams">Réessayer</button></div>`;
+    el.teams.innerHTML = errorBlock('Impossible de charger les équipes.', err,
+      '<br /><button class="ghost" id="btnRetryTeams">Réessayer</button>');
     document.getElementById('btnRetryTeams')?.addEventListener('click', () => {
       cache.delete(current);
       selectLeague();
@@ -507,8 +513,13 @@ async function loadRoster(teamId) {
 function renderPlayers() {
   const roster = rosters.get(playerTeam);
   if (roster instanceof Error) {
-    el.players.innerHTML = `<div class="state state--err">ESPN ne donne pas l'alignement de cette équipe à l'app.<br />
-      <code class="state__code">${errText(roster)}</code><br />Ajoute ton joueur par son nom, juste au-dessus.</div>`;
+    const offline = isOffline(roster);
+    el.players.innerHTML = offline
+      ? errorBlock('', roster)
+      : errorBlock("ESPN ne donne pas l'alignement de cette équipe à l'app.", roster,
+        '<br />Ajoute ton joueur par son nom, juste au-dessus.');
+    // Sans réseau, on retentera à la prochaine ouverture.
+    if (offline) rosters.delete(playerTeam);
     return;
   }
   const q = playerQuery.trim().toLowerCase();
@@ -566,12 +577,13 @@ function showCalendar() {
   loadCalendar(false);
 }
 
-/** Matchs des équipes favorites et Grands Prix, du 1er du mois à dans 30 jours. */
+/** Matchs des équipes favorites et Grands Prix, d'aujourd'hui à dans 30 jours. */
 async function loadCalendar(force) {
   if (calLoading) return;
   calLoading = true;
-  const first = new Date(); first.setDate(1); first.setHours(0, 0, 0, 0);
-  const back = Math.ceil((Date.now() - first.getTime()) / DAY_MS);
+  // Depuis ce matin : les matchs d'aujourd'hui déjà joués restent visibles.
+  const first = new Date(); first.setHours(0, 0, 0, 0);
+  const back = 1;
   const end = Date.now() + CAL_AHEAD * DAY_MS;
   document.getElementById('calRange').textContent = `du ${first.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })} au ${new Date(end).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}`;
   if (force || !el.calendar.innerHTML) el.calendar.innerHTML = '<div class="state">Chargement du calendrier…</div>';
@@ -586,6 +598,7 @@ async function loadCalendar(force) {
 
   let games = [];
   const errors = [];
+  let lastErr = null;
   if (IS_DEMO) {
     games = demoCalendar();
   } else {
@@ -596,7 +609,7 @@ async function loadCalendar(force) {
     if (wantF1) jobs.push(fetchF1Calendar(-back, CAL_AHEAD));
     for (const r of await Promise.allSettled(jobs)) {
       if (r.status === 'fulfilled') games.push(...r.value);
-      else errors.push(errText(r.reason));
+      else { errors.push(errText(r.reason)); lastErr = r.reason; }
     }
   }
 
@@ -605,7 +618,11 @@ async function loadCalendar(force) {
     .filter((g) => isDate(g.startsAt) && g.startsAt >= first && g.startsAt.getTime() <= end)
     .filter((g) => (seen.has(g.id) ? false : seen.add(g.id)))
     .sort((a, b) => a.startsAt - b.startsAt);
-  renderCalendar(games, errors);
+  if (!games.length && lastErr && isOffline(lastErr)) {
+    el.calendar.innerHTML = errorBlock('', lastErr);
+  } else {
+    renderCalendar(games, errors);
+  }
   calLoading = false;
 }
 
@@ -665,8 +682,6 @@ function renderCalendar(games, errors) {
   if (errors.length) html += `<div class="state state--err">Certaines équipes n'ont pas pu être chargées.<br /><code class="state__code">${errors[0]}</code></div>`;
   el.calendar.innerHTML = html;
   bindCrests(el.calendar);
-  // Aujourd'hui en haut de la zone visible : le passé reste au-dessus.
-  el.calendar.querySelector('.cal__day--today')?.scrollIntoView({ block: 'start' });
   el.calendar.querySelectorAll('.cal__row').forEach((row) => row.addEventListener('click', async () => {
     const { league, event } = row.dataset;
     if (!inTauri()) { window.open(`match.html?league=${league}&event=${encodeURIComponent(event)}`, '_blank'); return; }

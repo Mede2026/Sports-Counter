@@ -267,3 +267,6 @@ span.crest-xs { border-radius: 4px; }
 /* Derniers résultats et joueur favori */
 .rank .form { font-size: 9px; letter-spacing: -0.5px; margin-left: 2px; }
 .grid .gap { margin-left: auto; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.state__icon { font-size: 26px; margin-bottom: 8px; }
+.state .ghost { margin-top: 12px; }

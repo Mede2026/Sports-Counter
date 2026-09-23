@@ -35,9 +35,11 @@ seulement les équipes que tu choisis.
 - **Mode Grand Prix** : pendant une course, top 5 et écarts en direct.
 - **Joueurs favoris au hockey** (choisis dans l'alignement, ou par leur nom) :
   notification spéciale 🚨 quand l'un d'eux marque, ⭐ dans la fenêtre Match.
-- **Calendrier** : matchs de tes équipes et Grands Prix, du 1er du mois à
-  dans 30 jours, avec les résultats passés.
+- **Calendrier** : matchs de tes équipes et Grands Prix, d'aujourd'hui à
+  dans 30 jours.
 - **Thème** du widget et des notifications : sombre, clair ou comme Windows.
+- **Sans Internet** : le widget le dit clairement (« vérifie ta connexion
+  Internet »), garde les derniers scores connus et réessaie tout seul.
 - **Couleurs de ton équipe** sur la bordure du widget.
 - **Clic sur un match** : ouvre la **fenêtre Match** — pointage par période,
   buts avec les passes, statistiques face à face, pénalités, classement des

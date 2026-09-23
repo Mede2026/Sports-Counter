@@ -539,3 +539,15 @@ span.crest {
 .widget[data-theme="light"] .series { color: #a86a0c; }
 .widget[data-theme="light"] .empty button { background: rgba(10, 14, 25, 0.06); }
 .widget[data-theme="light"] img.crest { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18)); }
+
+/* ---------- Pas de connexion ---------- */
+
+.empty__icon { font-size: 22px; margin-bottom: 6px; }
+.empty__hint {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.empty strong { color: var(--text); font-size: 12.5px; }
