@@ -33,8 +33,8 @@ const DEFAULTS = {
   widgetSize: 'm',
   // Rappel avant le début d'un match ou d'une séance, en minutes (0 = aucun).
   reminderMinutes: 15,
-  // Pilote de F1 favori : { id, name, short, photo } ou null.
-  favDriver: null,
+  // Pilotes de F1 favoris : [{ id, name, short, photo, team }].
+  favDrivers: [],
   // Mode Grand Prix : top 5 et écarts pendant une course.
   gpMode: true,
   // Joueurs de hockey favoris : [{ id, name, photo, teamId }].
@@ -51,7 +51,11 @@ export function loadPrefs() {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...DEFAULTS };
-    return { ...DEFAULTS, ...JSON.parse(raw) };
+    const prefs = { ...DEFAULTS, ...JSON.parse(raw) };
+    // Avant la 0.5.0, un seul pilote favori (favDriver) : il devient le premier de la liste.
+    if (prefs.favDriver && !prefs.favDrivers?.length) prefs.favDrivers = [prefs.favDriver];
+    delete prefs.favDriver;
+    return prefs;
   } catch {
     return { ...DEFAULTS };
   }

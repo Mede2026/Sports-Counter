@@ -1,6 +1,14 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.5.0': [
+    '⚽ La Liga, la Serie A, la Bundesliga, la Ligue 1 et la Ligue Europa sont maintenant disponibles.',
+    '🥊 Tu peux suivre les galas de l’UFC : combat principal avec photos, combat en cours et vainqueur.',
+    '🏎️ Tu peux choisir plusieurs pilotes favoris en F1.',
+    '📅 Quand une équipe a plusieurs matchs à venir, le widget montre seulement le prochain.',
+    '🎨 Le dégradé aux couleurs de ton équipe est plus visible en haut du widget.',
+    '🗂️ Les ligues sont rangées par sport dans les réglages.',
+  ],
   '0.4.4': [
     '◀️ Dans cet écran, les flèches permettent de revoir les notes des versions précédentes.',
     '🔋 En mode « Jamais (notifications) », le widget ne dessine plus rien pour rien : l’app travaille moins.',

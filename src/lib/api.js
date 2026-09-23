@@ -476,6 +476,78 @@ function pickLink(event) {
   return href.startsWith('https://') ? href : '';
 }
 
+/* ---------- UFC : galas et combats ---------- */
+
+/** Un combattant, tel qu'ESPN le décrit dans un combat. */
+function fighterOf(c) {
+  const a = c?.athlete ?? {};
+  const id = String(a.id ?? c?.id ?? '');
+  const photo = a.headshot?.href ?? (id ? `https://a.espncdn.com/i/headshots/mma/players/full/${id}.png` : '');
+  return {
+    id,
+    name: a.displayName ?? a.fullName ?? c?.displayName ?? '',
+    short: a.shortName ?? a.displayName ?? '',
+    photo,
+    flag: a.flag?.href ?? '',
+    record: recordOf(c),
+    winner: c?.winner === true,
+  };
+}
+
+/** Un combat : les deux combattants, la catégorie, l'état et le résultat. */
+function fightOf(comp) {
+  const st = comp?.status ?? {};
+  const [a, b] = [...(comp?.competitors ?? [])]
+    .sort((x, y) => (x?.order ?? 0) - (y?.order ?? 0))
+    .map(fighterOf);
+  const state = st.type?.state ?? 'pre';
+  return {
+    id: String(comp?.id ?? ''),
+    a,
+    b,
+    state,
+    round: Number(st.period) || null,
+    clock: st.displayClock ?? '',
+    // « KO/TKO », « Décision unanime »… quand ESPN le précise.
+    result: state === 'post'
+      ? st.result?.displayName ?? st.result?.name ?? st.type?.detail ?? st.type?.shortDetail ?? ''
+      : '',
+    weight: comp?.type?.text ?? comp?.note ?? '',
+    segment: comp?.cardSegment?.description ?? comp?.cardSegment?.name ?? '',
+    startsAt: comp?.date ? new Date(comp.date) : null,
+  };
+}
+
+/**
+ * Un gala de l'UFC. Le combat principal est le dernier de la soirée ; le
+ * gala est « en cours » dès qu'un combat a commencé et jusqu'au dernier.
+ */
+function normalizeCard(event, base, logo) {
+  const fights = (event?.competitions ?? []).map(fightOf).filter((f) => f.a?.name && f.b?.name);
+  const byTime = [...fights].sort((x, y) => (x.startsAt?.getTime() ?? 0) - (y.startsAt?.getTime() ?? 0));
+  const main = byTime.at(-1) ?? null;
+  const live = fights.find((f) => f.state === 'in') ?? null;
+  const allDone = fights.length > 0 && fights.every((f) => f.state === 'post');
+  const started = fights.some((f) => f.state !== 'pre');
+  const state = allDone ? 'post' : started ? 'in' : 'pre';
+  return {
+    ...base,
+    kind: 'card',
+    title: event?.name || event?.shortName || 'UFC',
+    logo,
+    state,
+    main,
+    live,
+    // Début du gala (premier combat) ; le combat principal a sa propre heure.
+    startsAt: byTime[0]?.startsAt ?? base.startsAt,
+    mainAt: main?.startsAt ?? null,
+    fights: [...byTime].reverse(), // combat principal en premier
+    session: '',
+    statusText: live ? `Round ${live.round ?? 1}${live.clock ? ` · ${live.clock}` : ''}` : allDone ? 'Gala terminé' : started ? 'Entre deux combats' : '',
+    clock: '',
+  };
+}
+
 function normalizeEvent(event, leagueId, logo = '') {
   const comp = event?.competitions?.[0];
   const status = event?.status ?? comp?.status ?? {};
@@ -496,6 +568,9 @@ function normalizeEvent(event, leagueId, logo = '') {
     startsAt: event?.date ? new Date(event.date) : null,
     link: pickLink(event),
   };
+
+  // UFC : un gala = un évènement, un combat = une « competition ».
+  if (LEAGUES_BY_ID[leagueId]?.kind === 'card') return normalizeCard(event, base, logo);
 
   const competitors = comp?.competitors ?? [];
   // Une course de F1 n'a pas deux camps : on la traite comme un simple évènement.
@@ -878,9 +953,20 @@ export async function fetchTeamForm(leagueId, teamId, n = 5) {
 
 /** Grands Prix d'une période : une ligne par week-end, à la date de la course. */
 export async function fetchF1Calendar(fromOffset, toOffset) {
-  const data = await getJson(`${LEAGUES_BY_ID.f1.path}/scoreboard`, `?dates=${ymd(fromOffset)}-${ymd(toOffset)}`);
+  return fetchLeagueCalendar('f1', fromOffset, toOffset);
+}
+
+/**
+ * Évènements d'une ligue suivie en entier (F1, UFC) sur une période. F1 :
+ * une ligne par week-end, à la date de la course.
+ */
+export async function fetchLeagueCalendar(leagueId, fromOffset, toOffset) {
+  const league = LEAGUES_BY_ID[leagueId];
+  const data = await getJson(`${league.path}/scoreboard`, `?dates=${ymd(fromOffset)}-${ymd(toOffset)}`);
+  const logo = league.logo || leagueLogo(data);
   return (data?.events ?? []).map((e) => {
-    const g = normalizeEvent(e, 'f1', LEAGUES_BY_ID.f1.logo);
+    const g = normalizeEvent(e, leagueId, logo);
+    if (leagueId !== 'f1') return { ...g, raceState: g.state };
     const race = (g.sessions ?? []).find((s) => /course/i.test(s.label)) ?? g.sessions?.at(-1);
     return { ...g, startsAt: race?.startsAt ?? g.startsAt, raceState: race?.state ?? g.state };
   });

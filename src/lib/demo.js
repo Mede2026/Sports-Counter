@@ -49,6 +49,15 @@ const DEMO_GRID = [
   ['demo-pia', 'Oscar Piastri', 'O. Piastri', 'McLaren'],
 ].map(([id, name, short, team], i) => ({ id, pos: i + 1, name, short, team, photo: '', gap: i ? (i * 1.874).toFixed(3) : '' }));
 
+// Gala UFC factice (aperçu seulement).
+const F = (name, short, record, winner = false) => ({ id: short, name, short, photo: '', record, winner });
+const DEMO_MAIN = { id: 'm', a: F('Alex Pereira', 'A. Pereira', '12-2-0'), b: F('Magomed Ankalaev', 'M. Ankalaev', '20-1-1'),
+  state: 'pre', weight: 'Mi-lourds', segment: 'Carte principale', result: '', round: null, clock: '', startsAt: new Date(Date.now() + 2 * 3600e3) };
+const DEMO_LIVE = { id: 'l', a: F('Merab Dvalishvili', 'M. Dvalishvili', '19-4-0'), b: F('Cory Sandhagen', 'C. Sandhagen', '18-5-0'),
+  state: 'in', weight: 'Coqs', segment: 'Carte principale', result: '', round: 2, clock: '3:12', startsAt: new Date() };
+const DEMO_DONE = { id: 'd', a: F('Jiri Prochazka', 'J. Prochazka', '31-5-1', true), b: F('Khalil Rountree', 'K. Rountree', '13-6-0'),
+  state: 'post', weight: 'Mi-lourds', segment: 'Carte principale', result: 'KO/TKO', round: 3, clock: '', startsAt: new Date(Date.now() - 3600e3) };
+
 export const DEMO_EVENTS = [
   {
     id: 'demo-nhl-1', leagueId: 'nhl', kind: 'match', state: 'in',
@@ -79,6 +88,13 @@ export const DEMO_EVENTS = [
       { label: 'Qualifications', startsAt: new Date(Date.now() - 24 * 3600e3), state: 'post' },
       { label: 'Course', startsAt: new Date(Date.now() - 3600e3), state: 'in' },
     ],
+  },
+  {
+    id: 'demo-ufc-1', leagueId: 'ufc', kind: 'card', state: 'in', title: 'UFC 320 : Pereira vs Ankalaev',
+    statusText: 'Round 2 · 3:12', clock: '', session: '', startsAt: null, logo: '',
+    main: DEMO_MAIN,
+    live: DEMO_LIVE,
+    fights: [DEMO_MAIN, DEMO_LIVE, DEMO_DONE],
   },
 ];
 

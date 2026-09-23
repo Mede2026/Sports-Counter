@@ -3,7 +3,7 @@
 // buts, pénalités, classement. F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
 import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, demoEvents, sameDriver } from './lib/api.js';
-import { LEAGUES_BY_ID } from './lib/leagues.js';
+import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
@@ -145,7 +145,7 @@ function standingsHtml(g, table) {
 }
 
 function matchHtml(g, table) {
-  const goalsTitle = ['nhl', 'epl', 'ucl', 'mls'].includes(g.leagueId) ? 'Buts' : 'Jeux marquants';
+  const goalsTitle = ['hockey', 'soccer'].includes(sportOf(g.leagueId)) ? 'Buts' : 'Jeux marquants';
   return heroHtml(g)
     + section('Pointage par période', periodsHtml(g))
     + section(goalsTitle, playsHtml(g, g.goals, true))
@@ -158,9 +158,8 @@ function matchHtml(g, table) {
 /* ---------- F1 ---------- */
 
 function f1Html(g) {
-  const fav = prefs.favDriver;
+  const favs = prefs.favDrivers ?? [];
   const league = LEAGUES_BY_ID.f1;
-  const mine = fav ? (g.results ?? []).find((d) => sameDriver(d, fav)) : null;
 
   const hero = `<section class="hero hero--f1">
     <img class="f1logo" src="${league.logo}" alt="F1" />
@@ -168,17 +167,22 @@ function f1Html(g) {
     ${statusHtml(g)}
   </section>`;
 
-  const favCard = fav ? `<section class="card favdriver">
+  // Une carte par pilote favori, dans l'ordre de la séance.
+  const cards = favs
+    .map((fav) => ({ fav, mine: (g.results ?? []).find((d) => sameDriver(d, fav)) ?? null }))
+    .sort((x, y) => (x.mine?.pos ?? 99) - (y.mine?.pos ?? 99))
+    .map(({ fav, mine }) => `<section class="card favdriver">
       ${fav.photo ? `<img class="face face--xl" src="${esc(fav.photo)}" alt="" data-face />` : ''}
       <div class="favdriver__txt">
-        <small>Ton pilote</small>
+        <small>${favs.length > 1 ? 'Un de tes pilotes' : 'Ton pilote'}</small>
         <b>${esc(fav.name)}</b>
         <span>${mine ? `${MEDALS[mine.pos] ?? ''} ${rankText(mine.pos)} · ${esc(g.session)}` : g.state === 'pre' ? 'La séance n\'a pas commencé' : 'Pas encore classé'}</span>
       </div>
-    </section>` : '';
+    </section>`);
+  const favCard = cards.join('');
 
   const rows = (g.results ?? []).map((d) => {
-    const isFav = sameDriver(d, fav);
+    const isFav = favs.some((f) => sameDriver(d, f));
     return `<li class="${isFav ? 'fav' : ''}">
       <span class="pos">${MEDALS[d.pos] ?? d.pos}</span>
       ${d.photo ? `<img class="face" src="${esc(d.photo)}" alt="" loading="lazy" data-face />` : '<span class="face"></span>'}
@@ -203,6 +207,47 @@ function f1Html(g) {
     + section('Programme du week-end', sessions ? `<ul class="sessions">${sessions}</ul>` : '');
 }
 
+/* ---------- UFC ---------- */
+
+function fighterBlock(f, big) {
+  const face = f.photo
+    ? `<img class="face${big ? ' face--xl face--ufc' : ''}" src="${esc(f.photo)}" alt="" data-face />`
+    : `<span class="face${big ? ' face--xl face--ufc' : ''}"></span>`;
+  return `<div class="fighter${f.winner ? ' fighter--win' : ''}">
+    ${face}
+    <b>${f.winner ? '✅ ' : ''}${esc(f.name)}</b>
+    ${f.record ? `<small>${esc(f.record)}</small>` : ''}
+  </div>`;
+}
+
+function fightStatus(f) {
+  if (f.state === 'in') return `<span class="live"><span class="dot"></span>Round ${f.round ?? 1}${f.clock ? ` · ${esc(f.clock)}` : ''}</span>`;
+  if (f.state === 'post') return esc(f.result || 'Terminé');
+  return isDate(f.startsAt) ? esc(TIME_FMT.format(f.startsAt)) : '';
+}
+
+/** Gala de l'UFC : combat principal en grand, puis toute la carte. */
+function ufcHtml(g) {
+  const m = g.main;
+  const hero = `<section class="hero hero--f1">
+    <div class="hero__title">${esc(g.title)}</div>
+    ${statusHtml(g)}
+    ${m ? `<div class="mainbout">${fighterBlock(m.a, true)}<span class="vs">VS</span>${fighterBlock(m.b, true)}</div>
+      <div class="status">${[esc(m.weight), fightStatus(m)].filter(Boolean).join(' · ')}</div>` : ''}
+  </section>`;
+  let segment = '';
+  const rows = (g.fights ?? []).filter((f) => f !== m && f.id !== m?.id).map((f) => {
+    const head = f.segment && f.segment !== segment ? `<li class="seg">${esc(f.segment)}</li>` : '';
+    segment = f.segment || segment;
+    const name = (x) => `<span class="${x.winner ? 'win' : ''}">${x.winner ? '✅ ' : ''}${esc(x.name)}</span>`;
+    return `${head}<li class="fight${f.state === 'in' ? ' fight--live' : ''}">
+      <div class="fight__names">${name(f.a)}<i>vs</i>${name(f.b)}</div>
+      <div class="fight__meta">${[esc(f.weight), fightStatus(f)].filter(Boolean).join(' · ')}</div>
+    </li>`;
+  }).join('');
+  return hero + section('Carte complète', rows ? `<ul class="card-list">${rows}</ul>` : '');
+}
+
 /* ---------- Chargement ---------- */
 
 /** Match tel que le tableau des scores le décrit (repli, et F1). */
@@ -222,7 +267,12 @@ async function load() {
   let html = '';
 
   try {
-    if (league?.kind === 'event') {
+    if (league?.kind === 'card') {
+      g = await fromScoreboard();
+      if (!g) throw new Error("Ce gala n'est plus au programme.");
+      el.title.textContent = g.title;
+      html = ufcHtml(g);
+    } else if (league?.kind === 'event') {
       g = await fromScoreboard();
       if (!g) throw new Error('Cette séance n\'est plus au programme.');
       el.title.textContent = g.title;

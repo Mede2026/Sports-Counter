@@ -495,3 +495,15 @@ kbd {
 .kbd-msg--err { color: #ff8a7a !important; }
 
 .state__icon { font-size: 26px; margin-bottom: 8px; }
+
+/* Colonne des ligues : un titre par sport. */
+.league-group {
+  margin: 10px 10px 3px;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+#leagues > .league-group:first-child { margin-top: 2px; }
+.league { padding-top: 6px; padding-bottom: 6px; }

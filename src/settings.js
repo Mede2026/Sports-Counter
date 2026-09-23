@@ -1,6 +1,6 @@
-import { LEAGUES, LEAGUES_BY_ID } from './lib/leagues.js';
+import { LEAGUES, LEAGUES_BY_ID, isWholeLeague } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchF1Calendar, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchRoster, fetchTeamGames, fetchLeagueCalendar, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -42,16 +42,18 @@ const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 /* ---------- Colonne des ligues ---------- */
 
 function countFor(id) {
-  if (LEAGUES_BY_ID[id]?.kind === 'event') return prefs.leagues.includes(id) ? 1 : 0;
+  if (isWholeLeague(id)) return prefs.leagues.includes(id) ? 1 : 0;
   return prefs.favorites.filter((f) => f.startsWith(`${id}:`)).length;
 }
 
 function renderLeagues() {
   el.navPrefs.classList.toggle('league--on', view === 'prefs' || view === 'players');
   el.navCalendar.classList.toggle('league--on', view === 'calendar');
-  el.leagues.innerHTML = LEAGUES.map((l) => {
+  // Rangées par sport : un petit titre au début de chaque groupe.
+  el.leagues.innerHTML = LEAGUES.map((l, i) => {
     const n = countFor(l.id);
-    return `<button class="league${view === 'teams' && l.id === current ? ' league--on' : ''}" data-id="${l.id}">
+    const title = l.group !== LEAGUES[i - 1]?.group ? `<div class="league-group">${l.group}</div>` : '';
+    return `${title}<button class="league${view === 'teams' && l.id === current ? ' league--on' : ''}" data-id="${l.id}">
       <span class="league__dot" style="background:${l.accent}"></span>
       <span>${l.label}</span>
       ${n ? `<span class="league__count">${n}</span>` : ''}
@@ -74,6 +76,11 @@ function renderTeams() {
   // Les ligues « évènement » (F1) se suivent en entier ; on y choisit son pilote.
   if (league.kind === 'event') {
     renderF1(league);
+    return;
+  }
+  // UFC : on suit tous les galas.
+  if (league.kind === 'card') {
+    renderWhole(league);
     return;
   }
 
@@ -111,12 +118,26 @@ function errorBlock(title, err, extra = '') {
     <code class="state__code">${errText(err)}</code>${extra}</div>`;
 }
 
+/** Ligue suivie en entier, sans rien d'autre à choisir (UFC). */
+function renderWhole(league) {
+  const on = prefs.leagues.includes(league.id);
+  el.teams.innerHTML = `
+    <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
+      <span class="check">${CHECK}</span>
+      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
+      <span class="team-row__name">Suivre tous les galas de l'${league.label}</span>
+    </div>
+    <div class="state">Le widget affiche le gala en cours ou le prochain, avec le combat principal.<br />
+      Notifications : début du gala, combat principal et son vainqueur.</div>`;
+  document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
+}
+
 /* ---------- F1 : suivre la saison, choisir son pilote ---------- */
 
 function renderF1(league) {
   const on = prefs.leagues.includes(current);
   const q = query.trim().toLowerCase();
-  const fav = prefs.favDriver;
+  const favs = prefs.favDrivers ?? [];
   let list = '';
   if (driversErr) {
     list = errorBlock('Impossible de charger les pilotes.', driversErr,
@@ -126,9 +147,9 @@ function renderF1(league) {
   } else {
     const shown = q ? drivers.filter((d) => `${d.name} ${d.team}`.toLowerCase().includes(q)) : drivers;
     list = shown.map((d) => {
-      const mine = sameDriver(d, fav);
+      const mine = favs.some((f) => sameDriver(d, f));
       return `<div class="team-row driver-row${mine ? ' team-row--on' : ''}" data-driver="${d.id}">
-        <span class="check check--round">${CHECK}</span>
+        <span class="check">${CHECK}</span>
         ${d.photo ? `<img class="face-sm" src="${d.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}
         <span class="team-row__name">${d.name}</span>
         <span class="team-row__abbr">${d.team ?? ''}</span>
@@ -142,7 +163,7 @@ function renderF1(league) {
       ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
       <span class="team-row__name">Suivre toute la ${league.label}</span>
     </div>
-    <div class="subhead">Ton pilote favori <small>mis en évidence dans le widget, avec des notifications s'il prend la tête ou monte sur le podium</small></div>
+    <div class="subhead">Tes pilotes favoris <small>coche-en autant que tu veux : mis en évidence dans le widget, avec des notifications s'ils prennent la tête ou montent sur le podium</small></div>
     ${list}`;
   bindCrests(el.teams);
   el.teams.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
@@ -166,14 +187,16 @@ async function loadDrivers() {
   if (current === 'f1' && view === 'teams') renderTeams();
 }
 
-/** Un seul pilote favori : cliquer sur le sien le retire. */
+/** Coche ou décoche un pilote favori (autant qu'on veut). */
 function pickDriver(id) {
   const d = drivers?.find((x) => x.id === id);
   if (!d) return;
-  prefs.favDriver = sameDriver(d, prefs.favDriver) ? null
-    : { id: d.id, name: d.name, short: d.short, photo: d.photo, team: d.team ?? '' };
+  prefs.favDrivers ??= [];
+  const i = prefs.favDrivers.findIndex((f) => sameDriver(d, f));
+  if (i === -1) prefs.favDrivers.push({ id: d.id, name: d.name, short: d.short, photo: d.photo, team: d.team ?? '' });
+  else prefs.favDrivers.splice(i, 1);
   // Choisir un pilote, c'est aussi suivre la F1.
-  if (prefs.favDriver && !prefs.leagues.includes('f1')) prefs.leagues.push('f1');
+  if (prefs.favDrivers.length && !prefs.leagues.includes('f1')) prefs.leagues.push('f1');
   savePrefs(prefs);
   renderLeagues();
   renderTeams();
@@ -181,10 +204,11 @@ function pickDriver(id) {
 }
 
 function renderFavDriver() {
-  const fav = prefs.favDriver;
-  document.getElementById('favDriverTxt').innerHTML = fav
-    ? `<b>Pilote favori</b><small class="favline">${fav.photo ? `<img class="face-xs" src="${fav.photo}" alt="" />` : ''}${fav.name}</small>`
-    : '<b>Pilote favori</b><small>Aucun</small>';
+  const favs = prefs.favDrivers ?? [];
+  const title = `<b>Pilote${favs.length > 1 ? 's' : ''} favori${favs.length > 1 ? 's' : ''}</b>`;
+  document.getElementById('favDriverTxt').innerHTML = favs.length
+    ? `${title}<span class="chips">${favs.map((f) => `<span class="chip-player">${f.photo ? `<img class="face-xs" src="${f.photo}" alt="" />` : ''}${f.name}</span>`).join('')}</span>`
+    : `${title}<small>Aucun</small>`;
 }
 
 /* ---------- Navigation ---------- */
@@ -203,7 +227,9 @@ function showLeague(id) {
   current = id;
   query = '';
   el.search.value = '';
-  el.search.placeholder = LEAGUES_BY_ID[id]?.kind === 'event' ? 'Rechercher un pilote…' : 'Rechercher une équipe…';
+  const kind = LEAGUES_BY_ID[id]?.kind;
+  el.search.placeholder = kind === 'event' ? 'Rechercher un pilote…' : kind === 'card' ? '' : 'Rechercher une équipe…';
+  el.search.disabled = kind === 'card';
   setView('teams');
   selectLeague();
 }
@@ -277,6 +303,7 @@ async function selectLeague() {
   const league = LEAGUES_BY_ID[current];
 
   if (league.kind === 'event') { renderTeams(); loadDrivers(); return; }
+  if (league.kind === 'card') { renderTeams(); return; }
 
   if (cache.has(current)) { teams = cache.get(current); renderTeams(); return; }
 
@@ -576,8 +603,9 @@ async function loadCalendar(force) {
   if (force || !el.calendar.innerHTML) el.calendar.innerHTML = '<div class="state">Chargement du calendrier…</div>';
 
   const teamKeys = prefs.favorites.filter((k) => LEAGUES_BY_ID[k.split(':')[0]]?.kind === 'team');
-  const wantF1 = prefs.leagues.includes('f1') || !!prefs.favDriver;
-  if (!IS_DEMO && !teamKeys.length && !wantF1) {
+  const wantF1 = prefs.leagues.includes('f1') || !!prefs.favDrivers?.length;
+  const wantUfc = prefs.leagues.includes('ufc');
+  if (!IS_DEMO && !teamKeys.length && !wantF1 && !wantUfc) {
     el.calendar.innerHTML = '<div class="state">Choisis des équipes (ou la F1) pour remplir ton calendrier.</div>';
     calLoading = false;
     return;
@@ -593,7 +621,8 @@ async function loadCalendar(force) {
       const [leagueId, teamId] = k.split(':');
       return fetchTeamGames(leagueId, teamId, { back, ahead: CAL_AHEAD });
     });
-    if (wantF1) jobs.push(fetchF1Calendar(-back, CAL_AHEAD));
+    if (wantF1) jobs.push(fetchLeagueCalendar('f1', -back, CAL_AHEAD));
+    if (wantUfc) jobs.push(fetchLeagueCalendar('ufc', -back, CAL_AHEAD));
     for (const r of await Promise.allSettled(jobs)) {
       if (r.status === 'fulfilled') games.push(...r.value);
       else { errors.push(errText(r.reason)); lastErr = r.reason; }
@@ -616,13 +645,19 @@ async function loadCalendar(force) {
 function calRow(g) {
   const league = LEAGUES_BY_ID[g.leagueId];
   const chip = `<span class="cal__chip" style="color:${league?.accent ?? 'inherit'}">${league?.short ?? ''}</span>`;
-  const state = g.kind === 'event' ? g.raceState ?? g.state : g.state;
+  const state = g.kind === 'match' ? g.state : g.raceState ?? g.state;
   let when = TIME_FMT.format(g.startsAt);
   if (state === 'in') when = '<span class="cal__live">En direct</span>';
   else if (state === 'post') when = '<span class="cal__done">Final</span>';
 
   let body;
-  if (g.kind === 'event') {
+  if (g.kind === 'card') {
+    const m = g.main;
+    const w = state === 'post' && m ? (m.a.winner ? m.a : m.b.winner ? m.b : null) : null;
+    body = `${crestHtml({ logo: g.logo, abbr: 'UFC', color: league.accent }, 'crest-sm')}
+      <span class="cal__title">${g.title}</span>
+      ${w ? `<span class="cal__res">🏆 ${w.name}</span>` : ''}`;
+  } else if (g.kind === 'event') {
     const winner = state === 'post' ? g.top3?.[0] : null;
     body = `${crestHtml({ logo: league.logo, abbr: 'F1', color: league.accent }, 'crest-sm')}
       <span class="cal__title">${g.title}</span>

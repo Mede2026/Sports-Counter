@@ -1,6 +1,6 @@
 {
   "name": "sports-counter",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Widget flottant de scores sportifs en direct pour Windows",
   "private": true,
   "scripts": {

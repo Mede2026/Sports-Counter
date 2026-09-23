@@ -25,9 +25,9 @@ seulement les équipes que tu choisis.
 - **Prochain match** : une équipe favorite qui ne joue pas aujourd'hui montre
   quand même son prochain match (jusqu'à 10 jours).
 - **F1** : la séance en cours ou la prochaine, et le **top 3** 🥇🥈🥉 pendant
-  et après chaque séance. **Pilote favori** au choix (avec sa photo) : mis en
+  et après chaque séance. **Pilotes favoris** au choix (avec leur photo) : mis en
   évidence, sa position affichée même hors du podium, et une notification
-  s'il prend la tête ou termine sur le podium.
+  s'ils prennent la tête ou terminent sur le podium.
 - **Compte à rebours** avant chaque match ou séance (« dans 2 h 15 »), et
   **rappel** par notification 5, 15, 30 ou 60 min avant (au choix).
 - **Fiche des équipes** (victoires-défaites) et **tirs au but** au hockey.
@@ -75,7 +75,13 @@ seulement les équipes que tu choisis.
 
 ## Ligues couvertes
 
-LNH, NBA, WNBA, NFL, MLB, Premier League, Ligue des champions, MLS, Formule 1.
+- **Hockey** : LNH
+- **Basketball** : NBA, WNBA
+- **Football** : NFL · **Baseball** : MLB
+- **Soccer** : Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Ligue des
+  champions, Ligue Europa, MLS
+- **Course** : Formule 1 · **Combat** : UFC (galas : combat principal, combat
+  en cours, vainqueur et méthode ; carte complète dans la fenêtre Match)
 
 Les données viennent de l'API publique d'ESPN : **aucun compte, aucune clé
 d'API**. En contrepartie, c'est une API non officielle, qui peut changer sans

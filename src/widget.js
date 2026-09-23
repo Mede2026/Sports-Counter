@@ -1,5 +1,5 @@
 import { fetchScoreboard, fetchNextGames, fetchScorer, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
-import { LEAGUES_BY_ID } from './lib/leagues.js';
+import { LEAGUES_BY_ID, isWholeLeague } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
@@ -97,19 +97,20 @@ function podiumHtml(game) {
   // Mode Grand Prix : pendant une course ou un sprint, top 5 avec les écarts.
   const gp = prefs.gpMode !== false && game.state === 'in' && /course|sprint/i.test(game.session ?? '');
   const top = gp ? (game.results ?? top3).slice(0, 5) : top3;
-  const fav = prefs.favDriver;
+  const favs = prefs.favDrivers ?? [];
+  const favOf = (d) => favs.find((f) => sameDriver(d, f));
   const line = (d, extra = '') => {
-    const isFav = sameDriver(d, fav);
+    const fav = favOf(d);
     const medal = MEDALS[d.pos] ?? `<span class="podium__pos">${d.pos}</span>`;
     const gap = gp && d.pos > 1 && d.gap ? `<span class="podium__gap">${gapText(d.gap)}</span>` : '';
-    return `<li class="${isFav ? 'podium__fav' : ''}${extra}">
-      <span class="podium__medal">${medal}</span>${isFav ? photo(fav) : ''}<span class="podium__name">${d.short || d.name}</span>${gap}</li>`;
+    return `<li class="${fav ? 'podium__fav' : ''}${extra}">
+      <span class="podium__medal">${medal}</span>${fav ? photo(fav) : ''}<span class="podium__name">${d.short || d.name}</span>${gap}</li>`;
   };
   let html = top.map((d) => line(d)).join('');
-  const mine = fav && !top.some((d) => sameDriver(d, fav))
-    ? (game.results ?? []).find((d) => sameDriver(d, fav))
-    : null;
-  if (mine) html += line(mine, ' podium__extra');
+  // Tes pilotes favoris hors du podium : leur position, dessous.
+  const mine = (game.results ?? [])
+    .filter((d) => favOf(d) && !top.some((t) => sameDriver(t, d)));
+  mine.forEach((d, i) => { html += line(d, i === 0 ? ' podium__extra' : ''); });
   return `<ol class="podium${gp ? ' podium--gp' : ''}">${html}</ol>`;
 }
 
@@ -155,6 +156,16 @@ function compactCard(game) {
     ? untilSpan(game.startsAt, true) || shortWhen(game.startsAt)
     : shortWhen(game.startsAt) || game.statusText;
 
+  if (game.kind === 'card') {
+    const m = game.live ?? game.main;
+    const w = m?.state === 'post' ? (m.a.winner ? m.a : m.b.winner ? m.b : null) : null;
+    const text = pre ? middleWhen : w ? `🏆 ${w.short}` : m ? `${lastName(m.a)} vs ${lastName(m.b)}` : game.statusText;
+    return `<div ${cardAttrs(game, cls, tip)}>
+      ${crestHtml({ logo: game.logo, abbr: 'UFC', color: league?.accent })}
+      <span class="row__event">${text}</span>
+    </div>`;
+  }
+
   if (game.kind === 'event') {
     const leader = game.state !== 'pre' ? game.top3?.[0] : null;
     const when = pre ? middleWhen : leader ? `🥇 ${leader.short || leader.name}` : game.session || game.statusText;
@@ -174,6 +185,36 @@ function compactCard(game) {
   </div>`;
 }
 
+const lastName = (f) => String(f?.name || f?.short || '').trim().split(/\s+/).pop();
+
+/** Un combattant : photo, nom, ✅ s'il a gagné. */
+function fighterHtml(f, side) {
+  const face = f.photo ? `<img class="face" src="${attr(f.photo)}" alt="" data-face />` : '<span class="face"></span>';
+  const name = `<span class="bout__name${f.winner ? ' bout__name--win' : ''}">${f.winner ? '✅ ' : ''}${lastName(f)}</span>`;
+  return side === 'a' ? `${face}${name}` : `${name}${face}`;
+}
+
+/**
+ * UFC : le gala, son combat principal (photos, vainqueur), et le combat en
+ * cours s'il ne s'agit pas du principal.
+ */
+function ufcCard(game, league, head) {
+  const m = game.main;
+  const bout = (f, cls = '') => `<div class="bout${cls}">
+    ${fighterHtml(f.a, 'a')}<span class="bout__vs">vs</span>${fighterHtml(f.b, 'b')}</div>`;
+  const live = game.live && game.live !== m
+    ? `<div class="bout__live"><span class="dot"></span>En cours : ${lastName(game.live.a)} vs ${lastName(game.live.b)}</div>`
+    : '';
+  const result = m?.state === 'post' && m.result ? `<div class="bout__res">${m.result}</div>` : '';
+  return `<div ${cardAttrs(game, '', 'Cliquer pour la carte complète')}>${head}
+    <div class="event">
+      ${crestHtml({ logo: game.logo, abbr: 'UFC', color: league?.accent })}
+      <span class="event__title">${game.title}</span>
+    </div>
+    ${m ? bout(m) : ''}${result}${live}
+  </div>`;
+}
+
 /** Séries éliminatoires : « 1re ronde · Match 5 · MTL mène la série 3-2 ». */
 function seriesLine(series) {
   if (!series) return '';
@@ -189,6 +230,8 @@ function gameCard(game) {
       <span class="chip" style="color:${league?.accent ?? 'inherit'}">${league?.label ?? ''}</span>
       ${statusBlock(game)}
     </div>`;
+
+  if (game.kind === 'card') return ufcCard(game, league, head);
 
   if (game.kind === 'event') {
     return `<div ${cardAttrs(game, '', 'Cliquer pour le classement complet')}>${head}
@@ -222,7 +265,7 @@ function emptyHtml() {
  * évènement (but, début, fin…). Le premier relevé sert seulement de référence.
  */
 function notifyEvents(games) {
-  const opts = { favDriver: prefs.favDriver };
+  const opts = { favDrivers: prefs.favDrivers ?? [] };
   const events = detectEvents(seen, games, opts);
   seen = remember(seen, games, opts);
   if (!events.length || prefs.notifications === false || !inTauri()) return;
@@ -356,7 +399,7 @@ function checkReminders() {
     } else {
       const league = LEAGUES_BY_ID[g.leagueId];
       sendToast({
-        title: `${g.session || 'Séance'} ${until}`,
+        title: g.kind === 'card' ? `Le gala commence ${until}` : `${g.session || 'Séance'} ${until}`,
         body: `${g.title} · ${TIME_FMT.format(g.startsAt)}`,
         team: { abbr: league?.short ?? '', logo: g.logo || league?.logo || '', color: '#ff4d6d' },
         link: g.link,
@@ -543,7 +586,7 @@ function keepGame(game) {
   const league = LEAGUES_BY_ID[game.leagueId];
   // Une ligue suivie en entier passe sans filtre.
   if (prefs.leagues.includes(game.leagueId)) return true;
-  if (league?.kind === 'event') return false;
+  if (isWholeLeague(game.leagueId)) return false;
   const favIds = prefs.favorites
     .filter((f) => f.startsWith(`${game.leagueId}:`))
     .map((f) => f.split(':')[1]);
@@ -569,6 +612,28 @@ function beyondHorizon(game) {
   cutoff.setHours(0, 0, 0, 0);
   cutoff.setDate(cutoff.getDate() + LOOKAHEAD_DAYS + 1);
   return game.startsAt >= cutoff;
+}
+
+/**
+ * Un seul match à venir par équipe favorite : le prochain. Deux matchs le
+ * même jour (programme double au baseball) ou plusieurs dans les 4 jours
+ * n'en montrent qu'un. Une équipe en plein match n'affiche pas le suivant.
+ * `games` doit être trié (en direct, puis à venir par heure, puis finis).
+ */
+function nextOnly(games) {
+  const taken = new Set();
+  const favsOf = (g) => [g.home, g.away]
+    .map((t) => `${g.leagueId}:${t.id}`)
+    .filter((key) => prefs.favorites.includes(key));
+  return games.filter((g) => {
+    if (g.kind !== 'match') return true;
+    const favs = favsOf(g);
+    if (g.state === 'in') { favs.forEach((k) => taken.add(k)); return true; }
+    if (g.state !== 'pre' || !favs.length) return true;
+    const fresh = favs.filter((k) => !taken.has(k));
+    favs.forEach((k) => taken.add(k));
+    return fresh.length > 0;
+  });
 }
 
 function isStale(game) {
@@ -690,7 +755,7 @@ async function doRefresh(force) {
   const today = games.filter(keepGame).filter((g) => !isStale(g) && !beyondHorizon(g));
   const upcoming = await nextGamesForIdleFavorites(today);
 
-  followed = [...today, ...upcoming.filter((g) => !beyondHorizon(g))].sort(sortGames);
+  followed = nextOnly([...today, ...upcoming.filter((g) => !beyondHorizon(g))].sort(sortGames));
   notifyEvents(followed);
   checkReminders();
 
@@ -795,8 +860,9 @@ if (inTauri()) {
 
 // Mode aperçu navigateur : données de démonstration, sans réseau.
 if (!inTauri() && new URLSearchParams(location.search).has('demo')) {
-  prefs = { ...prefs, maxGames: 5, favorites: [], leagues: ['nhl', 'nba', 'f1'],
-    favDriver: { id: 'demo-ant', name: 'Andrea Kimi Antonelli', short: 'K. Antonelli', photo: '' } };
+  prefs = { ...prefs, maxGames: 5, favorites: [], leagues: ['nhl', 'nba', 'f1', 'ufc'],
+    favDrivers: [{ id: 'demo-ant', name: 'Andrea Kimi Antonelli', short: 'K. Antonelli', photo: '' },
+      { id: 'demo-lec', name: 'Charles Leclerc', short: 'C. Leclerc', photo: '' }] };
   render(demoEvents(), null);
 } else {
   refresh();
