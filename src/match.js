@@ -7,7 +7,7 @@ import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, fetch
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
-import { visibleTeamColor, applyTeamAccent } from './lib/color.js';
+import { visibleTeamColor, applyTeamAccent, distinctColors } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT, dayText, isDateOnly } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
@@ -109,8 +109,7 @@ function periodsHtml(g) {
 /** Barres face à face : la part de chaque équipe pour chaque statistique. */
 function statsHtml(g) {
   if (!g.stats?.length) return '';
-  const colorA = visibleTeamColor(g.away.color, g.away.alt) ?? '#4aa3ff';
-  const colorH = visibleTeamColor(g.home.color, g.home.alt) ?? '#ff7a45';
+  const [colorA, colorH] = distinctColors(g.away, g.home);
   return g.stats.map((s) => {
     const a = parseFloat(String(s.away).replace(',', '.')) || 0;
     const h = parseFloat(String(s.home).replace(',', '.')) || 0;
@@ -200,8 +199,7 @@ function standingsHtml(g, table) {
 function winProbHtml(g) {
   const p = g.winProb;
   if (!p) return '';
-  const colorA = visibleTeamColor(g.away.color, g.away.alt) ?? '#4aa3ff';
-  const colorH = visibleTeamColor(g.home.color, g.home.alt) ?? '#ff7a45';
+  const [colorA, colorH] = distinctColors(g.away, g.home);
   const total = p.away + p.home || 1;
   return `<div class="prob">
     <div class="prob__vals"><b>${esc(g.away.abbr)} ${p.away} %</b><span>${p.live ? 'en direct' : 'avant le match'}</span><b>${p.home} % ${esc(g.home.abbr)}</b></div>

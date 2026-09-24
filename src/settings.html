@@ -24,8 +24,6 @@
 
   <div class="body">
     <nav class="leagues">
-      <div id="leagues"></div>
-      <div class="nav-sep"></div>
       <button class="league league--prefs" id="navCalendar" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
              stroke-linecap="round" stroke-linejoin="round">
@@ -49,6 +47,15 @@
         </svg>
         <span>Réglages</span>
       </button>
+      <button class="league league--prefs" id="navDiag" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3v6a5 5 0 0 0 10 0V3" /><path d="M10 14v2a5 5 0 0 0 10 0v-3" /><circle cx="20" cy="11" r="2" />
+        </svg>
+        <span>Diagnostic</span>
+      </button>
+      <div class="nav-sep"></div>
+      <div id="leagues"></div>
     </nav>
 
     <!-- Équipes (ou pilotes) d'une ligue -->
@@ -122,12 +129,14 @@
       <section class="prefs__group">
         <h2>Widget</h2>
         <div class="pref">
-          <span class="pref__txt"><b>Affichage</b><small>Sur le bureau : derrière tes fenêtres, les notifications passent devant.</small></span>
+          <span class="pref__txt"><b>Affichage</b><small>Sur le bureau : derrière tes fenêtres. Fond d'écran : tes matchs et tes infos deviennent ton fond d'écran (le tien revient si tu changes d'option).</small></span>
           <select id="optWidgetMode">
             <option value="always">Toujours devant</option>
             <option value="desktop">Sur le bureau</option>
             <option value="live">Pendant un match</option>
             <option value="never">Jamais (notifications)</option>
+            <option value="wallpaper">Fond d'écran (infos)</option>
+            <option value="both">Widget + fond d'écran (widget caché sur le bureau)</option>
           </select>
         </div>
         <div class="pref">
@@ -172,12 +181,97 @@
         </div>
       </section>
 
+      <section class="prefs__group" id="wallGroup">
+        <h2>Fond d'écran</h2>
+        <canvas class="wall-preview" id="wallPreview" width="960" height="540"></canvas>
+        <div class="pref">
+          <span class="pref__txt"><b>Activer</b><small>Widget → Affichage → « Fond d'écran (infos) ». Ton fond d'écran revient si tu changes d'option.</small></span>
+          <button class="ghost ghost--small" id="btnWallOn" type="button">Utiliser</button>
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Arrière-plan</b></span>
+          <select id="wallBg">
+            <option value="team">Couleur de mon équipe</option>
+            <option value="photo">Photo</option>
+            <option value="dark">Noir</option>
+          </select>
+        </div>
+        <div class="pref" id="wallPhotoRow">
+          <span class="pref__txt"><b>Photo</b><small id="wallPhotoMsg">Ton fond d'écran actuel, ou une image de ton choix.</small></span>
+          <button class="ghost ghost--small" id="btnWallPhoto" type="button">Choisir une image…</button>
+          <button class="ghost ghost--small" id="btnWallPhotoReset" type="button">La mienne</button>
+          <input type="file" id="wallPhotoFile" accept="image/jpeg,image/png,image/webp,image/bmp" hidden />
+        </div>
+        <div class="pref" id="wallDimRow">
+          <span class="pref__txt"><b>Assombrir la photo</b><small>Pour bien lire les infos par-dessus.</small></span>
+          <input type="range" id="wallDim" min="0" max="0.85" step="0.05" />
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Couleur</b></span>
+          <select id="wallColor">
+            <option value="">Comme le widget</option>
+            <option value="live">Équipe qui joue (alterne toutes les 5 min)</option>
+            <option value="#4aa3ff">Bleu</option>
+            <option value="#e63946">Rouge</option>
+            <option value="#2ecc71">Vert</option>
+            <option value="#f5b700">Or</option>
+            <option value="#9b5de5">Violet</option>
+            <option value="#ff7a1a">Orange</option>
+            <option value="#ff5da2">Rose</option>
+            <option value="#e8ecf3">Blanc</option>
+          </select>
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Panneau des infos</b><small>À droite, tes icônes du bureau restent libres à gauche.</small></span>
+          <select id="wallSide">
+            <option value="right">À droite</option>
+            <option value="left">À gauche</option>
+          </select>
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallHero"><b>Prochain match en grand</b></label>
+          <input type="checkbox" class="switch" id="wallHero" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallToday"><b>Aujourd'hui</b></label>
+          <input type="checkbox" class="switch" id="wallToday" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallUpcoming"><b>À venir</b></label>
+          <input type="checkbox" class="switch" id="wallUpcoming" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallResults"><b>Derniers résultats</b></label>
+          <input type="checkbox" class="switch" id="wallResults" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallStandings"><b>Classement</b></label>
+          <input type="checkbox" class="switch" id="wallStandings" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallForm"><b>Forme des équipes</b><small>Les 5 derniers matchs : victoires en vert, défaites en rouge.</small></label>
+          <input type="checkbox" class="switch" id="wallForm" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallDivision"><b>Tableau de la division</b></label>
+          <input type="checkbox" class="switch" id="wallDivision" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="wallF1"><b>Championnat F1</b><small>Si tu suis la F1.</small></label>
+          <input type="checkbox" class="switch" id="wallF1" />
+        </div>
+      </section>
+
       <section class="prefs__group">
         <h2>Notifications</h2>
         <div class="pref">
           <label class="pref__txt" for="optNotify"><b>Notifications de l'app</b><small>Buts, passes, tours du chapeau, prolongations, séries, filet désert, F1 et UFC.</small></label>
           <button class="ghost ghost--small" id="btnTryToast" type="button">Essayer</button>
           <input type="checkbox" class="switch" id="optNotify" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="optPenalties"><b>Pénalités</b><small>Au hockey : qui, pour quoi, combien de minutes, et qui a l'avantage numérique.</small></label>
+          <input type="checkbox" class="switch" id="optPenalties" />
         </div>
         <div class="pref">
           <label class="pref__txt" for="optDigest"><b>Résumé du matin</b><small>Les résultats d'hier de tes équipes, et la fiche de tes joueurs favoris.</small></label>
@@ -224,7 +318,7 @@
         </div>
       </section>
 
-      <section class="prefs__group">
+      <section class="prefs__group" id="diagGroup">
         <h2>Diagnostic</h2>
         <div class="pref">
           <span class="pref__txt"><b>Tester ESPN</b><small>Vérifie, ligue par ligue, ce qu'ESPN répond depuis ton ordinateur. Envoie une capture si une ligue ne marche pas.</small></span>

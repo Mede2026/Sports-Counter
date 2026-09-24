@@ -1,15 +1,16 @@
-import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchYesterday, fetchMatchDetail, fetchTeamForm, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
-import { visibleTeamColor } from './lib/color.js';
-import { detectEvents, remember, favFights } from './lib/events.js';
+import { visibleTeamColor, playingColors, alternating, LIVE_THEME } from './lib/color.js';
+import { detectEvents, remember, favFights, penaltyToast } from './lib/events.js';
 import { whenText, shortWhen, untilText, isDate, TIME_FMT, dayText, isDateOnly } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
 import { diskCache } from './lib/cache.js';
 import { TRANSLATED_EVENT } from './lib/translate.js';
+import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors } from './lib/wallpaper.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
@@ -180,7 +181,7 @@ function compactCard(game) {
     const w = m?.state === 'post' ? (m.a.winner ? m.a : m.b.winner ? m.b : null) : null;
     const text = pre ? middleWhen : w ? `🏆 ${w.short}` : m ? `${lastName(m.a)} vs ${lastName(m.b)}` : game.statusText;
     return `<div ${cardAttrs(game, cls, tip)}>
-      ${crestHtml({ logo: game.logo, abbr: 'UFC', color: league?.accent })}
+      ${crestHtml({ logo: game.logo || league?.logo, abbr: 'UFC', color: league?.accent })}
       <span class="row__event">${text}</span>
     </div>`;
   }
@@ -192,7 +193,7 @@ function compactCard(game) {
       : game.teamEvent && ta && tb ? `${ta.short || ta.name} ${ta.score} – ${tb.score} ${tb.short || tb.name}`
       : lead ? `${game.state === 'post' ? '🏆' : '1.'} ${lastName(lead)} ${lead.score}` : game.statusText;
     return `<div ${cardAttrs(game, cls, tip)}>
-      ${crestHtml({ logo: game.logo, abbr: league?.short ?? '⛳', color: league?.accent })}
+      ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '⛳', color: league?.accent })}
       <span class="row__event row__event--two"><small class="row__label">${game.title}</small><span>${text}</span></span>
     </div>`;
   }
@@ -201,7 +202,7 @@ function compactCard(game) {
     const w = game.a.winner ? game.a : game.b.winner ? game.b : null;
     const text = pre ? middleWhen : w ? `🏆 ${lastName(w)} ${setsText(w === game.a ? game : { a: game.b, b: game.a })}` : setsText(game);
     return `<div ${cardAttrs(game, cls, tip)}>
-      ${crestHtml({ logo: '', abbr: league?.short ?? '🎾', color: league?.accent })}
+      ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '🎾', color: league?.accent })}
       <span class="row__event row__event--two"><small class="row__label">${lastName(game.a)} – ${lastName(game.b)}</small><span>${text}</span></span>
     </div>`;
   }
@@ -258,7 +259,7 @@ function ufcCard(game, league, head) {
   const result = m?.state === 'post' && m.result ? `<div class="bout__res">${m.result}</div>` : '';
   return `<div ${cardAttrs(game, '', 'Cliquer pour la carte complète')}>${head}
     <div class="event">
-      ${crestHtml({ logo: game.logo, abbr: 'UFC', color: league?.accent })}
+      ${crestHtml({ logo: game.logo || league?.logo, abbr: 'UFC', color: league?.accent })}
       <span class="event__title">${game.title}</span>
     </div>
     ${favHtml}${m ? bout(m, mainIsFav ? ' bout--fav' : '') : ''}${result}${live}
@@ -290,7 +291,7 @@ function golfBoard(game) {
 function golfCard(game, league, head) {
   return `<div ${cardAttrs(game, '', 'Cliquer pour le tableau complet')}>${head}
     <div class="event">
-      ${crestHtml({ logo: game.logo, abbr: league?.short ?? '⛳', color: league?.accent })}
+      ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '⛳', color: league?.accent })}
       <span class="event__title">${game.title}</span>
     </div>${golfBoard(game)}</div>`;
 }
@@ -532,7 +533,7 @@ function checkReminders() {
       sendToast({
         title: `Le combat de ${me.name} commence ${untilText(f.startsAt, now)}`,
         body: `contre ${opp.name} · ${g.title}`,
-        team: me.photo ? { abbr: 'UFC', logo: me.photo, color: '#e8363d', round: true } : { abbr: 'UFC', logo: g.logo || '', color: '#e8363d' },
+        team: me.photo ? { abbr: 'UFC', logo: me.photo, color: '#e8363d', round: true } : { abbr: 'UFC', logo: g.logo || LEAGUES_BY_ID.ufc?.logo || '', color: '#e8363d' },
         link: g.link,
       });
     }
@@ -561,7 +562,7 @@ function checkReminders() {
       sendToast({
         title: `🎾 Le match de ${me?.name ?? g.a.name} commence ${until}`,
         body: `contre ${opp.name} · ${[g.round, g.title].filter(Boolean).join(' · ')}`,
-        team: me?.photo ? { abbr: 'TEN', logo: me.photo, color: '#c6f36b', round: true } : { abbr: LEAGUES_BY_ID[g.leagueId]?.short ?? '', logo: '', color: '#c6f36b' },
+        team: me?.photo ? { abbr: 'TEN', logo: me.photo, color: '#c6f36b', round: true } : { abbr: LEAGUES_BY_ID[g.leagueId]?.short ?? '', logo: LEAGUES_BY_ID[g.leagueId]?.logo ?? '', color: '#c6f36b' },
         link: g.link,
       });
     } else {
@@ -614,6 +615,136 @@ async function checkEmptyNets(games) {
       team: trailing,
       link: g.link,
     });
+  }
+}
+
+/* ---------- Pénalités (hockey) ---------- */
+
+// idMatch -> ids des pénalités déjà vues ; idMatch -> dernière lecture (ms).
+const penaltySeen = new Map();
+const penaltyReadAt = new Map();
+// Le résumé d'un match est plus lourd que le tableau des scores : une lecture
+// par match toutes les 40 s suffit.
+const PENALTY_EVERY_MS = 40 * 1000;
+
+/**
+ * Hockey en direct : notification à chaque nouvelle pénalité. À la première
+ * lecture d'un match, les pénalités déjà données sont seulement retenues :
+ * ouvrir l'app en 2e période ne déclenche pas une rafale de notifications.
+ */
+async function checkPenalties(games) {
+  if (prefs.notifications === false || prefs.notifyPenalties === false || !inTauri()) return;
+  for (const g of games) {
+    if (g.kind !== 'match' || g.state !== 'in' || sportOf(g.leagueId) !== 'hockey') continue;
+    if (Date.now() - (penaltyReadAt.get(g.id) ?? 0) < PENALTY_EVERY_MS) continue;
+    penaltyReadAt.set(g.id, Date.now());
+    let list;
+    try {
+      list = await fetchPenalties(g.leagueId, g.id);
+    } catch {
+      continue; // résumé illisible : on réessaiera
+    }
+    const seen = penaltySeen.get(g.id);
+    penaltySeen.set(g.id, new Set([...(seen ?? []), ...list.map((x) => x.id)]));
+    if (!seen) continue;
+    const fresh = list.filter((x) => !seen.has(x.id));
+    for (const pen of fresh) sendToast(penaltyToast(g, pen, list));
+  }
+}
+
+/* ---------- Mode « Fond d'écran » ---------- */
+
+// Au plus une nouvelle image par minute ; sans changement, une toutes les
+// 15 minutes (l'heure de mise à jour en bas de l'image reste juste).
+const WALLPAPER_EVERY_MS = 60 * 1000;
+const WALLPAPER_IDLE_MS = 15 * 60 * 1000;
+let wallpaperKey = '';
+let wallpaperAt = 0;
+let wallpaperBusy = false;
+let wallpaperRestored = false; // fond d'origine déjà remis depuis le dernier changement de mode
+
+const wallpaperMode = () => ['wallpaper', 'both'].includes(prefs.widgetMode);
+
+/** Dessine l'image des infos et la pose comme fond d'écran (mode « Fond d'écran »). */
+async function updateWallpaper() {
+  if (!inTauri()) return;
+  const { invoke } = window.__TAURI__.core;
+  if (!wallpaperMode()) {
+    // Mode quitté (ou jamais choisi) : remettre le fond d'écran d'origine.
+    if (!wallpaperRestored) {
+      wallpaperRestored = true;
+      wallpaperKey = '';
+      invoke('restore_wallpaper').catch(() => {});
+    }
+    return;
+  }
+  wallpaperRestored = false;
+  if (wallpaperBusy || Date.now() - wallpaperAt < WALLPAPER_EVERY_MS) return;
+  wallpaperBusy = true;
+  try {
+    const favs = prefs.favorites.filter((k) => LEAGUES_BY_ID[k.split(':')[0]]?.kind === 'team').slice(0, 8);
+    const teamGames = [];
+    for (const key of favs) {
+      const [leagueId, teamId] = key.split(':');
+      try {
+        teamGames.push({ key, games: await fetchTeamGames(leagueId, teamId, { back: 10, ahead: 21 }) });
+      } catch { /* calendrier indisponible : l'équipe est simplement absente */ }
+    }
+    const standings = new Map();
+    for (const leagueId of new Set(favs.map((k) => k.split(':')[0]))) {
+      const table = await fetchStandings(leagueId);
+      for (const key of favs.filter((k) => k.startsWith(`${leagueId}:`))) {
+        const row = table.get(key.split(':')[1]);
+        if (row) standings.set(key, row);
+      }
+    }
+    // Division de l'équipe du thème (sinon de la 1re favorite), tableau complet.
+    let division = null;
+    const main = favs.includes(prefs.theme) ? prefs.theme : favs[0];
+    if (main) {
+      const [leagueId, teamId] = main.split(':');
+      try {
+        const group = (await fetchStandingsTable(leagueId)).find((g) => !g.preseason && g.rows.some((r) => r.id === teamId));
+        if (group) {
+          division = {
+            title: group.name,
+            rows: group.rows.slice(0, 10).map((r) => ({
+              rank: r.rank, abbr: r.abbr, logo: r.logo, fav: favs.includes(`${leagueId}:${r.id}`),
+              points: r.stats.points ?? r.stats.wins ?? '', gp: r.stats.gamesPlayed ?? '',
+            })),
+          };
+        }
+      } catch { /* classement indisponible : pas de carte */ }
+    }
+    // Championnat F1, si la F1 est suivie.
+    let f1 = null;
+    if (prefs.leagues.includes('f1') || prefs.favDrivers?.length) {
+      try {
+        f1 = (await fetchF1Standings()).drivers.slice(0, 5).map((d) => ({ rank: d.rank, name: d.name, points: d.points }));
+      } catch { /* championnat indisponible */ }
+    }
+    const model = buildModel({ today: followed, teamGames, standings, favInfo: prefs.favInfo, division, f1 });
+    saveModel(model);
+    // Les options comptent aussi : changer la couleur redessine l'image.
+    const key = modelKey(model) + JSON.stringify(prefs.wallpaper ?? {}) + prefs.theme + wallpaperColors(prefs, followed).join();
+    if (key === wallpaperKey && Date.now() - wallpaperAt < WALLPAPER_IDLE_MS) return;
+
+    const scale = window.devicePixelRatio || 1;
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(screen.width * scale);
+    canvas.height = Math.round(screen.height * scale);
+    const spots = await renderWallpaper(canvas, model, prefs, followed);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    if (!blob) return;
+    await invoke('set_wallpaper', new Uint8Array(await blob.arrayBuffer()));
+    // Un clic sur un match du fond d'écran ouvre sa fenêtre Match.
+    invoke('set_wallpaper_spots', { width: canvas.width, height: canvas.height, spots }).catch(() => {});
+    wallpaperKey = key;
+    wallpaperAt = Date.now();
+  } catch (err) {
+    console.warn('fond d’écran :', errText(err));
+  } finally {
+    wallpaperBusy = false;
   }
 }
 
@@ -774,11 +905,21 @@ function bindCards() {
 
 /** Liseré et bordure aux couleurs de l'équipe choisie dans les réglages. */
 function applyTheme() {
-  const info = prefs.favInfo?.[prefs.theme];
-  const color = info ? visibleTeamColor(info.color, info.alt) : null;
+  let color = null;
+  let second = null;
+  if (prefs.theme === LIVE_THEME) {
+    // L'équipe favorite qui joue ; deux en même temps : elles alternent (5 min),
+    // avec un fondu entre les deux couleurs.
+    [color, second] = alternating(playingColors(prefs, followed));
+  } else {
+    const info = prefs.favInfo?.[prefs.theme];
+    color = info ? visibleTeamColor(info.color, info.alt) : null;
+  }
   el.widget.classList.toggle('widget--team', !!color);
+  el.widget.classList.toggle('widget--duo', !!second);
   if (color) el.widget.style.setProperty('--team', color);
   else el.widget.style.removeProperty('--team');
+  el.widget.style.setProperty('--team2', second ?? color ?? 'transparent');
 }
 
 /** Apparence : couleur, compact, opacité, taille. */
@@ -802,7 +943,7 @@ function applyLook() {
 let shownByMode;
 function applyWidgetMode(hasLive) {
   const mode = prefs.widgetMode ?? 'always';
-  const want = mode === 'never' ? false : mode === 'live' ? !!hasLive : true;
+  const want = mode === 'never' || mode === 'wallpaper' ? false : mode === 'live' ? !!hasLive : true;
   if (want === shownByMode || !inTauri()) return;
   shownByMode = want;
   window.__TAURI__.core.invoke('set_widget_visible', { visible: want }).catch(() => {});
@@ -862,6 +1003,8 @@ async function syncFullscreenOption() {
     await invoke('set_hide_fullscreen', { enabled: prefs.hideFullscreen !== false });
     // Premier plan ou bureau : réglé avant que le widget ne s'affiche.
     await invoke('set_widget_on_top', { onTop: prefs.widgetMode !== 'desktop' });
+    // « Widget + fond d'écran » : le widget s'efface quand tu vas sur le bureau.
+    await invoke('set_hide_on_desktop', { enabled: prefs.widgetMode === 'both' });
   } catch { /* version sans cette commande : sans conséquence */ }
   // Raccourcis choisis dans les réglages (refusés : Rust garde les précédents).
   invoke('set_shortcuts', { toggle: keys.toggle, matchKey: keys.match }).catch(() => {});
@@ -907,7 +1050,7 @@ function footHtml(error, offline) {
  * Mode « Jamais (notifications) » : le widget n'est jamais montré, inutile
  * de construire ses cartes. Le relevé et les notifications continuent.
  */
-const widgetUnused = () => (prefs.widgetMode ?? 'always') === 'never';
+const widgetUnused = () => ['never', 'wallpaper'].includes(prefs.widgetMode ?? 'always');
 
 function render(games, error, offline = false) {
   lastRender = [games, error, offline];
@@ -1135,6 +1278,8 @@ async function doRefresh(force) {
   notifyEvents(followed);
   checkReminders();
   checkEmptyNets(followed);
+  checkPenalties(followed);
+  updateWallpaper();
   morningDigest();
 
   const visible = followed.slice(0, prefs.maxGames);
@@ -1190,6 +1335,7 @@ window.addEventListener('storage', (e) => {
   // n'apparaît pas vide ou avec d'anciens scores.
   if (lastRender) render(...lastRender);
   shownByMode = undefined; // réglage peut-être changé : réappliquer
+  wallpaperAt = 0; // réglages changés : le fond d'écran se redessine tout de suite
   if ((prefs.widgetMode ?? 'always') !== 'live') applyWidgetMode(false);
   syncFullscreenOption();
   refresh();

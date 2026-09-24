@@ -1,6 +1,6 @@
 {
   "name": "sports-counter",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Widget flottant de scores sportifs en direct pour Windows",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
@@ -8,7 +8,6 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
-    "icons": "node tools/make-icons.js",
     "preview": "node tools/preview.js"
   },
   "devDependencies": {

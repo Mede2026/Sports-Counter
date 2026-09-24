@@ -4,7 +4,7 @@
 import { F1_LOGO } from './f1-logo.js';
 import { sameDriver } from './api.js';
 import { MEDALS, rank as place, ordinal } from './format.js';
-import { sportOf } from './leagues.js';
+import { LEAGUES_BY_ID, sportOf } from './leagues.js';
 
 // Ligues où chaque point mérite une notification. Au basket, le score change
 // toutes les vingt secondes : on s'en tient au début et à la fin du match.
@@ -282,7 +282,7 @@ export function favFights(g, favFighters = []) {
 function cardEvents(g, before, opts = {}) {
   const out = [];
   const link = g.link ?? '';
-  const team = { abbr: 'UFC', logo: g.logo ?? '', color: '#e8363d' };
+  const team = { abbr: 'UFC', logo: g.logo || LEAGUES_BY_ID.ufc?.logo || '', color: '#e8363d' };
   const was = before.favs ?? {};
   const face = (x) => (x?.photo ? { ...team, logo: x.photo, round: true } : team);
 
@@ -322,7 +322,7 @@ function cardEvents(g, before, opts = {}) {
 function golfEvents(g, before, opts = {}) {
   const out = [];
   if (g.teamEvent) return out; // Coupe des Présidents : pas de meneur individuel
-  const team = { abbr: '⛳', logo: g.logo ?? '', color: '#5bd38a' };
+  const team = { abbr: '⛳', logo: g.logo || LEAGUES_BY_ID[g.leagueId]?.logo || '', color: '#5bd38a' };
   const lead = g.players?.[0];
   const face = (p) => (p?.photo ? { ...team, logo: p.photo, round: true } : team);
   const link = g.link ?? '';
@@ -357,7 +357,7 @@ function tennisEvents(g, before, opts) {
   const me = [g.a, g.b].find((p) => favs.some((f) => sameDriver(f, p)));
   if (!me) return []; // les autres matchs en direct : pas de notification
   const opp = me === g.a ? g.b : g.a;
-  const face = me.photo ? { abbr: '🎾', logo: me.photo, color: '#c6f36b', round: true } : { abbr: '🎾', logo: '', color: '#c6f36b' };
+  const face = me.photo ? { abbr: '🎾', logo: me.photo, color: '#c6f36b', round: true } : { abbr: '🎾', logo: LEAGUES_BY_ID[g.leagueId]?.logo ?? '', color: '#c6f36b' };
   const where = [g.round, g.title].filter(Boolean).join(' · ');
   // Manches du point de vue de ton joueur : « 6-4 3-6 7-6 ».
   const sets = me.sets.map((n, i) => `${n}-${opp.sets[i] ?? 0}`).join(' ');
@@ -397,4 +397,28 @@ export function detectEvents(prev, games, opts = {}) {
     else out.push(...sessionEvents(g, before, opts));
   }
   return out.slice(-MAX_PER_REFRESH);
+}
+
+/* ---------- Pénalités (hockey) ---------- */
+
+/** « ⛔ Pénalité aux Canadiens » · « Suzuki · Faire trébucher (2 min) · Avantage numérique TOR ». */
+export function penaltyToast(g, pen, all = [pen]) {
+  const team = g.home.id === pen.teamId ? g.home : g.away.id === pen.teamId ? g.away : null;
+  const other = team === g.home ? g.away : team === g.away ? g.home : null;
+  // Avantage numérique : pénalité mineure ou majeure, sans pénalité à l'autre
+  // équipe au même moment (pénalités coïncidentes : on joue à forces égales).
+  const coincident = all.some((x) => x !== pen && x.period === pen.period && x.clock === pen.clock && x.teamId !== pen.teamId);
+  const powerPlay = other && [2, 4, 5].includes(pen.minutes) && !coincident;
+  const what = [pen.infraction, pen.minutes ? `${pen.minutes} min` : ''].filter(Boolean);
+  const body = [
+    String(pen.who ?? '').trim().split(/\s+/).pop(),
+    what.length === 2 ? `${what[0]} (${what[1]})` : what[0] ?? '',
+    powerPlay ? `Avantage numérique ${other.abbr}` : '',
+  ].filter(Boolean).join(' · ');
+  return {
+    title: team ? `⛔ Pénalité aux ${team.name}` : '⛔ Pénalité',
+    body: body || `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}`,
+    team: team ?? g.home,
+    link: g.link,
+  };
 }

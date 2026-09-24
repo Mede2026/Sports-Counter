@@ -135,19 +135,40 @@ async function teamsFromCore(league) {
 
 // ESPN n'a pas de logo pour certaines ligues (la LCF) : on les prend chez
 // TheSportsDB, une base sportive gratuite, une fois par semaine.
-const SPORTSDB = 'https://www.thesportsdb.com/api/v1/json/3';
-const logoCache = diskCache('logos.sportsdb', TEAMS_TTL);
+const SPORTSDB = 'https://www.thesportsdb.com/api/v1/json';
+// Clés publiques gratuites de TheSportsDB : « 123 » depuis 2025, « 3 » avant.
+const SPORTSDB_KEYS = ['123', '3'];
+const logoCache = diskCache('logos.sportsdb.v2', TEAMS_TTL);
 const logoLoads = new Map();
+// idLigue -> raison du dernier échec, affichée par le Diagnostic.
+const logoErrors = new Map();
 const squash = (text) => String(text ?? '').normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase();
+// Espaces en « _ » et rien d'autre que des lettres : le relais Rust n'accepte
+// que des adresses simples, et TheSportsDB comprend les « _ ».
+const tsdbName = (text) => String(text ?? '').normalize('NFD').replace(/[^A-Za-z0-9 ]/g, '').trim().replace(/\s+/g, '_');
 
 async function getSportsDb(query) {
-  try {
-    return await viaPage(`${SPORTSDB}/${query}`);
-  } catch (err) {
-    if (!inTauri()) throw err;
-    return viaRust(`tsdb/${query}`);
+  let lastErr = null;
+  for (const key of SPORTSDB_KEYS) {
+    try {
+      let data;
+      try {
+        data = await viaPage(`${SPORTSDB}/${key}/${query}`);
+      } catch (err) {
+        if (!inTauri()) throw err;
+        data = await viaRust(`tsdb/${key}/${query}`);
+      }
+      if (data && typeof data === 'object') return data;
+    } catch (err) {
+      lastErr = err;
+    }
   }
+  throw lastErr ?? new Error('réponse vide');
 }
+
+const tsdbTeams = (data) => (data?.teams ?? [])
+  .map((t) => ({ name: squash(t?.strTeam), alt: squash(t?.strTeamAlternate), logo: t?.strBadge ?? t?.strTeamBadge ?? t?.strLogo ?? '' }))
+  .filter((t) => t.name && /^https:\/\//.test(t.logo));
 
 /** Logos de la ligue chez TheSportsDB : [{ name, alt, logo }] (noms tassés). */
 function sportsDbLogos(league) {
@@ -155,20 +176,78 @@ function sportsDbLogos(league) {
   const hit = logoCache.get(league.id);
   if (hit) return Promise.resolve(hit);
   if (!logoLoads.has(league.id)) {
-    const load = getSportsDb(`search_all_teams.php?l=${league.sportsDb.replace(/ /g, '_')}`)
-      .then((data) => {
-        const list = (data?.teams ?? [])
-          .map((t) => ({ name: squash(t?.strTeam), alt: squash(t?.strTeamAlternate), logo: t?.strBadge ?? t?.strTeamBadge ?? t?.strLogo ?? '' }))
-          .filter((t) => t.name && /^https:\/\//.test(t.logo));
-        if (list.length) logoCache.set(league.id, list);
-        return list;
-      })
-      .catch(() => [])
-      .finally(() => logoLoads.delete(league.id));
+    const load = (async () => {
+      const errors = [];
+      // Toute la ligue d'un coup : par son nom, puis par son numéro.
+      const queries = [`search_all_teams.php?l=${tsdbName(league.sportsDb)}`];
+      if (league.sportsDbId) queries.push(`lookup_all_teams.php?id=${league.sportsDbId}`);
+      for (const q of queries) {
+        try {
+          const list = tsdbTeams(await getSportsDb(q));
+          if (list.length) {
+            logoCache.set(league.id, list);
+            logoErrors.delete(league.id);
+            return list;
+          }
+          errors.push(`${q.split('.')[0]} : aucune équipe`);
+        } catch (err) {
+          errors.push(`${q.split('.')[0]} : ${errText(err).split('\n')[0]}`);
+        }
+      }
+      logoErrors.set(league.id, errors.join(' · '));
+      return [];
+    })().finally(() => logoLoads.delete(league.id));
     logoLoads.set(league.id, load);
   }
   return logoLoads.get(league.id);
 }
+
+/** Dernier recours : chercher une équipe par son nom chez TheSportsDB. */
+async function sportsDbTeamLogo(league, team) {
+  const names = [team.full, team.name].filter((n) => n && n.length > 3);
+  for (const name of names) {
+    try {
+      const list = tsdbTeams(await getSportsDb(`searchteams.php?t=${tsdbName(name)}`));
+      const logo = matchLogo(list, team.full, team.name, team.short) || (list.length === 1 ? list[0].logo : '');
+      if (logo) return { name: squash(name), alt: '', logo };
+    } catch (err) {
+      if (!logoErrors.has(league.id)) logoErrors.set(league.id, `searchteams : ${errText(err).split('\n')[0]}`);
+    }
+  }
+  return null;
+}
+
+// Photos de joueurs de secours (TheSportsDB), quand ESPN n'a pas de portrait
+// (joueurs des équipes nationales, par exemple). Gardées 30 jours, même
+// quand rien n'est trouvé : on ne redemande pas sans cesse le même nom.
+const playerPhotoCache = diskCache('photos.sportsdb', 30 * DAY);
+const playerPhotoLoads = new Map();
+
+/** Photo d'un joueur chez TheSportsDB, d'après son nom ; '' si introuvable. */
+export function sportsDbPlayerPhoto(name) {
+  const key = squash(name);
+  if (key.length < 5) return Promise.resolve('');
+  const hit = playerPhotoCache.get(key);
+  if (hit !== undefined) return Promise.resolve(hit);
+  if (!playerPhotoLoads.has(key)) {
+    const load = getSportsDb(`searchplayers.php?p=${tsdbName(name)}`)
+      .then((data) => {
+        const players = (data?.player ?? data?.players ?? []).filter((p) => p && typeof p === 'object');
+        const same = players.filter((p) => squash(p.strPlayer) === key);
+        const pick = same.length === 1 ? same[0] : players.length === 1 ? players[0] : null;
+        const photo = [pick?.strCutout, pick?.strThumb, pick?.strRender].find((u) => typeof u === 'string' && u.startsWith('https://')) ?? '';
+        playerPhotoCache.set(key, photo);
+        return photo;
+      })
+      .catch(() => '') // réseau : on réessaiera à la prochaine ouverture
+      .finally(() => playerPhotoLoads.delete(key));
+    playerPhotoLoads.set(key, load);
+  }
+  return playerPhotoLoads.get(key);
+}
+
+/** Pourquoi les logos de secours manquent, pour le Diagnostic ('' si tout va bien). */
+export const logoError = (leagueId) => logoErrors.get(leagueId) ?? '';
 
 /** Le logo d'une équipe d'après son nom complet, puis son surnom (« Alouettes »). */
 export function matchLogo(list, ...names) {
@@ -184,13 +263,39 @@ export function matchLogo(list, ...names) {
   return '';
 }
 
+// Après un échec, TheSportsDB n'est pas réinterrogé avant 30 min : le widget
+// rafraîchit toutes les 25 s pendant un match.
+const LOGO_RETRY_MS = 30 * 60 * 1000;
+const logoFailedAt = new Map();
+
 /** Complète, sur place, les logos manquants d'une liste d'équipes. */
 async function fillLogos(leagueId, teams) {
   const league = LEAGUES_BY_ID[leagueId];
   const missing = teams.filter((t) => t && !t.logo);
   if (!league?.sportsDb || !missing.length) return teams;
+  const apply = (list) => missing.forEach((t) => { if (!t.logo) t.logo = matchLogo(list, t.full, t.name, t.short); });
+
+  // 1. Ce qu'on sait déjà (gardé une semaine) : aucune requête.
+  apply(logoCache.get(leagueId) ?? []);
+  if (missing.every((t) => t.logo)) return teams;
+  if (Date.now() - (logoFailedAt.get(leagueId) ?? 0) < LOGO_RETRY_MS) return teams;
+
+  // 2. Toute la ligue d'un coup.
   const list = await sportsDbLogos(league);
-  if (list.length) for (const t of missing) t.logo = matchLogo(list, t.full, t.name, t.short);
+  apply(list);
+
+  // 3. Une recherche par équipe restante (au plus 12), gardée avec les autres.
+  const still = missing.filter((t) => !t.logo).slice(0, 12);
+  if (still.length) {
+    const found = (await Promise.all(still.map((t) => sportsDbTeamLogo(league, t)))).filter(Boolean);
+    if (found.length) {
+      const merged = [...(logoCache.get(leagueId) ?? list), ...found];
+      logoCache.set(leagueId, merged);
+      apply(merged);
+    }
+  }
+  if (missing.some((t) => !t.logo)) logoFailedAt.set(leagueId, Date.now());
+  else logoFailedAt.delete(leagueId);
   return teams;
 }
 
@@ -2319,6 +2424,68 @@ export function fetchYesterday(leagueId) {
  * Équipes qui ont retiré leur gardien pour un attaquant de plus, d'après les
  * jeux du match : [idÉquipe]. Vide si ESPN ne le signale pas.
  */
+// Infractions au hockey : le nom anglais d'ESPN -> le terme québécois.
+const INFRACTIONS_FR = [
+  [/too many men|too many players/i, 'Trop de joueurs sur la glace'],
+  [/goaltender interference|goalie interference/i, 'Obstruction sur le gardien'],
+  [/game misconduct/i, 'Inconduite de partie'],
+  [/misconduct/i, 'Inconduite'],
+  [/unsportsmanlike/i, 'Conduite antisportive'],
+  [/delay(ing)? (of )?game/i, 'Retarder le match'],
+  [/holding the stick/i, 'Retenir le bâton'],
+  [/high[- ]?stick/i, 'Bâton élevé'],
+  [/cross[- ]?check/i, 'Double-échec'],
+  [/interference/i, 'Obstruction'],
+  [/tripping/i, 'Faire trébucher'],
+  [/hooking/i, 'Accrocher'],
+  [/slashing/i, 'Cingler'],
+  [/holding/i, 'Retenir'],
+  [/roughing/i, 'Rudesse'],
+  [/fighting/i, 'Bagarre'],
+  [/boarding/i, 'Mise en échec contre la bande'],
+  [/charging/i, 'Charge'],
+  [/elbowing/i, 'Coup de coude'],
+  [/kneeing/i, 'Coup de genou'],
+  [/spearing/i, 'Darder'],
+  [/butt[- ]?ending/i, 'Six-pouces'],
+  [/head[- ]?butt/i, 'Coup de tête'],
+  [/illegal check to (the )?head|check to the head/i, 'Coup à la tête'],
+  [/check(ing)? from behind/i, 'Mise en échec par derrière'],
+  [/embellishment|diving/i, 'Embellissement'],
+  [/instigator/i, 'Instigateur'],
+  [/abuse of official/i, 'Abus envers un officiel'],
+  [/closing hand on puck|hand pass/i, 'Refermer la main sur la rondelle'],
+  [/broken stick/i, 'Bâton brisé'],
+  [/bench/i, 'Pénalité de banc'],
+];
+
+/** « Faire trébucher », d'après le texte d'une pénalité d'ESPN ; '' sinon. */
+export function infractionFr(text) {
+  return INFRACTIONS_FR.find(([re]) => re.test(String(text ?? '')))?.[1] ?? '';
+}
+
+/**
+ * Pénalités d'un match de hockey, d'après les jeux du résumé d'ESPN :
+ * [{ id, teamId, period, clock, who, minutes, infraction, text }].
+ */
+export async function fetchPenalties(leagueId, eventId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !eventId) return [];
+  const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
+  return (data?.plays ?? [])
+    .filter((p) => /penalty/i.test(p?.type?.text ?? '') && !isScoring(p))
+    .map((p) => {
+      const play = playOf(p);
+      const minutes = Number(/(\d+)\s*(?:min|minutes?)\b/i.exec(p?.text ?? '')?.[1]) || null;
+      return {
+        ...play,
+        id: String(p?.id ?? `${play.period}-${play.clock}-${p?.text ?? ''}`),
+        minutes,
+        infraction: infractionFr(`${p?.text ?? ''} ${p?.type?.text ?? ''}`),
+      };
+    });
+}
+
 export async function fetchPulledGoalies(leagueId, eventId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || !eventId) return [];
@@ -2360,6 +2527,7 @@ export async function probeLeague(leagueId) {
         text: [
           want ? `${teams.length}/${want} équipes` : `${teams.length} équipe${teams.length > 1 ? 's' : ''}`,
           bare ? `${bare} sans logo` : '',
+          bare && logoError(leagueId) ? `(${logoError(leagueId)})` : '',
         ].filter(Boolean).join(' · '),
       };
     } catch (err) {

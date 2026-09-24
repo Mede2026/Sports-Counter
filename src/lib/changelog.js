@@ -1,6 +1,16 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.5': [
+    '🖼️ Nouveau mode Fond d’écran : tes matchs, résultats, la forme et le classement de tes équipes deviennent ton fond d’écran. Clique sur un match pour l’ouvrir.',
+    '🎨 Fond d’écran personnalisable : couleur, photo, côté du panneau, sections affichées (Réglages → Fond d’écran).',
+    '🪟 Mode « Widget + fond d’écran » : le widget se cache quand tu vas sur le bureau.',
+    '🌈 Couleur « Équipe qui joue » : la couleur de ton équipe en match ; deux équipes : elles alternent toutes les 5 min, en fondu.',
+    '⛔ Notifications de pénalités au hockey : qui, pour quoi, combien de minutes, avantage numérique.',
+    '🧭 Calendrier, Classements, Réglages et Diagnostic en haut de la colonne.',
+    '🏈 Logos LCF : nouvelle méthode, et le Diagnostic dit pourquoi s’il en manque. Photos de secours pour les joueurs sans portrait ESPN.',
+    '🎾 Icônes ATP, WTA, golf et UFC partout dans le widget ; barres de statistiques de couleurs différentes ; nouvelle icône de l’app.',
+  ],
   '0.9.4': [
     '🏈 LCF : les vrais logos des équipes (pris chez TheSportsDB quand ESPN n’en a pas), partout dans l’app.',
     '📊 Classement en pré-saison : les matchs préparatoires ne comptent plus. Tout le monde part de zéro.',

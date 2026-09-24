@@ -24,7 +24,7 @@ const ESPN_BASE_V2: &str = "https://site.api.espn.com/apis/v2/sports";
 /// API « core » d'ESPN (meneurs de la ligue, fiches des joueurs), préfixe « core/ ».
 const ESPN_CORE: &str = "https://sports.core.api.espn.com";
 /// TheSportsDB, base sportive gratuite : seulement pour les logos manquants.
-const SPORTSDB: &str = "https://www.thesportsdb.com/api/v1/json/3";
+const SPORTSDB: &str = "https://www.thesportsdb.com/api/v1/json";
 /// Options du moteur WebView2, identiques pour TOUTES les fenêtres : elles
 /// partagent un même dossier de données, et WebView2 refuse d'ouvrir une
 /// fenêtre dont les options diffèrent des autres. Doit rester égale à
@@ -976,6 +976,79 @@ fn watch_fullscreen(app: AppHandle) {
     });
 }
 
+/* ---------- Mode « Widget + fond d'écran » ---------- */
+
+/// Vrai en mode « Widget + fond d'écran » : le widget s'efface sur le bureau,
+/// où le fond d'écran montre déjà les infos.
+static HIDE_ON_DESKTOP: AtomicBool = AtomicBool::new(false);
+/// Vrai si c'est cette surveillance qui a caché le widget.
+static HIDDEN_FOR_DESKTOP: AtomicBool = AtomicBool::new(false);
+static DESKTOP_WATCH_STARTED: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn set_hide_on_desktop(app: AppHandle, enabled: bool) {
+    HIDE_ON_DESKTOP.store(enabled, Ordering::SeqCst);
+    if !enabled {
+        // Mode quitté : le widget n'est pas remontré ici, le nouveau mode décide.
+        HIDDEN_FOR_DESKTOP.store(false, Ordering::SeqCst);
+    }
+    if enabled && !DESKTOP_WATCH_STARTED.swap(true, Ordering::SeqCst) {
+        watch_desktop_focus(app);
+    }
+}
+
+/// Vrai quand la fenêtre au premier plan est le bureau de Windows (clic sur
+/// le bureau, Win + D, toutes les fenêtres réduites).
+#[cfg(windows)]
+fn desktop_in_front() -> bool {
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetForegroundWindow() -> isize;
+        fn GetClassNameW(hwnd: isize, name: *mut u16, max: i32) -> i32;
+    }
+    // SAFETY : tampon local, taille donnée ; une fenêtre nulle fait échouer l'appel.
+    unsafe {
+        let fg = GetForegroundWindow();
+        let mut name = [0u16; 32];
+        let len = GetClassNameW(fg, name.as_mut_ptr(), name.len() as i32).max(0) as usize;
+        matches!(
+            String::from_utf16_lossy(&name[..len]).as_str(),
+            "Progman" | "WorkerW"
+        )
+    }
+}
+
+#[cfg(not(windows))]
+fn desktop_in_front() -> bool {
+    false
+}
+
+/// Cache le widget pendant que le bureau est au premier plan, et le remontre
+/// ensuite — seulement si c'est cette surveillance qui l'avait caché.
+fn watch_desktop_focus(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(300));
+        let Some(win) = app.get_webview_window(WIDGET) else {
+            continue;
+        };
+        let hide = HIDE_ON_DESKTOP.load(Ordering::SeqCst) && desktop_in_front();
+        let hidden_by_us = HIDDEN_FOR_DESKTOP.load(Ordering::SeqCst);
+        if hide && !hidden_by_us {
+            if win.is_visible().unwrap_or(false) {
+                let _ = win.hide();
+                HIDDEN_FOR_DESKTOP.store(true, Ordering::SeqCst);
+            }
+        } else if !hide && hidden_by_us {
+            HIDDEN_FOR_DESKTOP.store(false, Ordering::SeqCst);
+            // Pas pendant un jeu en plein écran : l'autre surveillance s'en charge.
+            if !HIDDEN_FOR_FULLSCREEN.load(Ordering::SeqCst) {
+                let _ = win.show();
+                place_layer(&win);
+            }
+        }
+    });
+}
+
 /* ---------- Notifications de l'app ---------- */
 
 /// Remet une fenêtre « toujours au-dessus » en tête des fenêtres de ce type.
@@ -1088,6 +1161,514 @@ fn show_toast(app: AppHandle) {
         to_front(&win);
         force_topmost(&win);
     }
+}
+
+/* ---------- Fond d'écran avec les infos ---------- */
+
+/// Taille maximale d'un logo relayé (octets).
+const IMAGE_MAX_BYTES: usize = 3 * 1024 * 1024;
+
+/// Vrai pour une adresse d'image permise : les logos d'ESPN et de TheSportsDB.
+fn image_url_is_allowed(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("https://") else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    host == "a.espncdn.com"
+        || host.ends_with(".espncdn.com")
+        || host == "www.thesportsdb.com"
+        || host == "r2.thesportsdb.com"
+}
+
+/// Relaie les octets d'un logo. Le fond d'écran est dessiné dans un canevas :
+/// une image venue d'un autre site le « salirait » et empêcherait de
+/// l'enregistrer, alors qu'une image reçue en octets reste utilisable.
+#[tauri::command]
+async fn image_bytes(url: String) -> Result<tauri::ipc::Response, String> {
+    if !image_url_is_allowed(&url) {
+        return Err("adresse d'image refusée".into());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(12))
+        .user_agent(BROWSER_UA)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("réseau : {e}"))?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    let bytes = res.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > IMAGE_MAX_BYTES {
+        return Err("image trop lourde".into());
+    }
+    Ok(tauri::ipc::Response::new(bytes.to_vec()))
+}
+
+/// Dossier des fonds d'écran de l'app.
+fn wallpaper_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("fond-ecran");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+/// Fond d'écran actuel de Windows (chemin du fichier, vide pour une couleur unie).
+#[cfg(windows)]
+fn current_wallpaper() -> Option<String> {
+    let mut buf = [0u16; 1024];
+    // SAFETY : le tampon vit pendant l'appel et sa taille est donnée.
+    let ok = unsafe {
+        SystemParametersInfoW(
+            SPI_GETDESKWALLPAPER,
+            buf.len() as u32,
+            buf.as_mut_ptr().cast(),
+            0,
+        )
+    };
+    if ok == 0 {
+        return None;
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    Some(String::from_utf16_lossy(&buf[..len]))
+}
+
+/// Change le fond d'écran de Windows pour ce fichier (vide : couleur unie).
+#[cfg(windows)]
+fn apply_wallpaper(path: &str) -> Result<(), String> {
+    let mut wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+    // SAFETY : chaîne terminée par un zéro, vivante pendant l'appel.
+    let ok = unsafe {
+        SystemParametersInfoW(
+            SPI_SETDESKWALLPAPER,
+            0,
+            wide.as_mut_ptr().cast(),
+            SPIF_UPDATEINIFILE | SPIF_SENDCHANGE,
+        )
+    };
+    if ok == 0 {
+        Err("Windows a refusé le fond d'écran".into())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+#[link(name = "user32")]
+extern "system" {
+    fn SystemParametersInfoW(
+        action: u32,
+        param: u32,
+        pv: *mut std::ffi::c_void,
+        win_ini: u32,
+    ) -> i32;
+}
+#[cfg(windows)]
+const SPI_GETDESKWALLPAPER: u32 = 0x0073;
+#[cfg(windows)]
+const SPI_SETDESKWALLPAPER: u32 = 0x0014;
+#[cfg(windows)]
+const SPIF_UPDATEINIFILE: u32 = 0x01;
+#[cfg(windows)]
+const SPIF_SENDCHANGE: u32 = 0x02;
+
+/// Clé du registre où Windows range la façon d'afficher le fond d'écran.
+#[cfg(windows)]
+const DESKTOP_KEY: &str = "Control Panel\\Desktop";
+
+#[cfg(windows)]
+#[link(name = "advapi32")]
+extern "system" {
+    fn RegGetValueW(
+        key: isize,
+        sub_key: *const u16,
+        value: *const u16,
+        flags: u32,
+        kind: *mut u32,
+        data: *mut std::ffi::c_void,
+        size: *mut u32,
+    ) -> i32;
+    fn RegSetKeyValueW(
+        key: isize,
+        sub_key: *const u16,
+        value: *const u16,
+        kind: u32,
+        data: *const std::ffi::c_void,
+        size: u32,
+    ) -> i32;
+}
+#[cfg(windows)]
+const HKEY_CURRENT_USER: isize = 0x8000_0001_u32 as i32 as isize;
+
+#[cfg(windows)]
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// Valeur texte de HKCU\Control Panel\Desktop (« WallpaperStyle »…).
+#[cfg(windows)]
+fn desktop_value(name: &str) -> Option<String> {
+    const RRF_RT_REG_SZ: u32 = 0x2;
+    let mut buf = [0u16; 64];
+    let mut size = (buf.len() * 2) as u32;
+    let (key, value) = (wide(DESKTOP_KEY), wide(name));
+    // SAFETY : chaînes terminées par zéro et tampon de la taille annoncée.
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    Some(String::from_utf16_lossy(&buf[..len]))
+}
+
+#[cfg(windows)]
+fn set_desktop_value(name: &str, data: &str) {
+    const REG_SZ: u32 = 1;
+    let (key, value, text) = (wide(DESKTOP_KEY), wide(name), wide(data));
+    // SAFETY : chaînes terminées par zéro ; la taille compte le zéro final.
+    unsafe {
+        RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            key.as_ptr(),
+            value.as_ptr(),
+            REG_SZ,
+            text.as_ptr().cast(),
+            (text.len() * 2) as u32,
+        );
+    }
+}
+
+/// Façon d'afficher le fond d'écran : (style, mosaïque).
+#[cfg(windows)]
+fn wallpaper_fit() -> Option<(String, String)> {
+    Some((
+        desktop_value("WallpaperStyle")?,
+        desktop_value("TileWallpaper").unwrap_or_else(|| "0".into()),
+    ))
+}
+
+#[cfg(windows)]
+fn set_wallpaper_fit(style: &str, tile: &str) {
+    set_desktop_value("WallpaperStyle", style);
+    set_desktop_value("TileWallpaper", tile);
+}
+
+#[cfg(not(windows))]
+fn wallpaper_fit() -> Option<(String, String)> {
+    None
+}
+
+#[cfg(not(windows))]
+fn set_wallpaper_fit(_style: &str, _tile: &str) {}
+
+#[cfg(not(windows))]
+fn current_wallpaper() -> Option<String> {
+    None
+}
+
+#[cfg(not(windows))]
+fn apply_wallpaper(_path: &str) -> Result<(), String> {
+    Err("seulement sous Windows".into())
+}
+
+/// Reçoit l'image (JPEG) dessinée par le widget et en fait le fond d'écran.
+/// La première fois, le fond d'écran d'origine est noté pour le remettre.
+#[tauri::command]
+fn set_wallpaper(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("image attendue".into());
+    };
+    // Un JPEG commence toujours par FF D8 FF.
+    if bytes.len() < 4 || bytes[..3] != [0xFF, 0xD8, 0xFF] || bytes.len() > 40 * 1024 * 1024 {
+        return Err("image invalide".into());
+    }
+    let dir = wallpaper_dir(&app)?;
+    let original = dir.join("origine.txt");
+    if !original.exists() {
+        if let Some(path) = current_wallpaper() {
+            // Déjà un de nos fonds (l'app a été réinstallée) : rien à noter.
+            if !path.starts_with(&*dir.to_string_lossy()) {
+                std::fs::write(&original, path).map_err(|e| e.to_string())?;
+                if let Some((style, tile)) = wallpaper_fit() {
+                    let _ =
+                        std::fs::write(dir.join("origine-style.txt"), format!("{style}\n{tile}"));
+                }
+            }
+        }
+    }
+    // « Remplir » : l'image couvre l'écran sans déformation. Les zones
+    // cliquables (les matchs) tombent alors au bon endroit.
+    set_wallpaper_fit("10", "0");
+    // Deux noms en alternance : avec toujours le même, Windows peut garder
+    // l'ancienne image en mémoire.
+    let flip = NEXT_WALLPAPER.fetch_add(1, Ordering::SeqCst) % 2;
+    let file = dir.join(format!("sports-counter-{flip}.jpg"));
+    std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
+    apply_wallpaper(&file.to_string_lossy())
+}
+
+static NEXT_WALLPAPER: AtomicU64 = AtomicU64::new(0);
+
+/// Image choisie pour l'arrière-plan du fond d'écran d'infos.
+const PHOTO_FILE: &str = "photo-choisie";
+
+/// Vrai pour une image que Windows et le canevas savent lire.
+fn is_image(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+        || bytes.starts_with(b"\x89PNG")
+        || bytes.starts_with(b"BM")
+        || (bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP")
+}
+
+/// Photo d'arrière-plan : celle choisie dans les réglages, sinon le fond
+/// d'écran d'origine de l'utilisateur.
+#[tauri::command]
+fn wallpaper_photo(app: AppHandle) -> Result<tauri::ipc::Response, String> {
+    let dir = wallpaper_dir(&app)?;
+    let chosen = dir.join(PHOTO_FILE);
+    let path = if chosen.exists() {
+        chosen
+    } else if let Ok(original) = std::fs::read_to_string(dir.join("origine.txt")) {
+        std::path::PathBuf::from(original.trim())
+    } else {
+        std::path::PathBuf::from(current_wallpaper().unwrap_or_default())
+    };
+    // Jamais un de nos propres fonds : l'image s'afficherait dans elle-même.
+    if path.as_os_str().is_empty() || (path.starts_with(&dir) && !path.ends_with(PHOTO_FILE)) {
+        return Err("aucune photo".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    if bytes.len() > 40 * 1024 * 1024 || !is_image(&bytes) {
+        return Err("photo illisible".into());
+    }
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Garde l'image choisie dans les réglages ; vide : reprendre la sienne.
+#[tauri::command]
+fn save_wallpaper_photo(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("image attendue".into());
+    };
+    let file = wallpaper_dir(&app)?.join(PHOTO_FILE);
+    if bytes.is_empty() {
+        let _ = std::fs::remove_file(file);
+        return Ok(());
+    }
+    if bytes.len() > 40 * 1024 * 1024 || !is_image(bytes) {
+        return Err("format d'image non pris en charge (JPEG, PNG, BMP ou WebP)".into());
+    }
+    std::fs::write(file, bytes).map_err(|e| e.to_string())
+}
+
+/// Zone cliquable du fond d'écran : un match dessiné dans l'image.
+#[derive(serde::Deserialize, Clone)]
+struct WallSpot {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    league: String,
+    event: String,
+}
+
+/// Zones cliquables, avec la taille de l'image où elles ont été mesurées.
+struct WallSpots {
+    width: f64,
+    height: f64,
+    spots: Vec<WallSpot>,
+}
+
+static WALL_SPOTS: Mutex<WallSpots> = Mutex::new(WallSpots {
+    width: 0.0,
+    height: 0.0,
+    spots: Vec::new(),
+});
+static WALL_CLICKS_STARTED: AtomicBool = AtomicBool::new(false);
+
+/// Le widget donne l'emplacement des matchs dans l'image : un clic sur le
+/// bureau à cet endroit ouvre la fenêtre Match, comme un clic dans le widget.
+#[tauri::command]
+fn set_wallpaper_spots(app: AppHandle, width: f64, height: f64, spots: Vec<WallSpot>) {
+    let spots: Vec<WallSpot> = spots
+        .into_iter()
+        .filter(|s| id_is_safe(&s.league) && id_is_safe(&s.event))
+        .take(64)
+        .collect();
+    *WALL_SPOTS.lock().unwrap() = WallSpots {
+        width,
+        height,
+        spots,
+    };
+    if !WALL_CLICKS_STARTED.swap(true, Ordering::SeqCst) {
+        watch_desktop_clicks(app);
+    }
+}
+
+/// Match sous ce point de l'image, s'il y en a un.
+fn spot_at(x: f64, y: f64) -> Option<(String, String)> {
+    let wall = WALL_SPOTS.lock().unwrap();
+    wall.spots
+        .iter()
+        .find(|s| x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h)
+        .map(|s| (s.league.clone(), s.event.clone()))
+}
+
+/// Surveille les clics sur le bureau (et seulement là) tant que le fond
+/// d'écran d'infos est posé. On lit l'état du bouton toutes les 35 ms, sans
+/// crochet système : rien ne s'intercale entre la souris et les autres logiciels.
+#[cfg(windows)]
+fn watch_desktop_clicks(app: AppHandle) {
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+    #[repr(C)]
+    #[derive(Default)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+    #[repr(C)]
+    #[derive(Default)]
+    struct MonitorInfo {
+        size: u32,
+        monitor: Rect,
+        work: Rect,
+        flags: u32,
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetAsyncKeyState(key: i32) -> i16;
+        fn GetCursorPos(point: *mut Point) -> i32;
+        fn WindowFromPoint(point: Point) -> isize;
+        fn GetAncestor(hwnd: isize, flags: u32) -> isize;
+        fn GetClassNameW(hwnd: isize, name: *mut u16, max: i32) -> i32;
+        fn MonitorFromPoint(point: Point, flags: u32) -> isize;
+        fn GetMonitorInfoW(monitor: isize, info: *mut MonitorInfo) -> i32;
+    }
+    const VK_LBUTTON: i32 = 0x01;
+    const GA_ROOT: u32 = 2;
+    const MONITOR_DEFAULTTONEAREST: u32 = 2;
+
+    // SAFETY (toute la fonction) : appels de user32 avec des pointeurs vers
+    // des variables locales valides ; une fenêtre disparue fait seulement
+    // échouer l'appel.
+    let on_desktop = |p: Point| unsafe {
+        let root = GetAncestor(WindowFromPoint(p), GA_ROOT);
+        let mut name = [0u16; 32];
+        let len = GetClassNameW(root, name.as_mut_ptr(), name.len() as i32).max(0) as usize;
+        matches!(
+            String::from_utf16_lossy(&name[..len]).as_str(),
+            "Progman" | "WorkerW"
+        )
+    };
+
+    std::thread::spawn(move || {
+        let mut down: Option<Point> = None;
+        loop {
+            let idle = WALL_SPOTS.lock().unwrap().spots.is_empty();
+            std::thread::sleep(Duration::from_millis(if idle { 500 } else { 35 }));
+            if idle {
+                down = None;
+                continue;
+            }
+            let pressed = unsafe { GetAsyncKeyState(VK_LBUTTON) } as u16 & 0x8000 != 0;
+            let mut p = Point::default();
+            if unsafe { GetCursorPos(&mut p) } == 0 {
+                continue;
+            }
+            match (pressed, down) {
+                (true, None) => down = Some(p),
+                (false, Some(start)) => {
+                    down = None;
+                    // Un vrai clic : pas un glisser (sélection de fichiers).
+                    if (p.x - start.x).abs() > 6 || (p.y - start.y).abs() > 6 || !on_desktop(p) {
+                        continue;
+                    }
+                    let mut info = MonitorInfo {
+                        size: std::mem::size_of::<MonitorInfo>() as u32,
+                        ..Default::default()
+                    };
+                    let monitor = unsafe { MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST) };
+                    if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0 {
+                        continue;
+                    }
+                    // La même image remplit chaque écran : on ramène le point
+                    // à ses coordonnées dans l'image.
+                    let (mw, mh) = (
+                        (info.monitor.right - info.monitor.left).max(1) as f64,
+                        (info.monitor.bottom - info.monitor.top).max(1) as f64,
+                    );
+                    let (iw, ih) = {
+                        let wall = WALL_SPOTS.lock().unwrap();
+                        (wall.width, wall.height)
+                    };
+                    if iw <= 0.0 || ih <= 0.0 {
+                        continue;
+                    }
+                    // Remplissage « couverture » : l'échelle la plus grande.
+                    let k = (mw / iw).max(mh / ih);
+                    let ox = (mw - iw * k) / 2.0;
+                    let oy = (mh - ih * k) / 2.0;
+                    let x = ((p.x - info.monitor.left) as f64 - ox) / k;
+                    let y = ((p.y - info.monitor.top) as f64 - oy) / k;
+                    if let Some((league, event)) = spot_at(x, y) {
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = open_match(app, league, event).await;
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn watch_desktop_clicks(_app: AppHandle) {}
+
+/// Remet le fond d'écran d'origine (en quittant le mode « Fond d'écran »).
+#[tauri::command]
+fn restore_wallpaper(app: AppHandle) -> Result<(), String> {
+    let dir = wallpaper_dir(&app)?;
+    let original = dir.join("origine.txt");
+    WALL_SPOTS.lock().unwrap().spots.clear();
+    let Ok(path) = std::fs::read_to_string(&original) else {
+        return Ok(()); // jamais changé
+    };
+    // Sa façon d'afficher le fond d'écran d'abord : Windows la relit en le posant.
+    if let Ok(fit) = std::fs::read_to_string(dir.join("origine-style.txt")) {
+        let mut parts = fit.lines();
+        if let (Some(style), Some(tile)) = (parts.next(), parts.next()) {
+            set_wallpaper_fit(style.trim(), tile.trim());
+        }
+    }
+    apply_wallpaper(path.trim())?;
+    let _ = std::fs::remove_file(original);
+    let _ = std::fs::remove_file(dir.join("origine-style.txt"));
+    Ok(())
 }
 
 /* ---------- 9. Mises à jour ---------- */
@@ -1203,6 +1784,12 @@ fn set_widget_visible(app: AppHandle, visible: bool) {
     if visible {
         if HIDE_FULLSCREEN.load(Ordering::SeqCst) && fullscreen_app_running() {
             HIDDEN_FOR_FULLSCREEN.store(true, Ordering::SeqCst);
+            return;
+        }
+        // Sur le bureau en mode « Widget + fond d'écran » : il reviendra en
+        // quittant le bureau.
+        if HIDE_ON_DESKTOP.load(Ordering::SeqCst) && desktop_in_front() {
+            HIDDEN_FOR_DESKTOP.store(true, Ordering::SeqCst);
             return;
         }
         if !win.is_visible().unwrap_or(false) {
@@ -1372,7 +1959,14 @@ pub fn run() {
             app_version,
             check_update,
             install_update,
-            set_widget_visible
+            set_widget_visible,
+            image_bytes,
+            set_wallpaper,
+            restore_wallpaper,
+            wallpaper_photo,
+            save_wallpaper_photo,
+            set_wallpaper_spots,
+            set_hide_on_desktop
         ])
         .manage(PendingUpdate(Mutex::new(None)))
         .setup(move |app| {

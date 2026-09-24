@@ -53,6 +53,7 @@ const DEFAULTS = {
   translate: true,
   // Résultats d'hier de tes équipes, en notification le matin.
   morningDigest: true,
+  notifyPenalties: true,
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).
   shortcuts: { ...DEFAULT_SHORTCUTS },
 };

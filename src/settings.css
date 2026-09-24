@@ -662,3 +662,15 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
   font-size: 12.5px;
   line-height: 1.4;
 }
+
+/* Fond d'écran : aperçu en 16:9, à la largeur de la section. */
+.wall-preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  margin: 4px 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #0a0e17;
+}

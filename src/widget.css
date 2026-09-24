@@ -43,7 +43,7 @@ html, body {
     0 2px 8px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
   overflow: hidden;
-  transition: opacity 160ms ease;
+  transition: opacity 160ms ease, --team 4s ease, --team2 4s ease;
 }
 
 /* Couleurs de l'équipe choisie : un liseré fin en haut et une légère teinte
@@ -52,6 +52,25 @@ html, body {
    Le liseré est une ombre intérieure et non un élément ajouté : une ombre
    suit toujours les coins arrondis, alors qu'un élément ajouté débordait par
    endroits sous WebView2 et se voyait à plat par-dessus les coins. */
+/* Couleurs d'équipe animables : « Équipe qui joue » passe de l'une à
+   l'autre en fondu au lieu de sauter d'un coup. */
+@property --team { syntax: '<color>'; inherits: true; initial-value: #4aa3ff; }
+@property --team2 { syntax: '<color>'; inherits: true; initial-value: transparent; }
+/* Deux équipes favorites en même temps : un dégradé de l'une à l'autre. */
+.widget--team.widget--duo {
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--team) 46%, transparent),
+      color-mix(in srgb, var(--team) 14%, transparent) 45%,
+      color-mix(in srgb, var(--team2) 14%, transparent) 55%,
+      color-mix(in srgb, var(--team2) 40%, transparent)),
+    var(--surface);
+  box-shadow:
+    inset 0 3px 0 var(--team),
+    inset 0 -3px 0 var(--team2),
+    0 18px 48px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
 .widget--team {
   /* Plus présente : forte en haut, et une teinte qui reste jusqu'en bas. */
   background:

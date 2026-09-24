@@ -41,7 +41,14 @@ const football = (bg) => svg(`
   <ellipse cx="32" cy="32" rx="20" ry="12" transform="rotate(-35 32 32)" fill="#9b5a2e"/>
   <path d="M25 39l14-14M28 30l3 3M31 27l3 3M34 24l3 3" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>`);
 
+/** Octogone de combat, pour l'UFC. */
+const octagon = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <path d="M24 12h16l12 12v16L40 52H24L12 40V24z" fill="none" stroke="#fff" stroke-width="3.2" stroke-linejoin="round"/>
+  <text x="32" y="37.5" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="13" fill="#fff">UFC</text>`);
+
 export const LEAGUE_ICONS = {
+  ufc: octagon('#c8102e'),
   atp: tennis('#1d4f91'),
   wta: tennis('#6a2c91'),
   pga: golf('#12344d'),

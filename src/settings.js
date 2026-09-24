@@ -11,6 +11,7 @@ import { NHL_TEAMS } from './lib/teams-nhl.js';
 import { autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 import { faceHtml, bindFaces } from './lib/face.js';
 import { ofTeam } from './lib/events.js';
+import { wallpaperOptions, renderWallpaper, readModel, buildModel } from './lib/wallpaper.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -543,9 +544,10 @@ function renderThemeOptions() {
   const favs = prefs.favorites.filter((k) => prefs.favInfo[k]?.color);
   select.innerHTML = [
     `<option value="">Aucune (neutre)</option>`,
+    `<option value="live">Équipe qui joue (2 équipes : alterne toutes les 5 min)</option>`,
     ...favs.map((k) => `<option value="${k}">${prefs.favInfo[k].name}</option>`),
   ].join('');
-  select.value = favs.includes(prefs.theme) ? prefs.theme : '';
+  select.value = favs.includes(prefs.theme) || prefs.theme === 'live' ? prefs.theme : '';
   select.disabled = !favs.length;
 }
 
@@ -622,6 +624,7 @@ function bindOptions() {
   mode.value = prefs.widgetMode ?? 'always';
   mode.addEventListener('change', () => {
     prefs.widgetMode = mode.value;
+    syncWallRows();
     // Sans widget ni notifications, l'app ne montrerait plus rien.
     if (mode.value === 'never' && prefs.notifications === false) {
       prefs.notifications = true;
@@ -659,6 +662,8 @@ function bindOptions() {
   bindSwitch('optShowForm', 'showForm');
   bindSwitch('optTranslate', 'translate');
   bindSwitch('optDigest', 'morningDigest');
+  bindSwitch('optPenalties', 'notifyPenalties');
+  initWallpaper();
   bindSwitch('optGpMode', 'gpMode');
 
   renderPlayerChips();
@@ -746,6 +751,121 @@ function bindSwitch(id, key) {
   const box = document.getElementById(id);
   box.checked = prefs[key] !== false;
   box.addEventListener('change', () => { prefs[key] = box.checked; savePrefs(prefs); });
+}
+
+/* ---------- Fond d'écran ---------- */
+
+const wallEl = (id) => document.getElementById(id);
+
+/** Enregistre une option du fond d'écran ; le widget redessine l'image. */
+function setWall(patch) {
+  prefs.wallpaper = { ...(prefs.wallpaper ?? {}), ...patch };
+  savePrefs(prefs);
+  syncWallRows();
+  drawWallPreview();
+}
+
+/** Lignes « Photo » selon l'arrière-plan, et bouton « Utiliser » selon le mode. */
+function syncWallRows() {
+  const o = wallpaperOptions(prefs);
+  wallEl('wallPhotoRow').hidden = o.bg !== 'photo';
+  wallEl('wallDimRow').hidden = o.bg !== 'photo';
+  const on = ['wallpaper', 'both'].includes(prefs.widgetMode);
+  wallEl('btnWallOn').textContent = on ? 'Actif ✓' : 'Utiliser';
+  wallEl('btnWallOn').disabled = on;
+}
+
+let wallDrawing = null;
+
+/** Aperçu avant la 1re image du widget : des matchs et des tableaux de démonstration. */
+function demoWallModel() {
+  const games = demoEvents();
+  const hab = games.find((g) => g.home?.abbr === 'MTL');
+  const teamGames = hab ? [{ key: `nhl:${hab.home.id}`, games: [
+    ...['V', 'V', 'D', 'V', 'N'].map((r, i) => ({
+      ...hab, id: `demo-past-${i}`, state: 'post', startsAt: new Date(Date.now() - (i + 2) * 864e5),
+      home: { ...hab.home, winner: r === 'V' }, away: { ...hab.away, winner: r === 'D' },
+    })),
+  ] }] : [];
+  const favInfo = hab ? { [`nhl:${hab.home.id}`]: { name: hab.home.name, abbr: hab.home.abbr, logo: hab.home.logo } } : {};
+  const division = {
+    title: 'Division Atlantique',
+    rows: [['TOR', 14, 10], ['MTL', 12, 9], ['BOS', 11, 9], ['TB', 10, 8], ['FLA', 9, 8], ['DET', 8, 9], ['OTT', 7, 8], ['BUF', 5, 9]]
+      .map(([abbr, points, gp], i) => ({ rank: i + 1, abbr, logo: '', points: String(points), gp: String(gp), fav: abbr === 'MTL' })),
+  };
+  const f1 = [['Andrea Kimi Antonelli', 312], ['George Russell', 298], ['Max Verstappen', 276], ['Lando Norris', 251], ['Charles Leclerc', 230]]
+    .map(([name, points], i) => ({ rank: i + 1, name, points: String(points) }));
+  return buildModel({ today: games, teamGames, favInfo, division, f1, now: new Date() });
+}
+
+/** Aperçu : le dernier contenu du widget, ou des matchs de démonstration. */
+async function drawWallPreview() {
+  const run = async () => {
+    const model = readModel() ?? demoWallModel();
+    await renderWallpaper(wallEl('wallPreview'), model, prefs);
+  };
+  // Un dessin à la fois ; le dernier réglage l'emporte.
+  wallDrawing = (wallDrawing ?? Promise.resolve()).then(run, run).catch(() => {});
+}
+
+function initWallpaper() {
+  const o = wallpaperOptions(prefs);
+  const pick = (id, key, read = (x) => x.value) => {
+    const box = wallEl(id);
+    if (box.type === 'checkbox') box.checked = o[key] !== false;
+    else box.value = String(o[key] ?? '');
+    box.addEventListener(box.type === 'range' ? 'input' : 'change', () => setWall({ [key]: box.type === 'checkbox' ? box.checked : read(box) }));
+  };
+  pick('wallBg', 'bg');
+  pick('wallColor', 'color');
+  pick('wallSide', 'side');
+  pick('wallDim', 'dim', (x) => Number(x.value));
+  pick('wallHero', 'hero');
+  pick('wallToday', 'today');
+  pick('wallUpcoming', 'upcoming');
+  pick('wallResults', 'results');
+  pick('wallStandings', 'standings');
+  pick('wallForm', 'form');
+  pick('wallDivision', 'division');
+  pick('wallF1', 'f1');
+
+  wallEl('btnWallOn').addEventListener('click', () => {
+    prefs.widgetMode = 'wallpaper';
+    document.getElementById('optWidgetMode').value = 'wallpaper';
+    savePrefs(prefs);
+    syncWallRows();
+  });
+
+  const msg = wallEl('wallPhotoMsg');
+  const sendPhoto = async (bytes) => {
+    if (!inTauri()) { msg.textContent = 'Dans l’app seulement.'; return false; }
+    try {
+      await window.__TAURI__.core.invoke('save_wallpaper_photo', bytes);
+      return true;
+    } catch (err) {
+      msg.textContent = errText(err);
+      return false;
+    }
+  };
+  wallEl('btnWallPhoto').addEventListener('click', () => wallEl('wallPhotoFile').click());
+  wallEl('wallPhotoFile').addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (await sendPhoto(new Uint8Array(await file.arrayBuffer()))) {
+      msg.textContent = `Image choisie : ${file.name}`;
+      setWall({ bg: 'photo', photoVer: Date.now() });
+    }
+  });
+  wallEl('btnWallPhotoReset').addEventListener('click', async () => {
+    if (await sendPhoto(new Uint8Array(0))) {
+      msg.textContent = 'Ton fond d’écran d’origine.';
+      setWall({ photoVer: Date.now() });
+    }
+  });
+
+  syncWallRows();
+  drawWallPreview();
 }
 
 /* ---------- Joueurs favoris (hockey) ---------- */
@@ -1250,7 +1370,7 @@ function calRow(g) {
   let body;
   if (g.kind === 'golf') {
     const lead = state !== 'pre' ? g.players?.[0] : null;
-    body = `${crestHtml({ logo: g.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
+    body = `${crestHtml({ logo: g.logo || league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
       <span class="cal__title">${g.title}</span>
       ${lead ? `<span class="cal__res">${state === 'post' ? '🏆' : '1.'} ${lead.short || lead.name} ${lead.score}</span>` : ''}`;
   } else if (g.kind === 'tennis') {
@@ -1265,7 +1385,7 @@ function calRow(g) {
     // Tes combattants à l'affiche de ce gala.
     const mine = (g.fights ?? []).flatMap((f) => [f.a, f.b])
       .filter((x) => (prefs.favFighters ?? []).some((fav) => sameDriver(x, fav)));
-    body = `${crestHtml({ logo: g.logo, abbr: 'UFC', color: league.accent }, 'crest-sm')}
+    body = `${crestHtml({ logo: g.logo || league.logo, abbr: 'UFC', color: league.accent }, 'crest-sm')}
       <span class="cal__title">${g.title}</span>
       ${mine.length ? `<span class="cal__fav">⭐ ${mine.map((x) => x.name).join(', ')}</span>` : ''}
       ${w ? `<span class="cal__res">🏆 ${w.name}</span>` : ''}`;
@@ -1521,6 +1641,12 @@ document.getElementById('btnClose').addEventListener('click', async () => {
 
 el.search.addEventListener('input', () => { query = el.search.value; renderTeams(); });
 el.navPrefs.addEventListener('click', showPrefs);
+// Diagnostic : sa propre entrée, qui mène à sa section et lance le test.
+document.getElementById('navDiag').addEventListener('click', () => {
+  showPrefs();
+  document.getElementById('diagGroup').scrollIntoView({ block: 'start' });
+  if (!document.getElementById('diag').innerHTML.trim()) runDiagnostic();
+});
 el.navCalendar.addEventListener('click', showCalendar);
 el.navStandings.addEventListener('click', showStandings);
 document.getElementById('standingsLeague').addEventListener('change', (e) => { standingsLeague = e.target.value; loadStandings(); });
