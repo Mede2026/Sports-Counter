@@ -660,7 +660,14 @@ function bindOptions() {
   look.addEventListener('change', () => { prefs.widgetTheme = look.value; savePrefs(prefs); });
 
   bindSwitch('optShowForm', 'showForm');
-  bindSwitch('optShowRecords', 'showRecords');
+  bindSwitch('optShowRecords', 'widgetRecords');
+  const corners = document.getElementById('optCorners');
+  corners.value = prefs.widgetCorners ?? 'round';
+  corners.addEventListener('change', () => {
+    if (corners.value === 'round') delete prefs.widgetCorners;
+    else prefs.widgetCorners = corners.value;
+    savePrefs(prefs);
+  });
   bindSwitch('optTranslate', 'translate');
   bindSwitch('optDigest', 'morningDigest');
   bindSwitch('optPenalties', 'notifyPenalties');

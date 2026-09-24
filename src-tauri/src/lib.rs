@@ -25,6 +25,8 @@ const ESPN_BASE_V2: &str = "https://site.api.espn.com/apis/v2/sports";
 const ESPN_CORE: &str = "https://sports.core.api.espn.com";
 /// TheSportsDB, base sportive gratuite : seulement pour les logos manquants.
 const SPORTSDB: &str = "https://www.thesportsdb.com/api/v1/json";
+/// API de Wikipédia : seulement pour les logos manquants.
+const WIKI_API: &str = "https://en.wikipedia.org/w/api.php";
 /// Options du moteur WebView2, identiques pour TOUTES les fenêtres : elles
 /// partagent un même dossier de données, et WebView2 refuse d'ouvrir une
 /// fenêtre dont les options diffèrent des autres. Doit rester égale à
@@ -129,6 +131,9 @@ async fn espn_get(path: String) -> Result<String, String> {
         format!("{ESPN_BASE_V2}/{rest}")
     } else if let Some(rest) = path.strip_prefix("core/") {
         format!("{ESPN_CORE}/{rest}")
+    } else if let Some(rest) = path.strip_prefix("wiki/") {
+        // Logos de secours : l'image de l'article Wikipédia d'une équipe.
+        format!("{WIKI_API}{rest}")
     } else if let Some(rest) = path.strip_prefix("tsdb/") {
         // Logos de secours, pour les ligues dont ESPN n'a pas les logos (LCF).
         format!("{SPORTSDB}/{rest}")
@@ -763,7 +768,8 @@ fn fit_widget(app: AppHandle, height: f64, width: Option<f64>) {
         return;
     };
 
-    let logical_w = width.unwrap_or(WIDGET_WIDTH).clamp(120.0, 600.0);
+    // Jusqu'à 560 px choisis à la souris, fois le zoom « Grand » (1,2).
+    let logical_w = width.unwrap_or(WIDGET_WIDTH).clamp(120.0, 700.0);
     let new_w = (logical_w * scale).round() as u32;
     let new_h = (height.max(24.0) * scale).round() as u32;
     if new_w == size.width && new_h == size.height {
@@ -1178,6 +1184,7 @@ fn image_url_is_allowed(url: &str) -> bool {
         || host.ends_with(".espncdn.com")
         || host == "www.thesportsdb.com"
         || host == "r2.thesportsdb.com"
+        || host == "upload.wikimedia.org"
 }
 
 /// Relaie les octets d'un logo. Le fond d'écran est dessiné dans un canevas :

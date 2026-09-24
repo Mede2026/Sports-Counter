@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.8': [
+    '📐 Forme du widget : tire le coin en bas à droite pour choisir sa taille ; coins arrondis, très arrondis, légers ou carrés (Réglages → Widget). Le bouton ⤡ du widget remet la forme de base.',
+    '🏈 LCF : les logos viennent maintenant de Wikipédia (Hamilton et Ottawa compris).',
+    '🥅 Tirs de barrage au hockey en direct : chaque tir ✅ ou ❌ dans le widget, une notification par tir, et la liste des tireurs dans la fenêtre Match.',
+    '📊 La fiche des équipes (victoires-défaites) est maintenant dans la fenêtre Match, quand tu cliques sur un match. Pour la remettre dans le widget : Réglages → Widget → Fiche des équipes dans le widget.',
+  ],
   '0.9.7': [
     '⚾ Baseball : le lanceur au monticule et ses stats du match (manches, retraits au bâton, lancers) dans le widget, avec le compte et les buts occupés.',
     '⚾ Fenêtre Match : « Au monticule » (lanceur et frappeur), les partants annoncés avant le match, et les stats de chaque lanceur dans l’Alignement.',

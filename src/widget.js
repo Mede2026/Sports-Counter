@@ -1,4 +1,4 @@
-import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchShootout, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
@@ -48,7 +48,7 @@ function teamRow(game, team, dim) {
   const prev = lastScores.get(key);
   const bumped = prev !== undefined && prev !== team.score && game.state === 'in';
   lastScores.set(key, team.score);
-  const record = team.record && prefs.showRecords !== false ? ` <span class="team__rec">${team.record}</span>` : '';
+  const record = team.record && prefs.widgetRecords === true ? ` <span class="team__rec">${team.record}</span>` : '';
   return `
     <div class="team${dim ? ' team--loser' : ''}">
       ${crestHtml(team)}
@@ -243,7 +243,7 @@ function compactCard(game) {
     ? `<span class="row__when">${middleWhen}</span>`
     : `${scoreSpan(game, a)}<span class="row__sep"></span>${scoreSpan(game, b)}`;
   // Fiche de chaque équipe (victoires-défaites) sous son logo, si ESPN la donne.
-  const side = (t) => (prefs.showRecords !== false && t.record
+  const side = (t) => (prefs.widgetRecords === true && t.record
     ? `<span class="row__team">${crestHtml(t)}<small class="row__rec">${attr(t.record)}</small></span>`
     : crestHtml(t));
   return `<div ${cardAttrs(game, cls, tip)}>
@@ -374,7 +374,7 @@ function gameCard(game) {
   return `<div ${cardAttrs(game, '', 'Cliquer pour les détails du match')}>${head}
     ${teamRow(game, game.away, done && game.home.winner)}
     ${teamRow(game, game.home, done && game.away.winner)}
-    ${shotsLine(game)}${pitcherLine(game)}
+    ${shotsLine(game)}${shootoutLine(game)}${pitcherLine(game)}
     ${seriesLine(game.series)}
   </div>`;
 }
@@ -674,6 +674,59 @@ async function checkPenalties(games) {
   }
 }
 
+/* ---------- Tirs de barrage (hockey) ---------- */
+
+// idMatch -> tirs lus ; idMatch -> dernière lecture (ms). Un tir toutes les
+// 30 s environ : une lecture toutes les 12 s suffit à suivre en direct.
+const shootouts = new Map();
+const shootoutReadAt = new Map();
+const SHOOTOUT_EVERY_MS = 12 * 1000;
+
+/** Vrai pendant (ou après) les tirs de barrage d'un match de saison régulière. */
+const inShootout = (g) => g.kind === 'match' && sportOf(g.leagueId) === 'hockey' && !g.playoffs && Number(g.period) >= 5;
+
+/** Lit les tirs de barrage en cours ; notification à chaque nouveau tir. */
+async function checkShootouts(games) {
+  if (!inTauri()) return;
+  let changed = false;
+  for (const g of games) {
+    if (g.state !== 'in' || !inShootout(g)) continue;
+    if (Date.now() - (shootoutReadAt.get(g.id) ?? 0) < SHOOTOUT_EVERY_MS) continue;
+    shootoutReadAt.set(g.id, Date.now());
+    let list;
+    try {
+      list = await fetchShootout(g.leagueId, g.id);
+    } catch {
+      continue;
+    }
+    const before = shootouts.get(g.id) ?? [];
+    if (list.length === before.length) continue;
+    shootouts.set(g.id, list);
+    changed = true;
+    if (prefs.notifications === false) continue;
+    for (const shot of list.filter((x) => !before.some((b) => b.id === x.id))) {
+      const team = shot.teamId === String(g.home.id) ? g.home : g.away;
+      const tally = (t) => list.filter((x) => x.teamId === String(t.id) && x.goal).length;
+      sendToast({
+        title: `🥅 Tir de barrage : ${lastName({ name: shot.who }) || team.abbr} ${shot.goal ? '✅ BUT !' : '❌ arrêté'}`,
+        body: `${g.away.abbr} ${tally(g.away)} – ${tally(g.home)} ${g.home.abbr} · tirs de barrage`,
+        team,
+        link: g.link,
+        big: shot.goal,
+      });
+    }
+  }
+  if (changed && lastRender) render(...lastRender);
+}
+
+/** « Tirs de barrage  ✅❌✅ | ❌✅ » : chaque tir des deux équipes. */
+function shootoutLine(game) {
+  const list = shootouts.get(game.id);
+  if (!inShootout(game) || !list?.length) return '';
+  const marks = (t) => list.filter((x) => x.teamId === String(t.id)).map((x) => (x.goal ? '✅' : '❌')).join('') || '–';
+  return `<div class="shots so"><span>Tirs de barrage</span><b>${marks(game.away)}</b><i></i><b>${marks(game.home)}</b></div>`;
+}
+
 /* ---------- Mode « Fond d'écran » ---------- */
 
 // Au plus une nouvelle image par minute ; sans changement, une toutes les
@@ -960,9 +1013,70 @@ function applyTheme() {
   el.widget.style.setProperty('--team2', second ?? color ?? 'transparent');
 }
 
+/* ---------- Forme du widget (taille à la souris, coins) ---------- */
+
+// Largeur et hauteur choisies en tirant la poignée du coin (px, avant le zoom
+// de la taille Petit/Moyen/Grand).
+const SHAPE_LIMITS = { minW: 220, maxW: 560, minH: 110, maxH: 900 };
+const CORNERS = { round: 18, extra: 28, soft: 10, square: 3 };
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+function applyShape() {
+  const shape = prefs.widgetShape;
+  el.widget.classList.toggle('widget--shaped', !!shape?.height);
+  el.widget.style.width = shape?.width ? `${shape.width}px` : '';
+  el.widget.style.height = shape?.height ? `${shape.height}px` : '';
+  if (CORNERS[prefs.widgetCorners]) el.widget.style.setProperty('--radius', `${CORNERS[prefs.widgetCorners]}px`);
+  else el.widget.style.removeProperty('--radius');
+  document.getElementById('btnShapeReset').hidden = !shape && !CORNERS[prefs.widgetCorners];
+}
+
+/** Poignée du coin bas-droit : on tire, le widget prend la taille voulue. */
+function bindGrip() {
+  const grip = document.getElementById('grip');
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('grip--on');
+    const zoom = SIZES[prefs.widgetSize] ?? 1;
+    const box = el.widget.getBoundingClientRect();
+    // Coordonnées de l'écran : la fenêtre peut bouger pendant qu'elle grandit
+    // (widget collé en bas : il grandit vers le haut).
+    const start = { x: e.screenX, y: e.screenY, w: prefs.widgetShape?.width ?? box.width / zoom, h: prefs.widgetShape?.height ?? box.height / zoom };
+    let frame = 0;
+    const move = (ev) => {
+      prefs.widgetShape = {
+        width: Math.round(clamp(start.w + (ev.screenX - start.x) / zoom, SHAPE_LIMITS.minW, SHAPE_LIMITS.maxW)),
+        height: Math.round(clamp(start.h + (ev.screenY - start.y) / zoom, SHAPE_LIMITS.minH, SHAPE_LIMITS.maxH)),
+      };
+      applyShape();
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; fitWindow(); });
+    };
+    const stop = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.classList.remove('grip--on');
+      savePrefs(prefs);
+      fitWindow();
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', stop, { once: true });
+    grip.addEventListener('pointercancel', stop, { once: true });
+  });
+  document.getElementById('btnShapeReset').addEventListener('click', () => {
+    delete prefs.widgetShape;
+    delete prefs.widgetCorners;
+    savePrefs(prefs);
+    applyShape();
+    fitWindow();
+  });
+}
+bindGrip();
+
 /** Apparence : couleur, compact, opacité, taille. */
 function applyLook() {
   applyTheme();
+  applyShape();
   el.widget.classList.toggle('widget--compact', prefs.compact);
   el.widget.style.opacity = String(prefs.opacity ?? 1);
   el.widget.style.zoom = String(SIZES[prefs.widgetSize] ?? 1);
@@ -1317,6 +1431,7 @@ async function doRefresh(force) {
   checkReminders();
   checkEmptyNets(followed);
   checkPenalties(followed);
+  checkShootouts(followed);
   updateWallpaper();
   morningDigest();
 

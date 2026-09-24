@@ -60,7 +60,7 @@ async function getJson(path, query = '', opts = {}) {
 
 const DAY = 24 * 3600 * 1000;
 const TEAMS_TTL = 7 * DAY;
-const teamsKey = (leagueId) => `sports-counter.teams.${leagueId}.v2`;
+const teamsKey = (leagueId) => `sports-counter.teams.${leagueId}.v3`;
 
 function toTeam(t) {
   return {
@@ -138,7 +138,7 @@ async function teamsFromCore(league) {
 const SPORTSDB = 'https://www.thesportsdb.com/api/v1/json';
 // Clés publiques gratuites de TheSportsDB : « 123 » depuis 2025, « 3 » avant.
 const SPORTSDB_KEYS = ['123', '3'];
-const logoCache = diskCache('logos.sportsdb.v2', TEAMS_TTL);
+const logoCache = diskCache('logos.sportsdb.v3', TEAMS_TTL);
 const logoLoads = new Map();
 // idLigue -> raison du dernier échec, affichée par le Diagnostic.
 const logoErrors = new Map();
@@ -200,6 +200,53 @@ function sportsDbLogos(league) {
     logoLoads.set(league.id, load);
   }
   return logoLoads.get(league.id);
+}
+
+/* Logos par Wikipédia : l'image principale de l'article de chaque équipe
+   est son logo. Une seule requête pour toutes les équipes manquantes. */
+const WIKI_API = 'https://en.wikipedia.org/w/api.php';
+const WIKI_QUERY = 'action=query&format=json&prop=pageimages&piprop=thumbnail&pithumbsize=256&pilicense=any&redirects=1';
+const wikiTitle = (text) => String(text ?? '').normalize('NFD').replace(/[^A-Za-z0-9 .'-]/g, '').trim().replace(/\s+/g, '_');
+
+async function getWiki(titles) {
+  try {
+    return await viaPage(`${WIKI_API}?${WIKI_QUERY}&origin=*&titles=${encodeURIComponent(titles.join('|'))}`);
+  } catch (err) {
+    if (!inTauri()) throw err;
+    // Le relais n'accepte que des adresses simples : une équipe à la fois.
+    const parts = await Promise.all(titles.map((t) => viaRust(`wiki/?${WIKI_QUERY}&titles=${t}`).catch(() => null)));
+    const pages = {};
+    const redirects = [];
+    const normalized = [];
+    for (const d of parts.filter(Boolean)) {
+      Object.assign(pages, d?.query?.pages ?? {});
+      redirects.push(...(d?.query?.redirects ?? []));
+      normalized.push(...(d?.query?.normalized ?? []));
+    }
+    return { query: { pages, redirects, normalized } };
+  }
+}
+
+/** Logos des équipes chez Wikipédia : [{ name, alt, logo }] pour celles trouvées. */
+async function wikiLogos(teams) {
+  const titles = [...new Set(teams.map((t) => wikiTitle(t.full || t.name)).filter((t) => t.length > 3))].slice(0, 40);
+  if (!titles.length) return [];
+  const data = await getWiki(titles);
+  const q = data?.query ?? {};
+  const follow = (title) => {
+    let t = String(title).replace(/_/g, ' ');
+    t = (q.normalized ?? []).find((n) => n.from === t)?.to ?? t;
+    return (q.redirects ?? []).find((r) => r.from === t)?.to ?? t;
+  };
+  const pages = Object.values(q.pages ?? {});
+  const out = [];
+  for (const t of teams) {
+    const want = follow(wikiTitle(t.full || t.name));
+    const page = pages.find((p) => p?.title === want);
+    const logo = page?.thumbnail?.source;
+    if (typeof logo === 'string' && logo.startsWith('https://')) out.push({ name: squash(t.full || t.name), alt: squash(page.title), logo });
+  }
+  return out;
 }
 
 /** Dernier recours : chercher une équipe par son nom chez TheSportsDB. */
@@ -287,11 +334,28 @@ async function fillLogos(leagueId, teams) {
   if (missing.every((t) => t.logo)) return teams;
   if (Date.now() - (logoFailedAt.get(leagueId) ?? 0) < LOGO_RETRY_MS) return teams;
 
-  // 2. Toute la ligue d'un coup.
+  // 2. Wikipédia (LCF) : le logo de l'article de chaque équipe.
+  if (league.wikiLogos) {
+    try {
+      const found = await wikiLogos(missing.filter((t) => !t.logo));
+      if (found.length) {
+        logoCache.set(leagueId, [...(logoCache.get(leagueId) ?? []), ...found]);
+        apply(found);
+      }
+    } catch (err) {
+      logoErrors.set(leagueId, `Wikipédia : ${errText(err).split('\n')[0]}`);
+    }
+    if (missing.every((t) => t.logo)) {
+      logoFailedAt.delete(leagueId);
+      return teams;
+    }
+  }
+
+  // 3. TheSportsDB : toute la ligue d'un coup.
   const list = await sportsDbLogos(league);
   apply(list);
 
-  // 3. Une recherche par équipe restante (au plus 12), gardée avec les autres.
+  // 4. Une recherche par équipe restante (au plus 12), gardée avec les autres.
   const still = missing.filter((t) => !t.logo).slice(0, 12);
   if (still.length) {
     const found = (await Promise.all(still.map((t) => sportsDbTeamLogo(league, t)))).filter(Boolean);
@@ -1302,6 +1366,7 @@ export async function fetchMatchDetail(leagueId, eventId) {
     box: safe(() => boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
     probables: safe(() => probablePitchers(competitors, leagueId), {}),
     situation: safe(() => baseballSituation(data?.situation ?? data?.header?.competitions?.[0]?.situation, leagueId), null),
+    shootout: sportOfLeague(leagueId) === 'hockey' ? safe(() => shootoutAttempts(data), []) : [],
     allPlays: safe(() => allPlays(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
   };
 }
@@ -2565,6 +2630,35 @@ const INFRACTIONS_FR = [
 /** « Faire trébucher », d'après le texte d'une pénalité d'ESPN ; '' sinon. */
 export function infractionFr(text) {
   return INFRACTIONS_FR.find(([re]) => re.test(String(text ?? '')))?.[1] ?? '';
+}
+
+/**
+ * Tirs de barrage (hockey, saison régulière) : chaque tir, dans l'ordre,
+ * d'après les jeux du résumé d'ESPN : [{ id, teamId, who, goal }].
+ */
+export function shootoutAttempts(data) {
+  return (data?.plays ?? [])
+    .filter((p) => Number(p?.period?.number ?? p?.period) >= 5 && p?.team?.id)
+    // Pas les jeux « Début / Fin de période », arrêts de jeu, mises en jeu…
+    .filter((p) => !/period|start|end|stoppage|faceoff|timeout|challenge|penalty/i.test(p?.type?.text ?? ''))
+    .map((p, i) => {
+      const text = `${p?.type?.text ?? ''} ${p?.text ?? ''}`;
+      const missed = /no goal|miss|save|stopp|block|post|crossbar|wide/i.test(text);
+      return {
+        id: String(p?.id ?? `so-${i}`),
+        teamId: String(p.team.id),
+        who: scorerName(p),
+        goal: !missed && (isScoring(p) || /\bgoal\b|\bscores?\b/i.test(text)),
+      };
+    });
+}
+
+/** Tirs de barrage d'un match (lecture du résumé d'ESPN). */
+export async function fetchShootout(leagueId, eventId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !eventId) return [];
+  const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
+  return shootoutAttempts(data);
 }
 
 /**

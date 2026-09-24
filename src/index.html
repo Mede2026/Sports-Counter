@@ -11,6 +11,12 @@
     <div class="bar" data-tauri-drag-region>
       <span class="bar__title" id="barTitle" data-tauri-drag-region>Sports Counter</span>
       <div class="bar__actions">
+        <button class="icon-btn" id="btnShapeReset" title="Remettre la forme de base" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 9V4h5" /><path d="M20 15v5h-5" /><path d="M4 4l6 6" /><path d="M20 20l-6-6" />
+          </svg>
+        </button>
         <button class="icon-btn" id="btnUpdate" title="Rechercher une mise à jour">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
                stroke-linecap="round" stroke-linejoin="round">
@@ -40,6 +46,7 @@
     </div>
     <div class="games" id="games"></div>
     <div class="foot" id="foot" hidden></div>
+    <div class="grip" id="grip" title="Tirer pour changer la taille du widget"></div>
   </div>
   <script type="module" src="widget.js"></script>
 </body>

@@ -556,3 +556,12 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 .mound__count .bases { margin-left: auto; width: 28px; height: 20px; }
 .bases rect { fill: none; stroke: currentColor; stroke-width: 1.2; }
 .bases rect.on { fill: #f2c55c; stroke: #f2c55c; }
+
+/* Tirs de barrage : le compte, puis chaque tir. */
+.so__tally { font-size: 14px; font-weight: 600; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+.so__tally b { font-size: 18px; }
+.so__list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.so__row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.so__n { width: 16px; color: var(--text-faint); font-size: 11px; text-align: right; }
+.so__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so__res { font-size: 12px; color: var(--text-muted); white-space: nowrap; }

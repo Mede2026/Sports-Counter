@@ -151,6 +151,28 @@ html, body {
 /* ---------- Liste des matchs ---------- */
 
 .games { display: flex; flex-direction: column; }
+/* Forme choisie à la souris : hauteur fixe, la liste défile à l'intérieur. */
+.widget--shaped { display: flex; flex-direction: column; }
+.widget--shaped .games { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* Poignée du coin bas-droit : tirer pour changer la taille. */
+.grip {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 140ms ease;
+  background:
+    linear-gradient(135deg, transparent 45%, var(--text-faint) 45%, var(--text-faint) 52%, transparent 52%,
+      transparent 68%, var(--text-faint) 68%, var(--text-faint) 75%, transparent 75%);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  z-index: 5;
+}
+.widget:hover .grip, .grip--on { opacity: 1; }
 
 .game {
   padding: 11px 14px 12px;
@@ -379,6 +401,7 @@ span.crest {
 .shots span { flex: 1; }
 .shots b { color: var(--text-muted); font-weight: 650; min-width: 16px; text-align: center; }
 .shots i { width: 1px; height: 10px; background: rgba(255, 255, 255, 0.2); }
+.so b { letter-spacing: 1px; font-size: 10px; min-width: 0; }
 
 /* Baseball : lanceur au monticule, compte et buts occupés. */
 .pitch {

@@ -76,7 +76,7 @@ function heroHtml(g) {
     <div class="side${dim ? ' side--dim' : ''}">
       ${crestHtml(t, 'crest-xl')}
       <div class="side__name">${esc(t.name)}</div>
-      ${t.record ? `<div class="side__rec">${esc(t.record)}</div>` : ''}
+      ${t.record ? `<div class="side__rec" title="${esc(recordTip(g))}">Fiche ${esc(t.record)}</div>` : ''}
     </div>`;
   const done = g.state === 'post';
   const score = g.state === 'pre'
@@ -329,6 +329,27 @@ function moundHtml(g) {
   return '';
 }
 
+/** Ce que veut dire la fiche, selon le sport (infobulle). */
+function recordTip(g) {
+  const sport = sportOf(g.leagueId);
+  if (sport === 'hockey') return 'Victoires – défaites – défaites en prolongation, cette saison';
+  if (sport === 'soccer') return 'Victoires – nuls – défaites, cette saison';
+  return 'Victoires – défaites, cette saison';
+}
+
+/** Tirs de barrage : chaque tireur, dans l'ordre, ✅ ou ❌, et le compte. */
+function shootoutHtml(g) {
+  const list = g.shootout ?? [];
+  if (!list.length) return '';
+  const tally = (t) => list.filter((x) => x.teamId === String(t.id) && x.goal).length;
+  const rows = list.map((x, i) => {
+    const team = x.teamId === String(g.home.id) ? g.home : g.away;
+    return `<li class="so__row"><span class="so__n">${Math.floor(i / 2) + 1}</span>${crestHtml(team, 'crest-xs')}
+      <span class="so__who">${esc(x.who || team.abbr)}</span><span class="so__res">${x.goal ? '✅ But' : '❌ Arrêté'}</span></li>`;
+  }).join('');
+  return `<div class="so__tally">${esc(g.away.abbr)} <b>${tally(g.away)}</b> – <b>${tally(g.home)}</b> ${esc(g.home.abbr)}</div><ul class="so__list">${rows}</ul>`;
+}
+
 function lineupHtml(g) {
   const pick = sideTeam(g, [String(g.away.id), String(g.home.id)]);
   const id = String(pick.id);
@@ -474,6 +495,7 @@ function matchHtml(g, table) {
     + section('Meneurs du match', leadersHtml(g))
     + section(periodsTitle(g), periodsHtml(g))
     + section(goalsTitle, playsHtml(g, g.goals, true))
+    + section('Tirs de barrage', shootoutHtml(g))
     + section('Statistiques', statsHtml(g))
     + (g.leagueId === 'nhl' ? section('Pénalités', playsHtml(g, g.penalties, false)) : '')
     + section('Classement', standingsHtml(g, table))
