@@ -3,11 +3,11 @@
 // buts, pénalités, classement ; onglets « Joueurs » (box score) et « Jeux »
 // (tous les jeux du match). F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
-import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, demoEvents, sameDriver } from './lib/api.js';
+import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver } from './lib/api.js';
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
-import { visibleTeamColor } from './lib/color.js';
+import { visibleTeamColor, applyTeamAccent } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
@@ -44,6 +44,9 @@ let tab = 'summary';
 let boxTeam = null;
 let playsShown = PLAYS_STEP;
 let shown = null; // { g, build } : le match affiché et de quoi le redessiner
+let f1Tab = null; // séance de F1 affichée (indice), 'champ' (championnat) ou null (en cours)
+let f1Champ = null; // championnat de F1 chargé (ou Error)
+const hockeyLines = new Map(); // idÉquipe -> trios (ou Error), chargés à la demande
 
 
 /* ---------- Morceaux communs ---------- */
@@ -242,12 +245,98 @@ function videosHtml(g) {
 
 /* ---------- Onglets : Résumé, Joueurs, Jeux ---------- */
 
+/** Onglet « Alignement » : trios au hockey, ordre des frappeurs au baseball. */
+const hasLineup = (g) => (sportOf(g.leagueId) === 'hockey' && g.leagueId === 'nhl')
+  || (sportOf(g.leagueId) === 'baseball' && (g.box?.length || Object.keys(g.probables ?? {}).length));
+
 function tabsHtml(g) {
-  const tabs = [['summary', 'Résumé'], g.box?.length ? ['box', 'Joueurs'] : null, g.allPlays?.length ? ['plays', 'Jeux'] : null]
+  const tabs = [['summary', 'Résumé'], hasLineup(g) ? ['lineup', 'Alignement'] : null,
+    g.box?.length ? ['box', 'Joueurs'] : null, g.allPlays?.length ? ['plays', 'Jeux'] : null]
     .filter(Boolean);
   if (tabs.length < 2) return '';
   return `<nav class="tabs">${tabs.map(([id, label]) => `
     <button type="button" class="tab${tab === id ? ' tab--on' : ''}" data-tab="${id}">${label}</button>`).join('')}</nav>`;
+}
+
+/** Choix de l'équipe (ton équipe d'abord, sinon les visiteurs). */
+function sideTeam(g, ids) {
+  const favs = prefs.favorites ?? [];
+  return [g.away, g.home].find((t) => String(t.id) === boxTeam && ids.includes(String(t.id)))
+    ?? [g.away, g.home].find((t) => favs.includes(`${g.leagueId}:${t.id}`) && ids.includes(String(t.id)))
+    ?? [g.away, g.home].find((t) => ids.includes(String(t.id))) ?? g.away;
+}
+
+function teamSwitch(g, pick) {
+  return `<div class="teamseg">${[g.away, g.home].map((t) => `
+    <button type="button" data-box-team="${esc(t.id)}" class="${String(t.id) === String(pick.id) ? 'teamseg--on' : ''}">${crestHtml(t, 'crest-xs')}${esc(t.name)}</button>`).join('')}</div>`;
+}
+
+const personLine = (p, extra = '') => `<li class="lu__p">${faceHtml(p ?? { name: '?' }, 'face')}
+  <span class="drv"><b>${isStar(p?.name) ? '⭐ ' : ''}${esc(p?.name ?? '—')}</b>${extra ? `<small>${esc(extra)}</small>` : ''}</span></li>`;
+
+function lineupHtml(g) {
+  const pick = sideTeam(g, [String(g.away.id), String(g.home.id)]);
+  const id = String(pick.id);
+  if (sportOf(g.leagueId) === 'hockey') {
+    const lines = hockeyLines.get(id);
+    if (!lines) { loadLines(id); return teamSwitch(g, pick) + '<div class="state">Chargement des trios…</div>'; }
+    if (lines instanceof Error || (!lines.forwards.length && !lines.defense.length)) {
+      return teamSwitch(g, pick) + '<div class="state">ESPN ne donne pas les trios de cette équipe pour le moment.</div>';
+    }
+    const block = (title, rows, labels) => rows.map((r, i) => `
+      <div class="lu__line"><span class="lu__n">${title(i)}</span>
+        ${r.map((p, k) => `<span class="lu__slot"><small>${labels[k] ?? ''}</small>${faceHtml(p ?? { name: '?' }, 'face')}<b>${isStar(p?.name) ? '⭐ ' : ''}${esc(p ? (p.short || p.name) : '—')}</b></span>`).join('')}
+      </div>`).join('');
+    return teamSwitch(g, pick)
+      + section('Trios', block((i) => `${i + 1}${i ? 'e' : 'er'}`, lines.forwards, ['AG', 'C', 'AD']))
+      + section('Paires de défense', block((i) => `${i + 1}re`.replace('2re', '2e').replace('3re', '3e'), lines.defense, ['D', 'D']))
+      + section('Gardiens', lines.goalies.length ? `<ul class="lu__list">${lines.goalies.map((p, i) => personLine(p, i ? 'Auxiliaire' : 'Partant probable')).join('')}</ul>` : '')
+      + '<p class="hint">Selon la grille de profondeur d\'ESPN : l\'entraîneur peut changer ses trios pendant le match.</p>';
+  }
+  // Baseball : ordre des frappeurs et lanceurs.
+  const team = (g.box ?? []).find((t) => t.teamId === id);
+  const batting = team?.groups.find((x) => /frappeur/i.test(x.name));
+  const pitching = team?.groups.find((x) => /lanceur/i.test(x.name));
+  const prob = g.probables?.[id];
+  let html = teamSwitch(g, pick);
+  if (prob && !batting) html += section('Lanceur partant probable', `<ul class="lu__list">${personLine(prob, prob.line)}</ul>`);
+  if (batting) {
+    let n = 0;
+    const rows = batting.players.map((p) => {
+      if (p.starter !== false || !n) n += 1;
+      const sub = p.starter === false && n > 0;
+      return `<li class="lu__bat${sub ? ' lu__bat--sub' : ''}"><span class="lu__n">${sub ? '↳' : p.order ?? n}</span>
+        <span class="drv"><b>${isStar(p.name) ? '⭐ ' : ''}${esc(p.name)}</b></span><span class="lu__pos">${esc(p.pos)}</span></li>`;
+    }).join('');
+    html += section('Ordre des frappeurs', `<ol class="lu__list">${rows}</ol>`);
+  }
+  if (pitching?.players.length) {
+    html += section('Lanceurs', `<ul class="lu__list">${pitching.players.map((p, i) => personLine(p, i ? 'Releveur' : 'Partant')).join('')}</ul>`);
+  }
+  return html;
+}
+
+async function loadLines(teamId) {
+  if (hockeyLines.has(teamId)) return;
+  hockeyLines.set(teamId, null);
+  // Appelée pendant un dessin : on laisse d'abord ce dessin se terminer.
+  await Promise.resolve();
+  try {
+    hockeyLines.set(teamId, IS_DEMO ? demoLines() : await fetchHockeyLines(teamId));
+  } catch (err) {
+    hockeyLines.set(teamId, err instanceof Error ? err : new Error(String(err)));
+  }
+  repaint();
+}
+
+function demoLines() {
+  const P = (name) => ({ name, short: name.replace(/^(\w)\w+ /, '$1. '), photo: '' });
+  return {
+    forwards: [['Juraj Slafkovsky', 'Nick Suzuki', 'Cole Caufield'], ['Ivan Demidov', 'Kirby Dach', 'Patrik Laine'],
+      ['Alex Newhook', 'Jake Evans', 'Josh Anderson'], ['Brendan Gallagher', 'Christian Dvorak', 'Joel Armia']].map((l) => l.map(P)),
+    defense: [['Lane Hutson', 'Mike Matheson'], ['Kaiden Guhle', 'Noah Dobson'], ['Arber Xhekaj', 'Alexandre Carrier']].map((l) => l.map(P)),
+    goalies: [P('Samuel Montembeault'), P('Jakub Dobes')],
+  };
 }
 
 /** Box score : les stats de chaque joueur d'une équipe, groupe par groupe. */
@@ -315,9 +404,11 @@ function allPlaysHtml(g) {
 
 function matchHtml(g, table) {
   if (tab === 'box' && !g.box?.length) tab = 'summary';
+  if (tab === 'lineup' && !hasLineup(g)) tab = 'summary';
   if (tab === 'plays' && !g.allPlays?.length) tab = 'summary';
   const head = heroHtml(g) + tabsHtml(g);
   if (tab === 'box') return head + boxHtml(g);
+  if (tab === 'lineup') return head + lineupHtml(g);
   if (tab === 'plays') return head + allPlaysHtml(g);
   const goalsTitle = ['hockey', 'soccer'].includes(sportOf(g.leagueId)) ? 'Buts' : 'Jeux marquants';
   return head
@@ -359,19 +450,29 @@ function f1Html(g) {
     </section>`);
   const favCard = cards.join('');
 
-  const rows = (g.results ?? []).map((d) => {
+  // Séance choisie : celle d'un bouton, sinon la séance en cours (ou la prochaine).
+  const sessions = g.sessions ?? [];
+  const current = sessions.findIndex((x) => x.label === g.session);
+  const pick = f1Tab === 'champ' ? null : sessions[f1Tab ?? current] ?? null;
+  const results = pick ? (pick.label === g.session && g.results?.length ? g.results : pick.results ?? []) : [];
+  const tabs = sessions.length ? `<nav class="tabs tabs--wrap">${sessions.map((x, i) => `
+    <button type="button" class="tab${f1Tab !== 'champ' && (f1Tab ?? current) === i ? ' tab--on' : ''}" data-f1="${i}">${esc(x.label)}${x.state === 'in' ? ' <span class="dot"></span>' : ''}</button>`).join('')}
+    <button type="button" class="tab${f1Tab === 'champ' ? ' tab--on' : ''}" data-f1="champ">Championnat</button></nav>` : '';
+  if (f1Tab === 'champ') return hero + favCard + tabs + f1ChampHtml();
+
+  const rows = results.map((d) => {
     const isFav = favs.some((f) => sameDriver(d, f));
     return `<li class="${isFav ? 'fav' : ''}">
       <span class="pos">${MEDALS[d.pos] ?? d.pos}</span>
-      ${d.photo ? `<img class="face" src="${esc(d.photo)}" alt="" loading="lazy" data-face />` : '<span class="face"></span>'}
+      ${faceHtml(d, 'face')}
       <span class="drv"><b>${esc(d.name)}</b>${d.team ? `<small>${esc(d.team)}</small>` : ''}</span>
       ${d.pos > 1 && d.gap ? `<span class="gap">${esc(String(d.gap).startsWith('+') ? d.gap : `+${d.gap}`)}</span>` : ''}
     </li>`;
   }).join('');
-  const results = rows ? `<ol class="grid">${rows}</ol>` : '';
+  const board = rows ? `<ol class="grid">${rows}</ol>` : '';
 
   const now = Date.now();
-  const sessions = (g.sessions ?? []).map((s) => {
+  const program = sessions.map((s) => {
     const cls = s.state === 'in' ? 'live' : s.state === 'post' ? 'done' : '';
     const when = `${DAY_FMT.format(s.startsAt)} · ${TIME_FMT.format(s.startsAt)}`;
     const extra = s.state === 'in' ? '<span class="live">En direct</span>'
@@ -380,9 +481,86 @@ function f1Html(g) {
     return `<li class="${cls}"><b>${esc(s.label)}</b><span>${esc(when)}</span>${extra}</li>`;
   }).join('');
 
-  return hero + favCard
-    + section(`Classement${g.session ? ` · ${esc(g.session)}` : ''}`, results)
-    + section('Programme du week-end', sessions ? `<ul class="sessions">${sessions}</ul>` : '');
+  const empty = pick && pick.state === 'pre'
+    ? `<div class="state">${esc(pick.label)} n'a pas encore eu lieu${isDate(pick.startsAt) ? ` : ${esc(whenText(pick.startsAt))}` : ''}.</div>`
+    : '<div class="state">ESPN ne donne pas encore le classement de cette séance.</div>';
+  return hero + favCard + tabs
+    + section(`Classement${pick ? ` · ${esc(pick.label)}` : ''}`, board || empty)
+    + section('Programme du week-end', program ? `<ul class="sessions">${program}</ul>` : '');
+}
+
+/** Championnat de F1 : pilotes (tes favoris en évidence), puis constructeurs. */
+function f1ChampHtml() {
+  if (!f1Champ) return '<div class="state">Chargement du championnat…</div>';
+  if (f1Champ instanceof Error) return `<div class="state state--err">Championnat indisponible.<br /><code>${esc(errText(f1Champ))}</code></div>`;
+  const favs = prefs.favDrivers ?? [];
+  const drivers = (f1Champ.drivers ?? []).map((d) => `
+    <li class="${favs.some((f) => sameDriver(d, f)) ? 'fav' : ''}">
+      <span class="pos">${MEDALS[d.rank] ?? d.rank}</span>${faceHtml(d, 'face')}
+      <span class="drv"><b>${esc(d.name)}</b>${d.team ? `<small>${esc(d.team)}</small>` : ''}</span>
+      <span class="gap">${esc(d.points)} pts</span></li>`).join('');
+  const teams = (f1Champ.teams ?? []).map((t) => `
+    <li><span class="pos">${MEDALS[t.rank] ?? t.rank}</span><span class="drv"><b>${esc(t.name)}</b></span><span class="gap">${esc(t.points)} pts</span></li>`).join('');
+  return section('Championnat des pilotes', drivers ? `<ol class="grid">${drivers}</ol>` : '')
+    + section('Championnat des constructeurs', teams ? `<ol class="grid">${teams}</ol>` : '');
+}
+
+async function loadF1Champ() {
+  if (f1Champ && !(f1Champ instanceof Error)) return;
+  try {
+    f1Champ = IS_DEMO
+      ? { drivers: [['Lando Norris', 'McLaren', '390'], ['Oscar Piastri', 'McLaren', '366'], ['Max Verstappen', 'Red Bull', '341']]
+        .map(([name, team, points], i) => ({ rank: i + 1, name, team, points, photo: '' })),
+      teams: [['McLaren', '756'], ['Mercedes', '426'], ['Red Bull', '380']].map(([name, points], i) => ({ rank: i + 1, name, points })) }
+      : await fetchF1Standings();
+  } catch (err) {
+    f1Champ = err instanceof Error ? err : new Error(String(err));
+  }
+  repaint();
+}
+
+/* ---------- Golf ---------- */
+
+function golfHtml(g) {
+  const league = LEAGUES_BY_ID[g.leagueId];
+  const hero = `<section class="hero hero--f1">
+    <div class="hero__title">${esc(g.title)}</div>
+    ${statusHtml(g)}
+  </section>`;
+  if (g.state === 'pre' || !g.players?.length) {
+    return hero + `<div class="state">Le tableau des meneurs apparaîtra au début du tournoi.</div>`;
+  }
+  const thru = (p) => (g.state !== 'in' || !p.thru ? '' : /^\d+$/.test(p.thru) ? `${p.thru} trous` : p.thru === 'F' ? 'Ronde finie' : p.thru);
+  const rows = g.players.map((p) => `<li>
+    <span class="pos">${g.state === 'post' && p.pos <= 3 ? MEDALS[p.pos] : esc(p.posText)}</span>
+    ${faceHtml(p, 'face')}
+    <span class="drv"><b>${esc(p.name)}</b>${thru(p) ? `<small>${esc(thru(p))}</small>` : ''}</span>
+    <span class="gap golf__score">${esc(p.score)}</span>
+  </li>`).join('');
+  return hero + section(`Tableau des meneurs${g.session ? ` · ${esc(g.session)}` : ''} <small>${esc(league?.label ?? '')}</small>`, `<ol class="grid">${rows}</ol>`);
+}
+
+/* ---------- Tennis ---------- */
+
+const lastWord = (name) => String(name ?? '').trim().split(/\s+/).pop();
+
+function tennisHtml(m) {
+  const favs = prefs.favTennis ?? [];
+  const n = Math.max(m.a.sets.length, m.b.sets.length);
+  const head = Array.from({ length: n }, (_, i) => `<th>${i + 1}</th>`).join('');
+  const row = (p, o) => `<tr class="${p.winner ? 'win' : ''}">
+    <td class="t">${faceHtml(p, 'face')}<span><b>${favs.some((f) => sameDriver(f, p)) ? '⭐ ' : ''}${esc(p.name)}</b>${p.seed ? ` <small>(${p.seed})</small>` : ''}</span></td>
+    ${Array.from({ length: n }, (_, i) => `<td class="${(p.sets[i] ?? 0) > (o.sets[i] ?? 0) ? 'set--won' : ''}">${p.sets[i] ?? ''}</td>`).join('')}
+    <td class="tot">${p.winner ? '✅' : ''}</td></tr>`;
+  const hero = `<section class="hero hero--f1">
+    <div class="hero__title">${esc([m.round, m.draw].filter(Boolean).join(' · ') || m.title)}</div>
+    <div class="series">${esc(m.title)}</div>
+    ${statusHtml(m)}
+  </section>`;
+  const board = n
+    ? `<table class="periods tennis"><thead><tr><th></th>${head}<th></th></tr></thead><tbody>${row(m.a, m.b)}${row(m.b, m.a)}</tbody></table>`
+    : `<table class="periods tennis"><tbody>${row(m.a, m.b)}${row(m.b, m.a)}</tbody></table>`;
+  return hero + section('Pointage par manche', board);
 }
 
 /* ---------- UFC ---------- */
@@ -456,7 +634,7 @@ function ufcHtml(g) {
 
 /** Match tel que le tableau des scores le décrit (repli, et F1). */
 async function fromScoreboard() {
-  if (IS_DEMO) return demoEvents().find((e) => e.leagueId === current.league) ?? demoEvents()[0];
+  if (IS_DEMO) return demoEvents(true).find((e) => e.leagueId === current.league) ?? demoEvents()[0];
   const games = await fetchScoreboard(current.league);
   return games.find((x) => x.id === current.event) ?? null;
 }
@@ -464,6 +642,7 @@ async function fromScoreboard() {
 async function load() {
   clearTimeout(timer);
   prefs = loadPrefs();
+  applyTeamAccent(prefs);
   const league = LEAGUES_BY_ID[current.league];
   el.chip.textContent = league?.label ?? '';
   el.chip.style.color = league?.accent ?? '';
@@ -476,12 +655,30 @@ async function load() {
       g = await fromScoreboard();
       if (!g) throw new Error("Ce gala n'est plus au programme.");
       el.title.textContent = g.title;
-      html = ufcHtml(g);
+      const card = g;
+      build = () => ufcHtml(card);
+      html = build();
     } else if (league?.kind === 'event') {
       g = await fromScoreboard();
       if (!g) throw new Error('Cette séance n\'est plus au programme.');
       el.title.textContent = g.title;
-      html = f1Html(g);
+      const gp = g;
+      build = () => f1Html(gp);
+      html = build();
+    } else if (league?.kind === 'golf') {
+      g = await fromScoreboard();
+      if (!g) throw new Error("Ce tournoi n'est plus au programme.");
+      el.title.textContent = g.title;
+      const t = g;
+      build = () => golfHtml(t);
+      html = build();
+    } else if (league?.kind === 'tennis') {
+      g = await fromScoreboard();
+      if (!g) throw new Error("Ce match n'est plus au programme.");
+      el.title.textContent = `${lastWord(g.a.name)} – ${lastWord(g.b.name)}`;
+      const m = g;
+      build = () => tennisHtml(m);
+      html = build();
     } else {
       let table = new Map();
       try {
@@ -538,6 +735,12 @@ el.main.addEventListener('click', (e) => {
   const b = e.target.closest('[data-box-team]');
   if (b) { boxTeam = b.dataset.boxTeam; repaint(); return; }
   if (e.target.closest('[data-more-plays]')) { playsShown += PLAYS_STEP; repaint(); }
+  const f = e.target.closest('[data-f1]');
+  if (f) {
+    f1Tab = f.dataset.f1 === 'champ' ? 'champ' : Number(f.dataset.f1);
+    repaint();
+    if (f1Tab === 'champ') loadF1Champ();
+  }
 });
 
 function paint(html) {
@@ -660,6 +863,7 @@ if (inTauri()) {
     tab = 'summary';
     boxTeam = null;
     playsShown = PLAYS_STEP;
+    f1Tab = null;
     el.main.innerHTML = '<div class="state">Chargement…</div>';
     load();
   });

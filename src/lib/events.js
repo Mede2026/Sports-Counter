@@ -21,6 +21,14 @@ const num = (s) => {
   return s !== '' && s != null && Number.isFinite(n) ? n : null;
 };
 
+// Ligues dont les équipes portent un surnom au pluriel : « But des
+// Canadiens », « Victoire des Alouettes ». Ailleurs (clubs de soccer, pays,
+// universités), « des » sonne faux : « But pour CF Montréal ».
+const NICKNAMES = new Set(['nhl', 'nba', 'wnba', 'nfl', 'cfl', 'mlb']);
+export const ofTeam = (leagueId, name) => (NICKNAMES.has(leagueId) ? `des ${name}` : `pour ${name}`);
+const theTeam = (leagueId, name) => (NICKNAMES.has(leagueId) ? `Les ${name}` : name);
+const teamIs = (leagueId, name, plural, single) => (NICKNAMES.has(leagueId) ? plural : single);
+
 const scoreLine = (g) => `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}`;
 
 /** Position d'un pilote dans la séance, ou null. */
@@ -40,6 +48,8 @@ function favPositions(g, favs) {
 
 /** Ce qu'il faut retenir d'un match pour le comparer au relevé suivant. */
 export function snapshot(g, opts = {}) {
+  if (g.kind === 'golf') return { state: g.state, leader: g.state === 'in' ? g.players?.[0]?.name ?? '' : '' };
+  if (g.kind === 'tennis') return { state: g.state };
   if (g.kind === 'match') return { state: g.state, home: g.home.score, away: g.away.score, period: g.period ?? null };
   if (g.kind === 'card') {
     // État de chaque combat d'un combattant favori, pour voir son début et sa fin.
@@ -119,7 +129,7 @@ function matchEvents(g, before, opts = {}) {
       const isGoal = scoreAlert(g.leagueId) === 'goal';
       const scorer = isGoal ? g.scorers?.[team.id] ?? '' : '';
       const title = !isGoal ? `${team.name} marque (+${now - was})`
-        : scorer ? `But de ${scorer} !` : `But des ${team.name} !`;
+        : scorer ? `But de ${scorer} !` : `But ${ofTeam(g.leagueId, team.name)} !`;
       const when = [g.clock, g.statusText].filter(Boolean).join(' · ');
       out.push({
         title,
@@ -141,16 +151,18 @@ function matchEvents(g, before, opts = {}) {
     const clinched = winner && g.series?.done && g.series.leaderId === winner.id;
     const loser = winner ? (winner === g.home ? g.away : g.home) : null;
     const final = /finale de la coupe stanley|finale nba|finale de la nba|série mondiale|super bowl/i.test(g.series?.round ?? '');
-    let title = winner ? `Victoire des ${winner.name}` : tie ? 'Match nul' : 'Match terminé';
+    let title = winner ? `Victoire ${ofTeam(g.leagueId, winner.name)}` : tie ? 'Match nul' : 'Match terminé';
     let team = winner ?? g.home;
     let big = false;
     if (clinched) {
       // Série gagnée… ou perdue, si c'est ton équipe qui tombe.
       if (isFavTeam(g, loser, opts) && !isFavTeam(g, winner, opts)) {
-        title = `💔 Les ${loser.name} sont éliminés`;
+        title = `💔 ${theTeam(g.leagueId, loser.name)} ${teamIs(g.leagueId, loser.name, 'sont éliminés', 'est éliminé')}`;
         team = loser;
       } else {
-        title = final ? `🏆 Les ${winner.name} sont champions !` : `🏆 Les ${winner.name} remportent la série !`;
+        title = final
+          ? `🏆 ${theTeam(g.leagueId, winner.name)} ${teamIs(g.leagueId, winner.name, 'sont champions', 'est champion')} !`
+          : `🏆 ${theTeam(g.leagueId, winner.name)} ${teamIs(g.leagueId, winner.name, 'remportent', 'remporte')} la série !`;
         big = true;
       }
     }
@@ -298,6 +310,42 @@ function cardEvents(g, before, opts = {}) {
   return out;
 }
 
+/* ---------- Golf : nouveau meneur, vainqueur ---------- */
+
+function golfEvents(g, before) {
+  const out = [];
+  const team = { abbr: '⛳', logo: g.logo ?? '', color: '#5bd38a' };
+  const lead = g.players?.[0];
+  const face = (p) => (p?.photo ? { ...team, logo: p.photo, round: true } : team);
+  if (before.state !== 'post' && g.state === 'post' && lead) {
+    out.push({ title: `🏆 ${lead.name} remporte le tournoi !`, body: `${lead.score} · ${g.title}`, team: face(lead), link: g.link ?? '', big: true });
+  } else if (g.state === 'in' && before.state === 'in' && lead && before.leader && lead.name !== before.leader) {
+    out.push({ title: `⛳ ${lead.name} prend la tête`, body: `${lead.score} · ${g.session ? `${g.session} · ` : ''}${g.title}`, team: face(lead), link: g.link ?? '' });
+  }
+  return out;
+}
+
+/* ---------- Tennis : les matchs de tes joueurs ---------- */
+
+function tennisEvents(g, before, opts) {
+  const favs = opts.favTennis ?? [];
+  const me = [g.a, g.b].find((p) => favs.some((f) => sameDriver(f, p)));
+  if (!me) return []; // les autres matchs en direct : pas de notification
+  const opp = me === g.a ? g.b : g.a;
+  const face = me.photo ? { abbr: '🎾', logo: me.photo, color: '#c6f36b', round: true } : { abbr: '🎾', logo: '', color: '#c6f36b' };
+  const where = [g.round, g.title].filter(Boolean).join(' · ');
+  // Manches du point de vue de ton joueur : « 6-4 3-6 7-6 ».
+  const sets = me.sets.map((n, i) => `${n}-${opp.sets[i] ?? 0}`).join(' ');
+  if (before.state === 'pre' && g.state === 'in') {
+    return [{ title: `🎾 ${me.name} entre sur le court`, body: `contre ${opp.name} · ${where}`, team: face, link: g.link ?? '' }];
+  }
+  if (before.state !== 'post' && g.state === 'post') {
+    if (me.winner) return [{ title: `🏆 Victoire de ${me.name} !`, body: [sets, `contre ${opp.name}`, where].filter(Boolean).join(' · '), team: face, link: g.link ?? '', big: true }];
+    if (opp.winner) return [{ title: `${me.name} s'incline`, body: [sets, `contre ${opp.name}`, where].filter(Boolean).join(' · '), team: face, link: g.link ?? '' }];
+  }
+  return [];
+}
+
 /**
  * Évènements survenus entre deux relevés. `prev` à null (premier relevé) ne
  * donne rien : on ne notifie pas l'état trouvé au démarrage.
@@ -310,6 +358,8 @@ export function detectEvents(prev, games, opts = {}) {
     if (!before) continue; // match apparu : rien n'a « changé »
     if (g.kind === 'match') out.push(...matchEvents(g, before, opts));
     else if (g.kind === 'card') out.push(...cardEvents(g, before, opts));
+    else if (g.kind === 'golf') out.push(...golfEvents(g, before));
+    else if (g.kind === 'tennis') out.push(...tennisEvents(g, before, opts));
     else out.push(...sessionEvents(g, before, opts));
   }
   return out.slice(-MAX_PER_REFRESH);

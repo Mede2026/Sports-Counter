@@ -9,11 +9,11 @@
 //      contourne un éventuel blocage CORS.
 // Quand les deux échouent, l'erreur rapporte le résultat de chacun.
 import { LEAGUES_BY_ID } from './leagues.js';
-import { DEMO_EVENTS } from './demo.js';
+import { DEMO_EVENTS, DEMO_EXTRA } from './demo.js';
 import { errText } from './err.js';
 import { NHL_TEAMS } from './teams-nhl.js';
 import { ordinal } from './format.js';
-import { statusFr, weightFr, resultFr, segmentFr } from './status-fr.js';
+import { statusFr, weightFr, resultFr, segmentFr, roundFr, drawFr } from './status-fr.js';
 import { diskCache } from './cache.js';
 import { autoFr } from './translate.js';
 
@@ -93,12 +93,21 @@ function writeTeamsCache(leagueId, teams) {
   } catch { /* stockage plein ou indisponible : on s'en passe */ }
 }
 
+/**
+ * Paramètres du tableau des scores : ceux de la ligue (football universitaire :
+ * toute la première division, pas seulement les matchs vedettes) et `extra`.
+ */
+function boardQuery(league, extra = '') {
+  const parts = [String(extra).replace(/^\?/, ''), league?.query ?? ''].filter(Boolean);
+  return parts.length ? `?${parts.join('&')}` : '';
+}
+
 /** Source principale : la liste officielle des équipes de la ligue. */
 async function teamsFromDirectory(league) {
   // Pas de paramètre dans l'adresse : `/scoreboard` passe sans paramètre, alors
   // que `/teams?limit=200` était refusé. La liste complète vient de toute façon
   // sans limite.
-  const data = await getJson(`${league.path}/teams`);
+  const data = await getJson(`${league.path}/teams`, league.teamsQuery ?? '');
   const raw = data?.sports?.[0]?.leagues?.[0]?.teams ?? [];
   return raw.map((entry) => entry.team).filter(Boolean).map(toTeam);
 }
@@ -139,7 +148,7 @@ async function teamsFromSchedule(league) {
   // 1. Une seule requête sur trois semaines. ESPN a refusé (HTTP 400) une
   //    plage de 60 jours avec limit=1000 : on raccourcit et on retire limit.
   try {
-    absorb(await getJson(`${league.path}/scoreboard`, `?dates=${ymd(-7)}-${ymd(14)}`));
+    absorb(await getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${ymd(-7)}-${ymd(14)}`)));
   } catch (err) {
     errors.push(`plage : ${errText(err)}`);
   }
@@ -151,7 +160,7 @@ async function teamsFromSchedule(league) {
   for (let i = 0; i < offsets.length && seen.size < target; i += 6) {
     const batch = offsets.slice(i, i + 6);
     const results = await Promise.allSettled(
-      batch.map((d) => getJson(`${league.path}/scoreboard`, `?dates=${ymd(d)}`)),
+      batch.map((d) => getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${ymd(d)}`))),
     );
     for (const r of results) {
       if (r.status === 'fulfilled') absorb(r.value);
@@ -166,7 +175,7 @@ async function teamsFromSchedule(league) {
   for (let end = -31; end > -310; end -= 14) ranges.push([end - 13, end]);
   for (let i = 0; i < ranges.length && seen.size < target; i += 4) {
     const results = await Promise.allSettled(
-      ranges.slice(i, i + 4).map(([a, b]) => getJson(`${league.path}/scoreboard`, `?dates=${ymd(a)}-${ymd(b)}`)),
+      ranges.slice(i, i + 4).map(([a, b]) => getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${ymd(a)}-${ymd(b)}`))),
     );
     for (const r of results) if (r.status === 'fulfilled') absorb(r.value);
   }
@@ -281,8 +290,9 @@ function sessionLabel(comp) {
  */
 export function headshotUrl(leagueId, id) {
   if (!id) return '';
+  const path = LEAGUES_BY_ID[leagueId]?.path ?? '';
   const dir = { f1: 'rpm', ufc: 'mma' }[leagueId]
-    ?? (LEAGUES_BY_ID[leagueId]?.path.startsWith('soccer/') ? 'soccer' : LEAGUES_BY_ID[leagueId]?.path.split('/')[1]);
+    ?? (/^(soccer|golf|tennis)\//.exec(path)?.[1] ?? path.split('/')[1]);
   return dir ? `https://a.espncdn.com/i/headshots/${dir}/players/full/${id}.png` : '';
 }
 
@@ -364,11 +374,17 @@ export function sameDriver(a, b) {
 function weekendSessions(event) {
   return (event?.competitions ?? [])
     .filter((c) => c?.date)
-    .map((c) => ({
-      label: sessionLabel(c),
-      startsAt: new Date(c.date),
-      state: c?.status?.type?.state ?? 'pre',
-    }))
+    .map((c) => {
+      const state = c?.status?.type?.state ?? 'pre';
+      return {
+        id: String(c?.id ?? ''),
+        label: sessionLabel(c),
+        startsAt: new Date(c.date),
+        state,
+        // Classement de chaque séance (essais, qualifs, sprint, course).
+        results: state === 'pre' ? [] : classification(c),
+      };
+    })
     .sort((a, b) => a.startsAt - b.startsAt);
 }
 
@@ -613,6 +629,118 @@ function normalizeCard(event, base, logo) {
   };
 }
 
+/* ---------- Golf : un tournoi, son tableau des meneurs ---------- */
+
+/** Un golfeur au tableau : rang (« T3 »), score par rapport à la normale. */
+function golferOf(c, i) {
+  const a = c?.athlete ?? {};
+  const id = String(a.id ?? c?.id ?? '');
+  const raw = typeof c?.score === 'object' ? c.score?.displayValue ?? c.score?.value : c?.score;
+  const score = raw == null || raw === '' ? '' : String(raw) === '0' ? 'E' : String(raw);
+  const posText = String(c?.status?.position?.displayName ?? c?.position?.displayName ?? '');
+  const order = Number(c?.order ?? c?.sortOrder) || i + 1;
+  return {
+    id,
+    name: a.displayName ?? a.fullName ?? '',
+    short: a.shortName ?? a.displayName ?? '',
+    photo: a.headshot?.href ?? headshotUrl('pga', id),
+    flag: a.flag?.href ?? '',
+    order,
+    pos: Number(posText.replace(/\D/g, '')) || order,
+    posText: posText || String(order),
+    score: score === 'E' || /^[+-]/.test(score) ? score : score && Number(score) > 0 ? `+${score}` : score,
+    thru: String(c?.status?.thru ?? c?.status?.displayThru ?? ''),
+  };
+}
+
+function normalizeGolf(event, base, logo) {
+  const comp = event?.competitions?.[0] ?? {};
+  const status = comp.status ?? event?.status ?? {};
+  const state = status?.type?.state ?? base.state;
+  const players = (comp.competitors ?? []).map(golferOf).filter((p) => p.name).sort((x, y) => x.order - y.order);
+  const round = Number(status?.period) || null;
+  return {
+    ...base,
+    kind: 'golf',
+    state,
+    title: event?.name || event?.shortName || 'Tournoi',
+    logo,
+    round,
+    players: players.slice(0, 70),
+    leader: state === 'pre' ? null : players[0] ?? null,
+    session: round && state !== 'pre' ? `Ronde ${round}` : '',
+    // En cours, la ronde est déjà dans `session` : pas deux fois « Ronde 3 ».
+    statusText: state === 'post' ? 'Terminé' : state === 'in' ? (round ? '' : 'En cours') : base.statusText,
+    clock: '',
+  };
+}
+
+/* ---------- Tennis : un match par rencontre ---------- */
+
+function tennisPlayer(c, leagueId) {
+  const a = c?.athlete ?? c?.roster?.athletes?.[0] ?? {};
+  const id = String(a.id ?? c?.id ?? '');
+  return {
+    id,
+    name: a.displayName ?? a.fullName ?? c?.displayName ?? '',
+    short: a.shortName ?? a.displayName ?? '',
+    photo: a.headshot?.href ?? headshotUrl(leagueId, id),
+    flag: a.flag?.href ?? '',
+    seed: Number(c?.seed ?? c?.curatedRank?.current) || null,
+    winner: c?.winner === true,
+    // Jeux gagnés dans chaque manche.
+    sets: (c?.linescores ?? []).map((l) => Number(l?.value ?? l?.displayValue)).filter(Number.isFinite),
+  };
+}
+
+/**
+ * Les matchs de simple d'un tournoi (ESPN les range par tableau :
+ * « Men's Singles », « Women's Singles »…). Les doubles sont laissés de côté.
+ */
+function normalizeTennis(event, leagueId, logo) {
+  const groups = event?.groupings?.length
+    ? event.groupings
+    : [{ grouping: { displayName: '' }, competitions: event?.competitions ?? [] }];
+  const tournament = event?.name || event?.shortName || 'Tournoi';
+  const out = [];
+  for (const grp of groups) {
+    const draw = grp?.grouping?.displayName ?? grp?.displayName ?? '';
+    if (/double/i.test(draw)) continue;
+    for (const comp of grp?.competitions ?? []) {
+      const cs = [...(comp?.competitors ?? [])].sort((x, y) => (x?.order ?? 0) - (y?.order ?? 0));
+      if (cs.length !== 2) continue;
+      const [a, b] = cs.map((c) => tennisPlayer(c, leagueId));
+      if (!a.name || !b.name) continue;
+      const st = comp?.status ?? {};
+      const state = st?.type?.state ?? 'pre';
+      out.push({
+        id: String(comp?.id ?? `${a.id}-${b.id}`),
+        leagueId,
+        kind: 'tennis',
+        state,
+        title: tournament,
+        draw: drawFr(draw),
+        round: roundFr(comp?.round?.displayName ?? comp?.type?.text ?? ''),
+        a,
+        b,
+        statusText: state === 'post' ? 'Terminé' : statusFr(st?.type?.shortDetail ?? ''),
+        startsAt: comp?.date ? new Date(comp.date) : comp?.startDate ? new Date(comp.startDate) : null,
+        link: pickLink(comp) || pickLink(event),
+        logo,
+        session: '',
+        clock: '',
+      });
+    }
+  }
+  return out;
+}
+
+/** Évènements d'ESPN → matchs de l'app (un tournoi de tennis en donne plusieurs). */
+function normalizeEvents(event, leagueId, logo = '') {
+  if (LEAGUES_BY_ID[leagueId]?.kind === 'tennis') return normalizeTennis(event, leagueId, logo);
+  return [normalizeEvent(event, leagueId, logo)];
+}
+
 function normalizeEvent(event, leagueId, logo = '') {
   const comp = event?.competitions?.[0];
   const status = event?.status ?? comp?.status ?? {};
@@ -637,6 +765,7 @@ function normalizeEvent(event, leagueId, logo = '') {
 
   // UFC : un gala = un évènement, un combat = une « competition ».
   if (LEAGUES_BY_ID[leagueId]?.kind === 'card') return normalizeCard(event, base, logo);
+  if (LEAGUES_BY_ID[leagueId]?.kind === 'golf') return normalizeGolf(event, base, logo);
 
   const competitors = comp?.competitors ?? [];
   // Une course de F1 n'a pas deux camps : on la traite comme un simple évènement.
@@ -683,9 +812,9 @@ function normalizeEvent(event, leagueId, logo = '') {
 export async function fetchScoreboard(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league) return [];
-  const data = await getJson(`${league.path}/scoreboard`);
+  const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
   const logo = league.logo || leagueLogo(data);
-  return (data?.events ?? []).map((e) => normalizeEvent(e, leagueId, logo));
+  return (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo));
 }
 
 // Calendrier des jours à venir : il change peu, inutile de le redemander à
@@ -704,9 +833,9 @@ async function fetchDay(leagueId, offsetDays) {
   const hit = dayCache.get(key);
   if (hit) return hit;
 
-  const data = await getJson(`${league.path}/scoreboard`, `?dates=${date}`);
+  const data = await getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${date}`));
   const logo = league.logo || leagueLogo(data);
-  const events = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId, logo));
+  const events = (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo));
   dayCache.set(key, events);
   return events;
 }
@@ -862,8 +991,87 @@ export async function fetchMatchDetail(leagueId, eventId) {
     winProb: winProbability(data, state),
     videos: highlights(data),
     box: boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]),
+    probables: probablePitchers(competitors, leagueId),
     allPlays: allPlays(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]),
   };
+}
+
+/**
+ * Baseball : lanceurs partants annoncés, par équipe : { idÉquipe: { name,
+ * photo, line } } (« 12-6, MPM 3,21 »). Vide hors baseball.
+ */
+function probablePitchers(competitors, leagueId) {
+  if (LEAGUES_BY_ID[leagueId]?.path.split('/')[0] !== 'baseball') return {};
+  const out = {};
+  for (const c of competitors ?? []) {
+    const p = (c?.probables ?? [])[0];
+    const a = p?.athlete;
+    if (!a?.displayName) continue;
+    const stat = (n) => (p?.statistics ?? []).find((x) => x?.name === n || x?.abbreviation === n)?.displayValue;
+    const record = p?.record ?? (stat('wins') && stat('losses') ? `${stat('wins')}-${stat('losses')}` : '');
+    const era = stat('ERA') ?? stat('earnedRunAverage');
+    out[String(c?.team?.id ?? c?.id ?? '')] = {
+      name: a.displayName,
+      photo: athletePhoto(a, leagueId),
+      line: [record, era ? `MPM ${era}` : ''].filter(Boolean).join(', '),
+    };
+  }
+  return out;
+}
+
+/* ---------- Hockey : trios et paires, d'après la grille de profondeur ---------- */
+
+const linesCache = diskCache('lines', 12 * 3600 * 1000);
+
+/**
+ * Trios, paires de défense et gardiens d'une équipe de la LNH, d'après la
+ * grille de profondeur d'ESPN (le rang de chaque joueur à sa position) :
+ * { forwards: [[AG, C, AD]…], defense: [[D, D]…], goalies: [G…] }. C'est
+ * l'alignement d'ESPN, pas forcément celui du dernier match.
+ */
+export async function fetchHockeyLines(teamId) {
+  const hit = linesCache.get(teamId);
+  if (hit) return hit;
+  const league = LEAGUES_BY_ID.nhl;
+  let data = null;
+  for (const year of await leaderSeasons(league)) {
+    try {
+      data = await getCore(`/v2/sports/hockey/leagues/nhl/seasons/${year}/teams/${encodeURIComponent(teamId)}/depthcharts?lang=en&region=us`);
+      if ((data?.items ?? []).length) break;
+    } catch { data = null; }
+  }
+  const positions = data?.items?.[0]?.positions ?? {};
+  // Joueurs d'une position, du 1er au dernier rang.
+  const at = (...keys) => {
+    for (const k of keys) {
+      const p = positions[k] ?? positions[k.toUpperCase()];
+      if (p?.athletes?.length) return [...p.athletes].sort((x, y) => (x?.rank ?? 99) - (y?.rank ?? 99)).map((x) => corePath(x?.athlete?.$ref)).filter(Boolean);
+    }
+    return [];
+  };
+  const refs = { lw: at('lw', 'l'), c: at('c'), rw: at('rw', 'r'), ld: at('ld'), rd: at('rd'), d: at('d'), g: at('g') };
+  const all = [...new Set(Object.values(refs).flat())];
+  const people = new Map();
+  await Promise.allSettled(all.map(async (ref) => people.set(ref, await fetchAthlete(ref))));
+  const who = (ref) => people.get(ref) ?? null;
+
+  const forwards = [];
+  for (let i = 0; i < 4; i++) {
+    const line = [refs.lw[i], refs.c[i], refs.rw[i]].map(who);
+    if (line.some(Boolean)) forwards.push(line);
+  }
+  const defense = [];
+  if (refs.ld.length || refs.rd.length) {
+    for (let i = 0; i < 3; i++) {
+      const pair = [refs.ld[i], refs.rd[i]].map(who);
+      if (pair.some(Boolean)) defense.push(pair);
+    }
+  } else {
+    for (let i = 0; i < Math.min(6, refs.d.length); i += 2) defense.push([who(refs.d[i]), who(refs.d[i + 1])]);
+  }
+  const lines = { forwards, defense, goalies: refs.g.map(who).filter(Boolean).slice(0, 3) };
+  if (forwards.length || defense.length) linesCache.set(teamId, lines);
+  return lines;
 }
 
 /* ---------- Fenêtre Match : box score et tous les jeux ---------- */
@@ -916,6 +1124,9 @@ function boxPlayer(x) {
     jersey: String(x?.jersey ?? a.jersey ?? ''),
     pos: a.position?.abbreviation ?? x?.position?.abbreviation ?? '',
     starter: x?.starter === true,
+    // Baseball : rang dans l'ordre des frappeurs (1 à 9).
+    order: Number(x?.batOrder ?? x?.battingOrder) || null,
+    photo: athletePhoto(a, ''),
   };
 }
 
@@ -1105,14 +1316,27 @@ function winProbability(data, state) {
     const last = live[live.length - 1];
     const h = Number(last?.homeWinPercentage);
     if (Number.isFinite(h)) {
-      const tie = Number(last?.tiePercentage) || 0;
-      return { home: Math.round(h * 100), away: Math.round((1 - h - tie) * 100), live: true };
+      // Arrondir chaque équipe à part donnait parfois 101 % (97,5 → 98 et
+      // 2,5 → 3) : la seconde est le reste, pour un total de 100 %.
+      const home = Math.round(h * 100);
+      const tie = Math.round((Number(last?.tiePercentage) || 0) * 100);
+      return { home, away: Math.max(0, 100 - home - tie), live: true };
     }
   }
+  // Avant le match : la projection d'ESPN, sinon 100 moins sa chance de défaite.
   const p = data?.predictor;
-  const h = parseFloat(p?.homeTeam?.gameProjection ?? p?.homeTeam?.teamChanceLoss);
-  const a = parseFloat(p?.awayTeam?.gameProjection ?? p?.awayTeam?.teamChanceLoss);
-  if (Number.isFinite(h) && Number.isFinite(a)) return { home: Math.round(h), away: Math.round(a), live: false };
+  const chance = (t) => {
+    const win = parseFloat(t?.gameProjection);
+    if (Number.isFinite(win)) return win;
+    const loss = parseFloat(t?.teamChanceLoss);
+    return Number.isFinite(loss) ? 100 - loss : NaN;
+  };
+  const h = chance(p?.homeTeam);
+  const a = chance(p?.awayTeam);
+  if (Number.isFinite(h) && Number.isFinite(a) && h + a > 0) {
+    const home = Math.round((h / (h + a)) * 100);
+    return { home, away: 100 - home, live: false };
+  }
   return null;
 }
 
@@ -1328,7 +1552,7 @@ async function leaderSeasons(league) {
   let year = new Date().getFullYear();
   let type = 2;
   try {
-    const board = await getJson(`${league.path}/scoreboard`);
+    const board = await getJson(`${league.path}/scoreboard`, boardQuery(league));
     const season = board?.leagues?.[0]?.season ?? board?.season ?? {};
     year = Number(season.year) || year;
     type = Number(season.type?.type ?? season.type) || type;
@@ -1451,6 +1675,50 @@ export async function fetchFighters() {
   return fighters;
 }
 
+/* ---------- Joueurs de tennis (réglages) ---------- */
+
+const tennisCache = diskCache('tennis-players', 24 * 3600 * 1000);
+
+/**
+ * Joueurs des tournois récents et en cours d'un circuit (ATP, WTA), pour
+ * choisir ses favoris : [{ id, name, short, photo, flag, leagueId }], triés
+ * par nom.
+ */
+export async function fetchTennisPlayers(leagueId) {
+  const hit = tennisCache.get(leagueId);
+  if (hit) return hit;
+  const path = LEAGUES_BY_ID[leagueId]?.path;
+  if (!path) return [];
+  const found = new Map();
+  const absorb = (data) => {
+    for (const ev of data?.events ?? []) {
+      for (const m of normalizeTennis(ev, leagueId, '')) {
+        for (const x of [m.a, m.b]) {
+          if (x.id && x.name && !found.has(x.id)) {
+            found.set(x.id, { id: x.id, name: x.name, short: x.short, photo: x.photo, flag: x.flag, leagueId });
+          }
+        }
+      }
+    }
+  };
+  let lastErr = null;
+  // Tournois en cours et des 2 derniers mois, par tranches de deux semaines.
+  const ranges = [];
+  for (let end = 0; end > -60; end -= 14) ranges.push([end - 13, end]);
+  const results = await Promise.allSettled([
+    getJson(`${path}/scoreboard`),
+    ...ranges.map(([a, b]) => getJson(`${path}/scoreboard`, `?dates=${ymd(a)}-${ymd(b)}`)),
+  ]);
+  for (const r of results) {
+    if (r.status === 'fulfilled') absorb(r.value);
+    else lastErr = r.reason;
+  }
+  if (!found.size) throw lastErr ?? new Error('aucun joueur trouvé');
+  const players = [...found.values()].sort((x, y) => x.name.localeCompare(y.name, 'fr'));
+  tennisCache.set(leagueId, players);
+  return players;
+}
+
 /* ---------- Pilotes de F1 (réglages) ---------- */
 
 const DRIVERS_KEY = 'sports-counter.drivers.f1.v2';
@@ -1482,10 +1750,10 @@ export async function fetchDrivers() {
     }
   };
   let lastErr = null;
-  try { absorb(await getJson(`${league.path}/scoreboard`)); } catch (err) { lastErr = err; }
+  try { absorb(await getJson(`${league.path}/scoreboard`, boardQuery(league))); } catch (err) { lastErr = err; }
   // Entre deux Grands Prix, on remonte le calendrier par tranches d'un mois.
   for (let end = 0; end > -240 && !sessions.some((x) => x.rank === 2); end -= 30) {
-    try { absorb(await getJson(`${league.path}/scoreboard`, `?dates=${ymd(end - 29)}-${ymd(end)}`)); } catch (err) { lastErr = err; }
+    try { absorb(await getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${ymd(end - 29)}-${ymd(end)}`))); } catch (err) { lastErr = err; }
   }
   if (!sessions.length) throw lastErr ?? new Error('aucun pilote trouvé');
 
@@ -1571,10 +1839,9 @@ export async function fetchF1Calendar(fromOffset, toOffset) {
  */
 export async function fetchLeagueCalendar(leagueId, fromOffset, toOffset) {
   const league = LEAGUES_BY_ID[leagueId];
-  const data = await getJson(`${league.path}/scoreboard`, `?dates=${ymd(fromOffset)}-${ymd(toOffset)}`);
+  const data = await getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${ymd(fromOffset)}-${ymd(toOffset)}`));
   const logo = league.logo || leagueLogo(data);
-  return (data?.events ?? []).map((e) => {
-    const g = normalizeEvent(e, leagueId, logo);
+  return (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo)).map((g) => {
     if (leagueId !== 'f1') return { ...g, raceState: g.state };
     const race = (g.sessions ?? []).find((s) => /course/i.test(s.label)) ?? g.sessions?.at(-1);
     return { ...g, startsAt: race?.startsAt ?? g.startsAt, raceState: race?.state ?? g.state };
@@ -1583,8 +1850,44 @@ export async function fetchLeagueCalendar(leagueId, fromOffset, toOffset) {
 
 /* ---------- Alignement d'une équipe (joueurs favoris) ---------- */
 
+// "ligue:équipe" -> joueurs, gardés un jour sur le disque (la recherche dans
+// toute la LNH en charge 32 d'un coup).
+const rosterCache = diskCache('rosters', 24 * 3600 * 1000);
+
 /** Joueurs d'une équipe, avec photo. Lève une erreur si ESPN ne les donne pas à l'app. */
 export async function fetchRoster(leagueId, teamId) {
+  const key = `${leagueId}:${teamId}`;
+  const hit = rosterCache.get(key);
+  if (hit) return hit;
+  const players = await loadRoster(leagueId, teamId);
+  if (players.length) rosterCache.set(key, players);
+  return players;
+}
+
+/**
+ * Tous les joueurs de la LNH, pour les chercher par leur nom : les 32
+ * alignements, 8 à la fois. `onProgress(faites, total)` suit le chargement.
+ * Une équipe illisible est sautée ; rien de lisible du tout lève l'erreur.
+ */
+export async function fetchAllNhlPlayers(onProgress = () => {}) {
+  const all = [];
+  let done = 0;
+  let lastErr = null;
+  for (let i = 0; i < NHL_TEAMS.length; i += 8) {
+    const batch = NHL_TEAMS.slice(i, i + 8);
+    const results = await Promise.allSettled(batch.map((t) => fetchRoster('nhl', t.id)));
+    results.forEach((r, k) => {
+      if (r.status === 'fulfilled') all.push(...r.value.map((p) => ({ ...p, team: batch[k].abbr })));
+      else lastErr = r.reason;
+    });
+    done += batch.length;
+    onProgress(done, NHL_TEAMS.length);
+  }
+  if (!all.length && lastErr) throw lastErr;
+  return all.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+}
+
+async function loadRoster(leagueId, teamId) {
   const league = LEAGUES_BY_ID[leagueId];
   const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/roster`);
   // Au hockey, les joueurs sont groupés par position ({ position, items }).
@@ -1604,8 +1907,8 @@ export async function fetchRoster(leagueId, teamId) {
 }
 
 /** Données factices : aperçu navigateur et première ouverture hors ligne. */
-export function demoEvents() {
-  return DEMO_EVENTS.map((e) => ({ ...e, startsAt: e.startsAt ? new Date(e.startsAt) : null }));
+export function demoEvents(extra = false) {
+  return [...DEMO_EVENTS, ...(extra ? DEMO_EXTRA : [])].map((e) => ({ ...e, startsAt: e.startsAt ? new Date(e.startsAt) : null }));
 }
 
 /* ---------- Séries éliminatoires : le tableau ---------- */

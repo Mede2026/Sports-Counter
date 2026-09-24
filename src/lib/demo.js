@@ -109,3 +109,31 @@ export const DEMO_TEAMS = [
   { id: '4',  abbr: 'COL', name: 'Colorado Avalanche',      short: 'Avalanche',   logo: '',        color: '#6f263d' },
   { id: '25', abbr: 'VAN', name: 'Vancouver Canucks',       short: 'Canucks',     logo: '',        color: '#00205b' },
 ];
+
+// Golf et tennis : aperçu seulement avec ?demo&extra (les captures du site
+// restent celles des sports d'équipe).
+const G = (i, name, short, posText, score, thru) => ({ id: `g${i}`, name, short, photo: '', flag: '', order: i + 1, pos: i + 1, posText, score, thru });
+const T = (id, name, short, sets, winner = false, seed = null) => ({ id, name, short, photo: '', flag: '', seed, winner, sets });
+
+export const DEMO_EXTRA = [
+  {
+    id: 'demo-pga-1', leagueId: 'pga', kind: 'golf', state: 'in', title: 'Tour Championship', logo: '',
+    round: 3, session: 'Ronde 3', statusText: 'Ronde 3', clock: '', startsAt: null,
+    players: [
+      G(0, 'Scottie Scheffler', 'S. Scheffler', '1', '-14', '12'), G(1, 'Rory McIlroy', 'R. McIlroy', 'T2', '-11', '14'),
+      G(2, 'Xander Schauffele', 'X. Schauffele', 'T2', '-11', 'F'), G(3, 'Nick Taylor', 'N. Taylor', '4', '-9', '10'),
+      G(4, 'Corey Conners', 'C. Conners', 'T5', '-8', '11'), G(5, 'Collin Morikawa', 'C. Morikawa', 'T5', '-8', 'F'),
+    ],
+  },
+  {
+    id: 'demo-atp-1', leagueId: 'atp', kind: 'tennis', state: 'in', title: 'Omnium Banque Nationale', draw: 'Simple messieurs',
+    round: 'Quart de finale', statusText: '3e manche', clock: '', session: '', startsAt: null, logo: '',
+    a: T('fa', 'Félix Auger-Aliassime', 'F. Auger-Aliassime', [6, 3, 4], false, 8),
+    b: T('cr', 'Casper Ruud', 'C. Ruud', [4, 6, 3], false, 6),
+  },
+  {
+    id: 'demo-wta-1', leagueId: 'wta', kind: 'tennis', state: 'post', title: 'Omnium Banque Nationale', draw: 'Simple dames',
+    round: 'Demi-finale', statusText: 'Terminé', clock: '', session: '', startsAt: null, logo: '',
+    a: T('lf', 'Leylah Fernandez', 'L. Fernandez', [7, 6], true), b: T('cg', 'Coco Gauff', 'C. Gauff', [5, 4], false, 3),
+  },
+];

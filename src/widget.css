@@ -53,14 +53,25 @@ html, body {
    suit toujours les coins arrondis, alors qu'un élément ajouté débordait par
    endroits sous WebView2 et se voyait à plat par-dessus les coins. */
 .widget--team {
+  /* Plus présente : forte en haut, et une teinte qui reste jusqu'en bas. */
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--team) 30%, transparent), color-mix(in srgb, var(--team) 8%, transparent) 90px, transparent 160px),
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--team) 46%, transparent),
+      color-mix(in srgb, var(--team) 18%, transparent) 110px,
+      color-mix(in srgb, var(--team) 9%, transparent) 60%,
+      color-mix(in srgb, var(--team) 14%, transparent)),
     var(--surface);
   box-shadow:
-    inset 0 2px 0 var(--team),
+    inset 0 3px 0 var(--team),
     0 18px 48px rgba(0, 0, 0, 0.5),
     0 2px 8px rgba(0, 0, 0, 0.3);
 }
+/* Séparateurs, étiquettes de ligue et barre de défilement aux couleurs de l'équipe. */
+.widget--team .game,
+.widget--team .row { border-bottom-color: color-mix(in srgb, var(--team) 26%, transparent); }
+.widget--team .chip { background: color-mix(in srgb, var(--team) 24%, transparent); }
+.widget--team .game--link:hover { background: color-mix(in srgb, var(--team) 12%, transparent); }
+.widget--team ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--team) 55%, transparent); }
 
 /* Zone de déplacement : toute la barre du haut. */
 .bar {
@@ -519,7 +530,7 @@ span.crest {
 }
 .widget--team[data-theme="light"] {
   box-shadow:
-    inset 0 2px 0 var(--team),
+    inset 0 3px 0 var(--team),
     0 16px 40px rgba(0, 0, 0, 0.22),
     0 2px 8px rgba(0, 0, 0, 0.12);
 }
@@ -586,3 +597,18 @@ span.crest {
 .bout--fav { padding: 5px 7px; margin-left: -7px; margin-right: -7px; border-radius: 9px; background: rgba(242, 197, 92, 0.1); box-shadow: inset 2px 0 0 #f2c55c; }
 .bout__now { color: var(--live); font-weight: 650; }
 .widget[data-theme="light"] .bout--fav { background: rgba(168, 106, 12, 0.08); }
+
+/* ---------- Golf ---------- */
+.podium--golf .podium__pos { min-width: 26px; }
+.podium--golf .podium__gap small { opacity: 0.6; font-weight: 500; }
+
+/* ---------- Tennis ---------- */
+.tennis__meta { font-size: 11px; color: var(--text-muted); margin: 2px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tennis__p { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.tennis__p .face { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; object-position: top; background: rgba(255, 255, 255, 0.08); flex-shrink: 0; }
+.tennis__p--out { opacity: 0.5; }
+.tennis__name { flex: 1; min-width: 0; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tennis__name small { font-weight: 500; opacity: 0.6; }
+.tennis__sets { display: flex; gap: 8px; font-variant-numeric: tabular-nums; }
+.tennis__sets b { min-width: 10px; text-align: center; font-weight: 600; opacity: 0.7; }
+.tennis__sets b.set--won { opacity: 1; font-weight: 800; }

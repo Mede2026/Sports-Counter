@@ -1,15 +1,16 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllNhlPlayers, fetchTennisPlayers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
-import { visibleTeamColor } from './lib/color.js';
+import { visibleTeamColor, applyTeamAccent } from './lib/color.js';
 import { NHL_TEAMS } from './lib/teams-nhl.js';
 import { autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 import { faceHtml, bindFaces } from './lib/face.js';
+import { ofTeam } from './lib/events.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -50,8 +51,11 @@ const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 /* ---------- Colonne des ligues ---------- */
 
 function countFor(id) {
-  if (isWholeLeague(id)) return prefs.leagues.includes(id) ? 1 : 0;
-  return prefs.favorites.filter((f) => f.startsWith(`${id}:`)).length;
+  const whole = prefs.leagues.includes(id) ? 1 : 0;
+  if (LEAGUES_BY_ID[id]?.kind === 'tennis') return whole + (prefs.favTennis ?? []).filter((p) => p.leagueId === id).length;
+  if (isWholeLeague(id)) return whole;
+  // Compétition internationale : ses équipes nationales, et « toute la compétition ».
+  return prefs.favorites.filter((f) => f.startsWith(`${id}:`)).length + whole;
 }
 
 function renderLeagues() {
@@ -92,16 +96,34 @@ function renderTeams() {
     renderWhole(league);
     return;
   }
+  if (league.kind === 'golf') {
+    renderGolf(league);
+    return;
+  }
+  if (league.kind === 'tennis') {
+    renderTennis(league);
+    return;
+  }
 
   const q = query.trim().toLowerCase();
   const list = q ? teams.filter((t) => `${t.name} ${t.abbr}`.toLowerCase().includes(q)) : teams;
 
+  // Compétition internationale : tous ses matchs d'un coup, ou tes pays.
+  const whole = league.tournament ? `
+    <div class="team-row${prefs.leagues.includes(current) ? ' team-row--on' : ''}" id="rowFollowWhole">
+      <span class="check">${CHECK}</span>
+      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
+      <span class="team-row__name">Suivre toute la compétition <small class="st__muted">tous les matchs, une notification à chaque but</small></span>
+    </div>
+    <div class="subhead">Ou seulement tes pays <small>par exemple le Canada : ses matchs, ses buts et ses résultats</small></div>` : '';
+
   if (!list.length) {
-    el.teams.innerHTML = `<div class="state">Aucune équipe ne correspond à « ${query} ».</div>`;
+    el.teams.innerHTML = `${whole}<div class="state">${q ? `Aucune équipe ne correspond à « ${query} ».` : 'ESPN ne donne pas encore les équipes de cette compétition.'}</div>`;
+    document.getElementById('rowFollowWhole')?.addEventListener('click', toggleLeague);
     return;
   }
 
-  el.teams.innerHTML = list.map((t) => {
+  el.teams.innerHTML = whole + list.map((t) => {
     const on = prefs.favorites.includes(`${current}:${t.id}`);
     const crest = crestHtml(t, 'crest-sm');
     return `<div class="team-row${on ? ' team-row--on' : ''}" data-id="${t.id}">
@@ -113,9 +135,101 @@ function renderTeams() {
   }).join('');
 
   bindCrests(el.teams);
-  el.teams.querySelectorAll('.team-row').forEach((row) => {
+  el.teams.querySelectorAll('.team-row[data-id]').forEach((row) => {
     row.addEventListener('click', () => toggleTeam(row.dataset.id));
   });
+  document.getElementById('rowFollowWhole')?.addEventListener('click', toggleLeague);
+}
+
+/* ---------- Golf : suivre les tournois ---------- */
+
+function renderGolf(league) {
+  const on = prefs.leagues.includes(league.id);
+  el.teams.innerHTML = `
+    <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
+      <span class="check">${CHECK}</span>
+      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
+      <span class="team-row__name">Suivre tous les tournois du ${league.label}</span>
+    </div>
+    <div class="state">Le widget montre le tournoi de la semaine : les 5 premiers et leur score par rapport à la normale.
+      Tu reçois une notification quand le meneur change et pour le vainqueur.</div>`;
+  document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
+}
+
+/* ---------- Tennis : joueurs favoris, et tout le direct ---------- */
+
+const tennisPlayers = new Map(); // idLigue -> joueurs | Error
+
+async function loadTennis(leagueId) {
+  if (tennisPlayers.has(leagueId)) return;
+  renderTeams();
+  try {
+    tennisPlayers.set(leagueId, IS_DEMO ? demoTennis(leagueId) : await fetchTennisPlayers(leagueId));
+  } catch (err) {
+    tennisPlayers.set(leagueId, err instanceof Error ? err : new Error(String(err)));
+  }
+  if (current === leagueId && view === 'teams') renderTeams();
+}
+
+function renderTennis(league) {
+  const on = prefs.leagues.includes(league.id);
+  const favs = (prefs.favTennis ?? []).filter((p) => p.leagueId === league.id);
+  const players = tennisPlayers.get(league.id);
+  const q = query.trim().toLowerCase();
+  let list;
+  if (players instanceof Error) {
+    list = errorBlock('Impossible de charger les joueurs.', players, '<br /><button class="ghost" id="btnRetryTennis">Réessayer</button>');
+  } else if (!players) {
+    list = '<div class="state">Chargement des joueurs…</div>';
+  } else {
+    // Tes favoris d'abord (même s'ils ne jouent pas cette semaine), puis les autres.
+    const all = [...favs.filter((f) => !players.some((p) => sameDriver(p, f))), ...players];
+    list = all
+      .filter((p) => !q || p.name.toLowerCase().includes(q))
+      .map((p) => ({ p, mine: favs.some((f) => sameDriver(p, f)) }))
+      .sort((a, b) => Number(b.mine) - Number(a.mine))
+      .map(({ p, mine }) => `
+        <div class="team-row driver-row${mine ? ' team-row--on' : ''}" data-tennis="${p.id}">
+          <span class="check">${CHECK}</span>
+          ${faceHtml(p, 'face-sm')}
+          <span class="team-row__name">${p.name}</span>
+          ${p.flag ? `<img class="flag-sm" src="${p.flag}" alt="" />` : ''}
+        </div>`).join('') || `<div class="state">Aucun joueur ne correspond à « ${query} ».</div>`;
+  }
+  el.teams.innerHTML = `
+    <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
+      <span class="check">${CHECK}</span>
+      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
+      <span class="team-row__name">Tous les matchs en direct <small class="st__muted">de la ${league.label}, pendant qu'ils se jouent</small></span>
+    </div>
+    <div class="subhead">Tes joueurs favoris <small>leurs matchs dans le widget, un rappel avant, puis une notification quand ils gagnent ou perdent</small></div>
+    ${list}`;
+  bindFaces(el.teams);
+  document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
+  document.getElementById('btnRetryTennis')?.addEventListener('click', () => { tennisPlayers.delete(league.id); loadTennis(league.id); });
+  el.teams.querySelectorAll('[data-tennis]').forEach((row) => row.addEventListener('click', () => pickTennis(league.id, row.dataset.tennis)));
+}
+
+/** Coche ou décoche un joueur de tennis favori. */
+function pickTennis(leagueId, id) {
+  const players = tennisPlayers.get(leagueId);
+  const pool = [...(Array.isArray(players) ? players : []), ...(prefs.favTennis ?? [])];
+  const p = pool.find((x) => x.id === id);
+  if (!p) return;
+  prefs.favTennis ??= [];
+  const i = prefs.favTennis.findIndex((x) => sameDriver(p, x));
+  if (i === -1) prefs.favTennis.push({ id: p.id, name: p.name, short: p.short, photo: p.photo, leagueId });
+  else prefs.favTennis.splice(i, 1);
+  savePrefs(prefs);
+  renderLeagues();
+  renderTeams();
+}
+
+function demoTennis(leagueId) {
+  const names = leagueId === 'wta'
+    ? ['Aryna Sabalenka', 'Iga Swiatek', 'Coco Gauff', 'Leylah Fernandez', 'Victoria Mboko']
+    : ['Jannik Sinner', 'Carlos Alcaraz', 'Novak Djokovic', 'Félix Auger-Aliassime', 'Denis Shapovalov'];
+  return names.map((name, i) => ({ id: `${leagueId}${i}`, name, short: name, photo: '', flag: '', leagueId }));
 }
 
 /** Bloc d'erreur : message clair quand c'est la connexion Internet. */
@@ -308,7 +422,9 @@ function showLeague(id) {
   query = '';
   el.search.value = '';
   const kind = LEAGUES_BY_ID[id]?.kind;
-  el.search.placeholder = kind === 'event' ? 'Rechercher un pilote…' : kind === 'card' ? 'Rechercher un combattant…' : 'Rechercher une équipe…';
+  el.search.placeholder = kind === 'event' ? 'Rechercher un pilote…' : kind === 'card' ? 'Rechercher un combattant…'
+    : kind === 'tennis' ? 'Rechercher un joueur…' : kind === 'golf' ? '' : 'Rechercher une équipe…';
+  el.search.hidden = kind === 'golf';
   setView('teams');
   selectLeague();
 }
@@ -330,7 +446,7 @@ function toggleTeam(id) {
     // Nom et couleurs gardés maintenant : le widget en a besoin pour se
     // colorer, sans redemander la liste des équipes à ESPN.
     const t = teams.find((x) => x.id === id);
-    if (t) prefs.favInfo[key] = { name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null };
+    if (t) prefs.favInfo[key] = { name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null, logo: t.logo ?? '' };
   } else {
     prefs.favorites.splice(i, 1);
     forgetFavorite(key);
@@ -348,16 +464,19 @@ function toggleTeam(id) {
 function backfillFavInfo(leagueId, list) {
   let changed = false;
   for (const key of prefs.favorites) {
-    if (!key.startsWith(`${leagueId}:`) || prefs.favInfo[key]) continue;
+    // Équipe sans fiche, ou fiche d'avant la 0.9 sans logo : on la complète.
+    if (!key.startsWith(`${leagueId}:`) || (prefs.favInfo[key] && prefs.favInfo[key].logo)) continue;
     const t = list.find((x) => `${leagueId}:${x.id}` === key);
     if (!t) continue;
-    prefs.favInfo[key] = { name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null };
+    prefs.favInfo[key] = { ...prefs.favInfo[key], name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null, logo: t.logo ?? '' };
     changed = true;
   }
   if (changed) { savePrefs(prefs); renderThemeOptions(); }
 }
 
 function renderThemeOptions() {
+  // La couleur de l'équipe choisie devient celle des réglages aussi.
+  applyTeamAccent(prefs);
   const select = document.getElementById('optTheme');
   const favs = prefs.favorites.filter((k) => prefs.favInfo[k]?.color);
   select.innerHTML = [
@@ -383,6 +502,8 @@ async function selectLeague() {
 
   if (league.kind === 'event') { renderTeams(); loadDrivers(); return; }
   if (league.kind === 'card') { renderTeams(); loadFighters(); return; }
+  if (league.kind === 'golf') { renderTeams(); return; }
+  if (league.kind === 'tennis') { renderTeams(); loadTennis(current); return; }
 
   if (cache.has(current)) { teams = cache.get(current); renderTeams(); return; }
 
@@ -429,7 +550,7 @@ function bindOptions() {
 
   const theme = document.getElementById('optTheme');
   renderThemeOptions();
-  theme.addEventListener('change', () => { prefs.theme = theme.value; savePrefs(prefs); });
+  theme.addEventListener('change', () => { prefs.theme = theme.value; savePrefs(prefs); applyTeamAccent(prefs); });
 
   const fullscreen = document.getElementById('optHideFullscreen');
   fullscreen.checked = prefs.hideFullscreen !== false;
@@ -597,11 +718,12 @@ function showPlayers() {
     const byId = new Map(NHL_TEAMS.map((t) => [t.id, t]));
     const sorted = [...NHL_TEAMS].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
     select.innerHTML = [
+      // Recherche dans les 32 équipes d'un coup.
+      '<option value="all">🔎 Toute la LNH</option>',
       ...mine.filter((id) => byId.has(id)).map((id) => `<option value="${id}">★ ${byId.get(id).name}</option>`),
       ...sorted.filter((t) => !mine.includes(t.id)).map((t) => `<option value="${t.id}">${t.name}</option>`),
     ].join('');
-    // Sans équipe favorite de la LNH : les Canadiens.
-    playerTeam = mine.find((id) => byId.has(id)) ?? NHL_TEAMS.find((t) => t.abbr === 'MTL')?.id;
+    playerTeam = 'all';
     select.value = playerTeam;
   }
   loadRoster(playerTeam);
@@ -611,8 +733,14 @@ async function loadRoster(teamId) {
   playerTeam = teamId;
   if (!rosters.has(teamId)) {
     el.players.innerHTML = '<div class="state">Chargement des joueurs…</div>';
+    const progress = (done, total) => {
+      if (playerTeam === 'all') el.players.innerHTML = `<div class="state">Chargement des joueurs de la LNH… ${done} / ${total} équipes</div>`;
+    };
     try {
-      rosters.set(teamId, IS_DEMO ? demoRoster(teamId) : await fetchRoster('nhl', teamId));
+      const all = () => (IS_DEMO
+        ? Promise.resolve(NHL_TEAMS.slice(0, 3).flatMap((t) => demoRoster(t.id).map((p) => ({ ...p, teamId: t.id, team: t.abbr }))))
+        : fetchAllNhlPlayers(progress));
+      rosters.set(teamId, teamId === 'all' ? await all() : IS_DEMO ? demoRoster(teamId) : await fetchRoster('nhl', teamId));
     } catch (err) {
       rosters.set(teamId, err instanceof Error ? err : new Error(String(err)));
     }
@@ -633,13 +761,21 @@ function renderPlayers() {
     return;
   }
   const q = playerQuery.trim().toLowerCase();
-  const list = (roster ?? []).filter((p) => !q || p.name.toLowerCase().includes(q));
+  // Toute la LNH : plus de 800 joueurs, on attend quelques lettres.
+  const everyone = playerTeam === 'all';
+  if (everyone && q.length < 2) {
+    el.players.innerHTML = `<div class="state">Tape au moins 2 lettres du nom d'un joueur : la recherche couvre les ${(roster ?? []).length} joueurs de la LNH.</div>`;
+    return;
+  }
+  // Sans accents ni majuscules : « lafreniere » trouve « Lafrenière ».
+  const plain = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const list = (roster ?? []).filter((p) => !q || plain(p.name).includes(plain(q))).slice(0, everyone ? 60 : undefined);
   el.players.innerHTML = list.map((p) => `
     <div class="team-row${isFavPlayer(p) ? ' team-row--on' : ''}" data-player="${p.id}">
       <span class="check">${CHECK}</span>
       ${faceHtml(p, 'face-sm')}
       <span class="team-row__name">${p.name}</span>
-      <span class="team-row__abbr">${[p.jersey ? `#${p.jersey}` : '', p.pos].filter(Boolean).join(' · ')}</span>
+      <span class="team-row__abbr">${[everyone ? p.team : '', p.jersey ? `#${p.jersey}` : '', p.pos].filter(Boolean).join(' · ')}</span>
     </div>`).join('') || `<div class="state">Aucun joueur ne correspond à « ${playerQuery} ».</div>`;
   bindFaces(el.players);
   el.players.querySelectorAll('.team-row').forEach((row) => row.addEventListener('click', () => {
@@ -962,7 +1098,10 @@ async function loadCalendar(force, keepDay = null) {
   const teamKeys = prefs.favorites.filter((k) => LEAGUES_BY_ID[k.split(':')[0]]?.kind === 'team');
   const wantF1 = prefs.leagues.includes('f1') || !!prefs.favDrivers?.length;
   const wantUfc = prefs.leagues.includes('ufc') || !!prefs.favFighters?.length;
-  if (!IS_DEMO && !teamKeys.length && !wantF1 && !wantUfc) {
+  // Tournois de golf, compétitions suivies en entier, circuits de tes joueurs de tennis.
+  const wholeLeagues = prefs.leagues.filter((id) => ['golf', 'team'].includes(LEAGUES_BY_ID[id]?.kind));
+  const tennisLeagues = [...new Set((prefs.favTennis ?? []).map((p) => p.leagueId))].filter((id) => LEAGUES_BY_ID[id]);
+  if (!IS_DEMO && !teamKeys.length && !wantF1 && !wantUfc && !wholeLeagues.length && !tennisLeagues.length) {
     el.calendar.innerHTML = '<div class="state">Choisis des équipes (ou la F1) pour remplir ton calendrier.</div>';
     calLoading = false;
     return;
@@ -980,6 +1119,10 @@ async function loadCalendar(force, keepDay = null) {
     });
     if (wantF1) jobs.push(fetchLeagueCalendar('f1', -back, CAL_AHEAD));
     if (wantUfc) jobs.push(fetchLeagueCalendar('ufc', -back, CAL_AHEAD));
+    for (const id of wholeLeagues) jobs.push(fetchLeagueCalendar(id, -back, CAL_AHEAD));
+    // Tennis : seulement les matchs de tes joueurs.
+    const mine = (g) => (prefs.favTennis ?? []).some((f) => sameDriver(f, g.a) || sameDriver(f, g.b));
+    for (const id of tennisLeagues) jobs.push(fetchLeagueCalendar(id, -back, CAL_AHEAD).then((list) => list.filter(mine)));
     for (const r of await Promise.allSettled(jobs)) {
       if (r.status === 'fulfilled') games.push(...r.value);
       else { errors.push(errText(r.reason)); lastErr = r.reason; }
@@ -1015,7 +1158,18 @@ function calRow(g) {
   else if (state === 'post') when = '<span class="cal__done">Final</span>';
 
   let body;
-  if (g.kind === 'card') {
+  if (g.kind === 'golf') {
+    const lead = state !== 'pre' ? g.players?.[0] : null;
+    body = `${crestHtml({ logo: g.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
+      <span class="cal__title">${g.title}</span>
+      ${lead ? `<span class="cal__res">${state === 'post' ? '🏆' : '1.'} ${lead.short || lead.name} ${lead.score}</span>` : ''}`;
+  } else if (g.kind === 'tennis') {
+    const w = g.a.winner ? g.a : g.b.winner ? g.b : null;
+    const star = (x) => ((prefs.favTennis ?? []).some((f) => sameDriver(f, x)) ? '⭐ ' : '');
+    body = `<span class="cal__chip">${g.round || ''}</span>
+      <span class="cal__title">${star(g.a)}${g.a.short || g.a.name} – ${star(g.b)}${g.b.short || g.b.name}</span>
+      ${w ? `<span class="cal__res">🏆 ${w.short || w.name}</span>` : ''}`;
+  } else if (g.kind === 'card') {
     const m = g.main;
     const w = state === 'post' && m ? (m.a.winner ? m.a : m.b.winner ? m.b : null) : null;
     // Tes combattants à l'affiche de ce gala.
@@ -1127,12 +1281,12 @@ async function tryToast() {
   const info = prefs.favInfo[prefs.theme];
   const mtl = NHL_TEAMS.find((t) => t.abbr === 'MTL');
   const team = info
-    ? { abbr: info.abbr, name: info.name, color: info.color, alt: info.alt, logo: teamLogo(prefs.theme) }
+    ? { abbr: info.abbr, name: info.name, color: info.color, alt: info.alt, logo: info.logo || teamLogo(prefs.theme) }
     : { abbr: mtl.abbr, name: 'Canadiens', color: mtl.color, alt: mtl.alt, logo: mtl.logo };
   const color = visibleTeamColor(team.color, team.alt) ?? '#4aa3ff';
   await window.__TAURI__.core.invoke('notify', {
     toast: {
-      title: `But des ${team.name} !`,
+      title: `But ${ofTeam(prefs.theme ? prefs.theme.split(':')[0] : 'nhl', team.name)} !`,
       body: 'Exemple de notification',
       link: '',
       color,
@@ -1178,6 +1332,7 @@ document.getElementById('btnClear').addEventListener('click', () => {
   const kind = LEAGUES_BY_ID[current]?.kind;
   if (kind === 'event') prefs.favDrivers = [];
   if (kind === 'card') prefs.favFighters = [];
+  if (kind === 'tennis') prefs.favTennis = (prefs.favTennis ?? []).filter((p) => p.leagueId !== current);
   savePrefs(prefs);
   if (kind === 'event') renderFavDriver();
   if (kind === 'card') renderFavFighters();
@@ -1305,3 +1460,13 @@ else if (startView === 'standings') showStandings();
 else if (startView === 'players') showPlayers();
 else if (new URLSearchParams(location.search).get('league')) showLeague(new URLSearchParams(location.search).get('league'));
 else selectLeague();
+
+// Logos des équipes favorites choisies avant la 0.9 (la fiche n'avait que le
+// nom et les couleurs) : complétés depuis la liste intégrée ou gardée en mémoire.
+(async () => {
+  if (IS_DEMO) return;
+  const leagues = [...new Set(prefs.favorites.filter((k) => !prefs.favInfo?.[k]?.logo).map((k) => k.split(':')[0]))];
+  for (const id of leagues) {
+    try { backfillFavInfo(id, id === 'nhl' ? NHL_TEAMS : await fetchTeams(id)); } catch { /* sans logo */ }
+  }
+})();

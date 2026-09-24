@@ -56,6 +56,17 @@ seulement les équipes que tu choisis.
   chaque joueur) et **Jeux** (tous les jeux du match, traduits en français).
 - **Séries éliminatoires** : Classements → Séries. Le tableau complet (LNH,
   NBA, WNBA, MLB, NFL), reconstruit à partir des matchs éliminatoires d'ESPN.
+- **Compétitions internationales** : Coupe du monde (et féminine), Euro, Copa
+  América, Ligue des nations, Gold Cup, matchs amicaux. Suis ton pays, ou
+  coche « Suivre toute la compétition » pour tous les matchs et tous les buts.
+- **Golf** (PGA, LPGA) : tableau des meneurs, notification quand le meneur
+  change et pour le vainqueur.
+- **Tennis** (ATP, WTA) : tes joueurs favoris (manches, rappel, résultat), et
+  si tu veux tous les matchs en direct du circuit.
+- **Alignement** (fenêtre Match) : trios et paires de défense au hockey (grille
+  de profondeur d'ESPN), ordre des frappeurs et lanceurs au baseball.
+- **F1, fenêtre Match** : un bouton par séance (essais, qualifs, sprint, course)
+  et l'onglet Championnat (pilotes et constructeurs).
 - **Taille du widget** : petit, moyen ou grand.
 - **Joueurs et pilotes favoris** : notification « 🚨 BUT DE … » ou « 🅰️ PASSE DE … »
   avec la photo du joueur ; en F1, « ⬆️ … dépasse … » pendant la course.
@@ -104,7 +115,7 @@ seulement les équipes que tu choisis.
 
 - **Hockey** : LNH
 - **Basketball** : NBA, WNBA
-- **Football** : NFL · **Baseball** : MLB
+- **Football** : NFL, LCF, football universitaire (NCAA) · **Baseball** : MLB
 - **Soccer** : Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Ligue des
   champions, Ligue Europa, MLS
 - **Course** : Formule 1 · **Combat** : UFC (galas : combat principal, combat

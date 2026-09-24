@@ -1,6 +1,17 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.0': [
+    '🌍 Compétitions internationales : Coupe du monde, Euro, Copa América, Gold Cup… Suis ton pays ou toute la compétition.',
+    '⛳ Golf (PGA, LPGA) : le tableau des meneurs en direct, et une notification quand le meneur change.',
+    '🎾 Tennis (ATP, WTA) : choisis tes joueurs ; leurs matchs, manche par manche, et le résultat en notification.',
+    '🏈 Nouvelles ligues : LCF et football universitaire (NCAA).',
+    '🏎️ F1 : le classement de chaque séance (essais, qualifs, sprint, course) et le championnat, dans la fenêtre Match.',
+    '🏒 Alignement : les trios et paires de défense au hockey, l’ordre des frappeurs et les lanceurs au baseball.',
+    '🔎 Recherche parmi tous les joueurs de la LNH ; tes joueurs favoris te préviennent même si leur équipe n’est pas suivie.',
+    '🎨 La couleur de ton équipe est bien plus présente, dans le widget et dans toutes les fenêtres.',
+    '🐛 Chances de victoire toujours à 100 % au total ; logo de ton équipe dans les notifications ; « But pour CF Montréal ».',
+  ],
   '0.8.3': [
     '✅ « Tout décocher » décoche aussi tes pilotes (F1) et tes combattants (UFC).',
   ],

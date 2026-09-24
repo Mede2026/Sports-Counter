@@ -42,3 +42,40 @@ export function visibleTeamColor(primary, alternate) {
   }
   return null;
 }
+
+/** Texte lisible posé sur cette couleur : presque noir ou blanc. */
+export const inkOn = (hex) => (luminance(hex) > 0.35 ? '#06111f' : '#ffffff');
+
+/**
+ * La couleur éclaircie juste assez pour se lire en texte ou en petit élément
+ * (onglet choisi, interrupteur) sur un fond sombre.
+ */
+export function brightAccent(hex, min = 0.2) {
+  const base = rgb(hex);
+  if (!base) return null;
+  if (luminance(hex) >= min) return hex.toLowerCase();
+  for (let t = 0.05; t <= 0.95; t += 0.05) {
+    const mixed = toHex(base.map((v) => v + (255 - v) * t));
+    if (luminance(mixed) >= min) return mixed;
+  }
+  return '#ffffff';
+}
+
+/**
+ * Couleurs de l'équipe choisie dans les réglages (« Couleur »), posées sur la
+ * page : --team (la couleur), --accent (sa version lisible) et --accent-ink
+ * (le texte à poser dessus). Sans équipe choisie, les couleurs de l'app.
+ */
+export function applyTeamAccent(prefs, root = document.documentElement) {
+  const info = prefs?.favInfo?.[prefs?.theme];
+  const team = info ? visibleTeamColor(info.color, info.alt) : null;
+  root.classList.toggle('team-theme', !!team);
+  if (!team) {
+    for (const v of ['--team', '--accent', '--accent-ink']) root.style.removeProperty(v);
+    return;
+  }
+  const accent = brightAccent(team);
+  root.style.setProperty('--team', team);
+  root.style.setProperty('--accent', accent);
+  root.style.setProperty('--accent-ink', inkOn(accent));
+}

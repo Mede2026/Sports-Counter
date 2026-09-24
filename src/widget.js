@@ -174,6 +174,24 @@ function compactCard(game) {
     </div>`;
   }
 
+  if (game.kind === 'golf') {
+    const lead = game.state !== 'pre' ? game.players?.[0] : null;
+    const text = pre ? middleWhen : lead ? `${game.state === 'post' ? '🏆' : '1.'} ${lastName(lead)} ${lead.score}` : game.statusText;
+    return `<div ${cardAttrs(game, cls, tip)}>
+      ${crestHtml({ logo: game.logo, abbr: league?.short ?? '⛳', color: league?.accent })}
+      <span class="row__event row__event--two"><small class="row__label">${game.title}</small><span>${text}</span></span>
+    </div>`;
+  }
+
+  if (game.kind === 'tennis') {
+    const w = game.a.winner ? game.a : game.b.winner ? game.b : null;
+    const text = pre ? middleWhen : w ? `🏆 ${lastName(w)} ${setsText(w === game.a ? game : { a: game.b, b: game.a })}` : setsText(game);
+    return `<div ${cardAttrs(game, cls, tip)}>
+      ${crestHtml({ logo: '', abbr: league?.short ?? '🎾', color: league?.accent })}
+      <span class="row__event row__event--two"><small class="row__label">${lastName(game.a)} – ${lastName(game.b)}</small><span>${text}</span></span>
+    </div>`;
+  }
+
   if (game.kind === 'event') {
     const leader = game.state !== 'pre' ? game.top3?.[0] : null;
     const when = pre ? middleWhen : leader ? `🥇 ${leader.short || leader.name}` : game.statusText;
@@ -233,6 +251,49 @@ function ufcCard(game, league, head) {
   </div>`;
 }
 
+/* ---------- Golf ---------- */
+
+/** Golf : les 5 premiers du tableau, score par rapport à la normale. */
+function golfBoard(game) {
+  const top = (game.players ?? []).slice(0, 5);
+  if (!top.length || game.state === 'pre') return '';
+  return `<ol class="podium podium--golf">${top.map((p) => `
+    <li><span class="podium__medal">${game.state === 'post' && p.pos <= 3 ? MEDALS[p.pos] : `<span class="podium__pos">${p.posText}</span>`}</span>
+      <span class="podium__name">${p.short || p.name}</span>
+      <span class="podium__gap">${p.score || ''}${game.state === 'in' && p.thru ? ` <small>(${/^\d+$/.test(p.thru) ? p.thru : p.thru === 'F' ? 'fini' : p.thru})</small>` : ''}</span></li>`).join('')}</ol>`;
+}
+
+function golfCard(game, league, head) {
+  return `<div ${cardAttrs(game, '', 'Cliquer pour le tableau complet')}>${head}
+    <div class="event">
+      ${crestHtml({ logo: game.logo, abbr: league?.short ?? '⛳', color: league?.accent })}
+      <span class="event__title">${game.title}</span>
+    </div>${golfBoard(game)}</div>`;
+}
+
+/* ---------- Tennis ---------- */
+
+/** Manches : « 6-4 3-6 7-6 », du point de vue du joueur a. */
+const setsText = (m) => m.a.sets.map((g, i) => `${g}-${m.b.sets[i] ?? 0}`).join(' ');
+
+function tennisPlayerRow(m, p, other) {
+  const fav = (prefs.favTennis ?? []).some((f) => sameDriver(f, p));
+  const face = p.photo ? `<img class="face" src="${attr(p.photo)}" alt="" data-face />` : '<span class="face"></span>';
+  const sets = p.sets.map((g, i) => `<b class="${g > (other.sets[i] ?? 0) ? 'set--won' : ''}">${g}</b>`).join('');
+  const dim = m.state === 'post' && !p.winner && other.winner;
+  return `<div class="tennis__p${dim ? ' tennis__p--out' : ''}">
+    ${face}<span class="tennis__name">${fav ? '⭐ ' : ''}${p.winner ? '✅ ' : ''}${p.short || p.name}${p.seed ? ` <small>(${p.seed})</small>` : ''}</span>
+    <span class="tennis__sets">${sets}</span></div>`;
+}
+
+function tennisCard(game, league, head) {
+  return `<div ${cardAttrs(game, '', 'Cliquer pour les détails du match')}>${head}
+    <div class="tennis__meta">${[game.title, game.round].filter(Boolean).join(' · ')}</div>
+    ${tennisPlayerRow(game, game.a, game.b)}
+    ${tennisPlayerRow(game, game.b, game.a)}
+  </div>`;
+}
+
 /** Séries éliminatoires : « 1re ronde · Match 5 · MTL mène la série 3-2 ». */
 function seriesLine(series) {
   if (!series) return '';
@@ -250,6 +311,8 @@ function gameCard(game) {
     </div>`;
 
   if (game.kind === 'card') return ufcCard(game, league, head);
+  if (game.kind === 'golf') return golfCard(game, league, head);
+  if (game.kind === 'tennis') return tennisCard(game, league, head);
 
   if (game.kind === 'event') {
     return `<div ${cardAttrs(game, '', 'Cliquer pour le classement complet')}>${head}
@@ -283,7 +346,7 @@ function emptyHtml() {
  * évènement (but, début, fin…). Le premier relevé sert seulement de référence.
  */
 function notifyEvents(games) {
-  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [] };
+  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [], favTennis: prefs.favTennis ?? [] };
   const events = detectEvents(seen, games, opts);
   seen = remember(seen, games, opts);
   if (!events.length || prefs.notifications === false || !inTauri()) return;
@@ -451,10 +514,19 @@ function checkReminders() {
         team: fav,
         link: g.link,
       });
+    } else if (g.kind === 'tennis') {
+      const me = favTennisIn(g);
+      const opp = me && sameDriver(me, g.a) ? g.b : g.a;
+      sendToast({
+        title: `🎾 Le match de ${me?.name ?? g.a.name} commence ${until}`,
+        body: `contre ${opp.name} · ${[g.round, g.title].filter(Boolean).join(' · ')}`,
+        team: me?.photo ? { abbr: 'TEN', logo: me.photo, color: '#c6f36b', round: true } : { abbr: LEAGUES_BY_ID[g.leagueId]?.short ?? '', logo: '', color: '#c6f36b' },
+        link: g.link,
+      });
     } else {
       const league = LEAGUES_BY_ID[g.leagueId];
       sendToast({
-        title: g.kind === 'card' ? `Le gala commence ${until}` : `${g.session || 'Séance'} ${until}`,
+        title: g.kind === 'card' ? `Le gala commence ${until}` : g.kind === 'golf' ? `⛳ ${g.title} commence ${until}` : `${g.session || 'Séance'} ${until}`,
         body: `${g.title} · ${TIME_FMT.format(g.startsAt)}`,
         team: { abbr: league?.short ?? '', logo: g.logo || league?.logo || '', color: '#ff4d6d' },
         link: g.link,
@@ -741,17 +813,30 @@ async function fitWindow() {
 
 function selectedLeagues() {
   const fromFavs = prefs.favorites.map((f) => f.split(':')[0]);
-  return [...new Set([...fromFavs, ...prefs.leagues])];
+  // Joueurs favoris de la LNH et joueurs de tennis : leurs ligues sont suivies.
+  const fromPlayers = (prefs.favPlayers ?? []).length ? ['nhl'] : [];
+  const fromTennis = (prefs.favTennis ?? []).map((p) => p.leagueId).filter(Boolean);
+  return [...new Set([...fromFavs, ...prefs.leagues, ...fromPlayers, ...fromTennis])];
 }
 
+/** Un de tes joueurs de tennis favoris joue ce match ? */
+const favTennisIn = (game) => (prefs.favTennis ?? []).find((f) => sameDriver(f, game.a) || sameDriver(f, game.b)) ?? null;
+
 function keepGame(game) {
-  const league = LEAGUES_BY_ID[game.leagueId];
+  // Tennis : les matchs de tes joueurs, et tous les matchs en direct si tu
+  // suis le circuit en entier (sinon, des dizaines de matchs par jour).
+  if (game.kind === 'tennis') {
+    return !!favTennisIn(game) || (prefs.leagues.includes(game.leagueId) && game.state === 'in');
+  }
   // Une ligue suivie en entier passe sans filtre.
   if (prefs.leagues.includes(game.leagueId)) return true;
   if (isWholeLeague(game.leagueId)) return false;
   const favIds = prefs.favorites
     .filter((f) => f.startsWith(`${game.leagueId}:`))
     .map((f) => f.split(':')[1]);
+  // Équipes de tes joueurs favoris : leurs matchs sont suivis, pour être
+  // prévenu de leurs buts et de leurs passes.
+  if (game.leagueId === 'nhl') favIds.push(...(prefs.favPlayers ?? []).map((p) => String(p.teamId ?? '')).filter(Boolean));
   return favIds.includes(game.home?.id) || favIds.includes(game.away?.id);
 }
 
@@ -1031,7 +1116,9 @@ if (!inTauri() && new URLSearchParams(location.search).has('demo')) {
   prefs = { ...prefs, maxGames: 5, favorites: [], leagues: ['nhl', 'nba', 'f1', 'ufc'],
     favDrivers: [{ id: 'demo-ant', name: 'Andrea Kimi Antonelli', short: 'K. Antonelli', photo: '' },
       { id: 'demo-lec', name: 'Charles Leclerc', short: 'C. Leclerc', photo: '' }] };
-  render(demoEvents(), null);
+  const extra = new URLSearchParams(location.search).has('extra');
+  if (extra) prefs.favTennis = [{ id: 'fa', name: 'Félix Auger-Aliassime' }];
+  render(demoEvents(extra), null);
 } else {
   // Affichage immédiat des derniers scores connus, puis relevé à jour.
   const last = snapshot.get('games');

@@ -126,3 +126,31 @@ export function segmentFr(text) {
   if (/main/i.test(raw)) return 'Carte principale';
   return autoFr(raw);
 }
+
+/* ---------- Tennis ---------- */
+
+const ROUNDS_FR = [
+  [/^final$|^finals?$|championship/i, 'Finale'],
+  [/semi/i, 'Demi-finale'],
+  [/quarter/i, 'Quart de finale'],
+  [/round of 16|4th round|fourth round/i, '8e de finale'],
+  [/round of 32|3rd round|third round/i, '3e tour'],
+  [/round of 64|2nd round|second round/i, '2e tour'],
+  [/round of 128|1st round|first round/i, '1er tour'],
+  [/qualif/i, 'Qualifications'],
+];
+
+/** Tour d'un tournoi : « Quarterfinal » → « Quart de finale ». */
+export function roundFr(text) {
+  const raw = String(text ?? '').trim();
+  if (!raw) return '';
+  return ROUNDS_FR.find(([re]) => re.test(raw))?.[1] ?? autoFr(raw);
+}
+
+/** Tableau : « Men's Singles » → « Simple messieurs ». */
+export function drawFr(text) {
+  const raw = String(text ?? '').trim();
+  const who = /women|ladies/i.test(raw) ? 'dames' : /men|gentlemen/i.test(raw) ? 'messieurs' : '';
+  const what = /double/i.test(raw) ? 'Double' : /single/i.test(raw) ? 'Simple' : '';
+  return what ? `${what}${who ? ` ${who}` : ''}` : raw;
+}

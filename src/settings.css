@@ -115,7 +115,7 @@ body {
   padding: 1px 6px;
   border-radius: 20px;
   background: var(--accent);
-  color: #06111f;
+  color: var(--accent-ink, #06111f);
 }
 
 /* ---------- Panneau de droite ---------- */
@@ -184,7 +184,7 @@ body {
   display: grid; place-items: center;
   transition: background 120ms ease, border-color 120ms ease;
 }
-.check svg { width: 10px; height: 10px; opacity: 0; color: #06111f; }
+.check svg { width: 10px; height: 10px; opacity: 0; color: var(--accent-ink, #06111f); }
 
 .team-row--on .check { background: var(--accent); border-color: var(--accent); }
 .team-row--on .check svg { opacity: 1; }
@@ -328,7 +328,7 @@ label.pref { cursor: pointer; }
 }
 .seg button + button { border-left: 1px solid var(--border-strong); }
 .seg button:hover { color: var(--text); }
-.seg .seg--on { background: var(--accent); color: #06111f; }
+.seg .seg--on { background: var(--accent); color: var(--accent-ink, #06111f); }
 
 .favline { display: flex; align-items: center; gap: 6px; color: var(--text-muted) !important; }
 
@@ -553,7 +553,7 @@ kbd {
   cursor: pointer;
 }
 .cat-chip:hover { color: var(--text); }
-.cat-chip--on { color: #06111f; background: var(--accent); border-color: var(--accent); }
+.cat-chip--on { color: var(--accent-ink, #06111f); background: var(--accent); border-color: var(--accent); }
 .st__table--players { margin: 0 6px; width: calc(100% - 12px); }
 .st__cell--c { justify-content: center; gap: 6px; font-weight: 600; font-size: 11.5px; }
 .st__cell--c .crest-sm { width: 20px; height: 20px; }
@@ -633,3 +633,12 @@ kbd {
 .cal__none { padding: 6px 10px 10px; font-size: 12px; color: var(--text-faint, var(--text-muted)); }
 .cal__day--past { opacity: 0.75; }
 .cal__day--today { box-shadow: inset 3px 0 0 var(--accent); }
+.flag-sm { width: 20px; height: 14px; object-fit: cover; border-radius: 2px; opacity: 0.9; }
+
+/* ---------- Couleur de l'équipe choisie (Réglages → Couleur) ---------- */
+.team-theme .head {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--team) 30%, transparent), transparent 70%);
+  box-shadow: inset 0 3px 0 var(--team);
+}
+.team-theme ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--team) 55%, transparent); }
+.team-theme .league--on { background: color-mix(in srgb, var(--team) 22%, transparent); }
