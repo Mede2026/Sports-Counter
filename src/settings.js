@@ -931,6 +931,11 @@ function demoF1Standings() {
 
 const DAY_MS = 24 * 3600 * 1000;
 const CAL_AHEAD = 30;
+// Jours passés chargés au-dessus d'aujourd'hui : 14 au départ, 14 de plus à
+// chaque clic sur « Voir 14 jours plus tôt », jusqu'à environ 4 mois.
+const CAL_PAST_STEP = 14;
+const CAL_PAST_MAX = 126;
+let calPast = CAL_PAST_STEP;
 let calLoading = false;
 
 function showCalendar() {
@@ -938,13 +943,18 @@ function showCalendar() {
   loadCalendar(false);
 }
 
-/** Matchs des équipes favorites et Grands Prix, d'aujourd'hui à dans 30 jours. */
-async function loadCalendar(force) {
+/**
+ * Matchs des équipes favorites, Grands Prix et galas : les jours passés
+ * (résultats) au-dessus, puis d'aujourd'hui à dans 30 jours. La liste
+ * s'ouvre sur aujourd'hui ; on remonte pour voir les résultats.
+ * `keepDay` : jour à garder en haut de l'écran (après « Voir plus tôt »).
+ */
+async function loadCalendar(force, keepDay = null) {
   if (calLoading) return;
   calLoading = true;
-  // Depuis ce matin : les matchs d'aujourd'hui déjà joués restent visibles.
   const first = new Date(); first.setHours(0, 0, 0, 0);
-  const back = 1;
+  first.setDate(first.getDate() - calPast);
+  const back = calPast + 1;
   const end = Date.now() + CAL_AHEAD * DAY_MS;
   document.getElementById('calRange').textContent = `du ${first.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })} au ${new Date(end).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}`;
   if (force || !el.calendar.innerHTML) el.calendar.innerHTML = '<div class="state">Chargement du calendrier…</div>';
@@ -984,9 +994,16 @@ async function loadCalendar(force) {
   if (!games.length && lastErr && isOffline(lastErr)) {
     el.calendar.innerHTML = errorBlock('', lastErr);
   } else {
-    renderCalendar(games, errors);
+    renderCalendar(games, errors, keepDay);
   }
   calLoading = false;
+}
+
+/** Charge 14 jours de plus dans le passé, sans perdre sa place. */
+function calendarEarlier() {
+  const top = el.calendar.querySelector('.cal__day')?.dataset.day ?? null;
+  calPast = Math.min(CAL_PAST_MAX, calPast + CAL_PAST_STEP);
+  loadCalendar(false, top);
 }
 
 function calRow(g) {
@@ -1035,26 +1052,50 @@ function calRow(g) {
   </div>`;
 }
 
-function renderCalendar(games, errors) {
+function renderCalendar(games, errors, keepDay = null) {
+  const earlier = calPast < CAL_PAST_MAX
+    ? `<button class="ghost cal__more" id="btnCalEarlier" type="button">⬆ Voir ${CAL_PAST_STEP} jours plus tôt</button>`
+    : '';
   if (!games.length) {
-    el.calendar.innerHTML = `<div class="state">Aucun match trouvé pour cette période.${
+    el.calendar.innerHTML = `${earlier}<div class="state">Aucun match trouvé pour cette période.${
       errors.length ? `<br /><code class="state__code">${errors[0]}</code>` : ''}</div>`;
+    document.getElementById('btnCalEarlier')?.addEventListener('click', calendarEarlier);
     return;
   }
-  let html = '';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const past = games.filter((g) => g.startsAt < today);
+  let html = earlier;
+  if (!past.length) html += `<div class="cal__none">Aucun match dans les ${calPast} derniers jours.</div>`;
   let day = '';
-  const todayKey = new Date().toDateString();
+  const todayKey = today.toDateString();
+  // Pas de match aujourd'hui : un repère quand même, entre hier et demain.
+  const hasToday = games.some((g) => g.startsAt.toDateString() === todayKey);
+  const todayMark = `<div class="cal__day cal__day--today" data-day="${today.getTime()}">Aujourd'hui</div><div class="cal__none">Aucun match aujourd'hui.</div>`;
+  let marked = hasToday;
   for (const g of games) {
     const key = g.startsAt.toDateString();
+    if (!marked && g.startsAt >= today) { html += todayMark; marked = true; }
     if (key !== day) {
       day = key;
-      html += `<div class="cal__day${key === todayKey ? ' cal__day--today' : ''}">${dayName(g.startsAt)}</div>`;
+      const start = new Date(g.startsAt); start.setHours(0, 0, 0, 0);
+      const cls = key === todayKey ? ' cal__day--today' : start < today ? ' cal__day--past' : '';
+      html += `<div class="cal__day${cls}" data-day="${start.getTime()}">${dayName(g.startsAt)}</div>`;
     }
     html += calRow(g);
   }
+  if (!marked) html += todayMark;
   if (errors.length) html += `<div class="state state--err">Certaines équipes n'ont pas pu être chargées.<br /><code class="state__code">${errors[0]}</code></div>`;
   el.calendar.innerHTML = html;
   bindCrests(el.calendar);
+  document.getElementById('btnCalEarlier')?.addEventListener('click', calendarEarlier);
+  // Ouverture sur aujourd'hui (ou le prochain jour de match) ; après « Voir
+  // plus tôt », on garde en haut le jour qui y était.
+  const heads = [...el.calendar.querySelectorAll('.cal__day')];
+  const target = keepDay
+    ? heads.find((h) => h.dataset.day === keepDay)
+    : heads.find((h) => Number(h.dataset.day) >= today.getTime());
+  if (target) target.scrollIntoView({ block: 'start' });
+  else if (!keepDay) el.calendar.lastElementChild?.scrollIntoView({ block: 'end' });
   el.calendar.querySelectorAll('.cal__row').forEach((row) => row.addEventListener('click', async () => {
     const { league, event } = row.dataset;
     if (!inTauri()) { window.open(`match.html?league=${league}&event=${encodeURIComponent(event)}`, '_blank'); return; }

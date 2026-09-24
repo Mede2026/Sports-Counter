@@ -1,6 +1,10 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.8.2': [
+    '📅 Le calendrier s’ouvre toujours sur aujourd’hui ; remonte pour voir les résultats des 14 derniers jours.',
+    '⬆️ Le bouton « Voir 14 jours plus tôt » charge des résultats plus anciens, sans perdre ta place.',
+  ],
   '0.8.1': [
     '📍 Le widget reste collé à ses bords (par exemple en bas à gauche, sur la barre des tâches) : il ne remonte plus après une mise à jour.',
     '🏆 Classement des joueurs : la saison régulière en cours (ou la dernière), plus les records de tous les temps.',

@@ -627,3 +627,9 @@ kbd {
 }
 .face-xs.face--ini { font-size: 7.5px; }
 .st__season { margin: 0 6px 10px; font-size: 12px; font-weight: 650; color: var(--text-muted); }
+
+/* Calendrier : jours passés (résultats) au-dessus d'aujourd'hui. */
+.cal__more { display: block; margin: 4px auto 6px; }
+.cal__none { padding: 6px 10px 10px; font-size: 12px; color: var(--text-faint, var(--text-muted)); }
+.cal__day--past { opacity: 0.75; }
+.cal__day--today { box-shadow: inset 3px 0 0 var(--accent); }
