@@ -612,3 +612,10 @@ span.crest {
 .tennis__sets { display: flex; gap: 8px; font-variant-numeric: tabular-nums; }
 .tennis__sets b { min-width: 10px; text-align: center; font-weight: 600; opacity: 0.7; }
 .tennis__sets b.set--won { opacity: 1; font-weight: 800; }
+
+.golf__teams { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 13px; }
+.golf__teams span { font-weight: 800; font-variant-numeric: tabular-nums; }
+.golf__teams b.win { color: var(--gold, #f2c55c); }
+
+/* Drapeaux : rectangle entier, jamais rogné ni entouré d'un halo. */
+img[data-flag] { object-fit: contain; border-radius: 3px; background: transparent !important; box-shadow: none !important; filter: none !important; }

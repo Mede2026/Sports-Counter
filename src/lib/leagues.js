@@ -1,4 +1,5 @@
 import { F1_LOGO } from './f1-logo.js';
+import { LEAGUE_ICONS } from './league-icons.js';
 
 // Catalogue des ligues supportées.
 // `path` correspond au segment {sport}/{league} de l'API ESPN.
@@ -21,7 +22,7 @@ export const LEAGUES = [
   { id: 'cfl',  group: 'Football',   label: 'LCF',                path: 'football/cfl',          kind: 'team',  accent: '#e84a4a', short: 'LCF', teams: 9 },
   { id: 'ncaaf', group: 'Football',  label: 'Football universitaire', path: 'football/college-football', kind: 'team', accent: '#5fc4a8', short: 'NCAA', teams: 130,
     // Toute la première division (FBS), pas seulement les matchs du top 25.
-    query: 'groups=80&limit=300', teamsQuery: '?groups=80&limit=1000' },
+    query: 'groups=80&limit=300', teamsQuery: '?groups=80&limit=1000', coreTeams: 'groups/80/teams' },
   { id: 'mlb',  group: 'Baseball',   label: 'MLB',                path: 'baseball/mlb',          kind: 'team',  accent: '#f2c55c', short: 'MLB', teams: 30 },
   { id: 'epl',  group: 'Soccer',     label: 'Premier League',     path: 'soccer/eng.1',          kind: 'team',  accent: '#c77dff', short: 'PL', teams: 20 },
   { id: 'esp',  group: 'Soccer',     label: 'La Liga',            path: 'soccer/esp.1',          kind: 'team',  accent: '#ff6b5b', short: 'LIGA', teams: 20 },
@@ -45,6 +46,9 @@ export const LEAGUES = [
   { id: 'atp',  group: 'Tennis',     label: 'ATP',                path: 'tennis/atp',            kind: 'tennis', accent: '#c6f36b', short: 'ATP' },
   { id: 'wta',  group: 'Tennis',     label: 'WTA',                path: 'tennis/wta',            kind: 'tennis', accent: '#e59cff', short: 'WTA' },
 ];
+
+// Icône dessinée pour les ligues dont ESPN ne donne pas de logo utilisable.
+for (const l of LEAGUES) if (!l.logo && LEAGUE_ICONS[l.id]) l.logo = LEAGUE_ICONS[l.id];
 
 export const LEAGUES_BY_ID = Object.fromEntries(LEAGUES.map((l) => [l.id, l]));
 

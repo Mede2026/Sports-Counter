@@ -112,6 +112,25 @@ async function teamsFromDirectory(league) {
   return raw.map((entry) => entry.team).filter(Boolean).map(toTeam);
 }
 
+/**
+ * Équipes par l'API « core » d'ESPN : la liste donne une adresse par équipe,
+ * lue ensuite une à une (10 à la fois).
+ */
+async function teamsFromCore(league) {
+  const [sport, code] = league.path.split('/');
+  // Football universitaire : la première division seulement (groupe 80),
+  // pas les 700 équipes de toutes les divisions.
+  const path = league.coreTeams ?? 'teams';
+  const list = await getCore(`/v2/sports/${sport}/leagues/${code}/${path}?limit=200&lang=en&region=us`);
+  const refs = (list?.items ?? []).map((x) => corePath(x?.$ref)).filter(Boolean);
+  const teams = [];
+  for (let i = 0; i < refs.length; i += 10) {
+    const results = await Promise.allSettled(refs.slice(i, i + 10).map((r) => getCore(r.includes('?') ? r : `${r}?lang=en&region=us`)));
+    for (const r of results) if (r.status === 'fulfilled' && r.value?.id) teams.push(toTeam(r.value));
+  }
+  return teams;
+}
+
 /** Listes intégrées à l'app, pour les ligues dont on a une copie vérifiée. */
 const BUNDLED_TEAMS = { nhl: NHL_TEAMS };
 
@@ -200,6 +219,14 @@ export async function fetchTeams(leagueId) {
     teams = await teamsFromDirectory(league);
   } catch (err) {
     directoryErr = err;
+  }
+
+  // 2. Liste refusée (la LNH et la LCF, par exemple) : l'API « core » d'ESPN,
+  //    qui donne aussi les équipes, une adresse par équipe.
+  if (!teams.length) {
+    try {
+      teams = await teamsFromCore(league);
+    } catch { /* on passe au calendrier */ }
   }
 
   if (!teams.length) {
@@ -633,6 +660,16 @@ function normalizeCard(event, base, logo) {
 
 /** Un golfeur au tableau : rang (« T3 »), score par rapport à la normale. */
 function golferOf(c, i) {
+  // Épreuve par équipes (Coupe des Présidents, Ryder Cup) : une équipe, pas un joueur.
+  if (!c?.athlete && c?.team) {
+    const t = c.team;
+    const raw = typeof c?.score === 'object' ? c.score?.displayValue ?? c.score?.value : c?.score;
+    return {
+      id: String(t.id ?? c?.id ?? ''), team: true, name: t.displayName ?? t.name ?? '', short: t.abbreviation ?? t.shortDisplayName ?? '',
+      photo: t.logo ?? t.logos?.[0]?.href ?? '', flag: '', order: Number(c?.order) || i + 1, pos: i + 1, posText: '',
+      score: raw == null ? '' : String(raw), thru: '', winner: c?.winner === true,
+    };
+  }
   const a = c?.athlete ?? {};
   const id = String(a.id ?? c?.id ?? '');
   const raw = typeof c?.score === 'object' ? c.score?.displayValue ?? c.score?.value : c?.score;
@@ -662,6 +699,10 @@ function normalizeGolf(event, base, logo) {
   return {
     ...base,
     kind: 'golf',
+    // Coupe des Présidents, Ryder Cup : deux équipes et leurs points.
+    teamEvent: players.length > 0 && players.every((p) => p.team),
+    // Un tournoi commence « le jeudi », sans heure : ESPN met minuit.
+    allDay: true,
     state,
     title: event?.name || event?.shortName || 'Tournoi',
     logo,
@@ -737,8 +778,15 @@ function normalizeTennis(event, leagueId, logo) {
 
 /** Évènements d'ESPN → matchs de l'app (un tournoi de tennis en donne plusieurs). */
 function normalizeEvents(event, leagueId, logo = '') {
-  if (LEAGUES_BY_ID[leagueId]?.kind === 'tennis') return normalizeTennis(event, leagueId, logo);
-  return [normalizeEvent(event, leagueId, logo)];
+  // Un évènement décrit autrement que prévu est laissé de côté, sans
+  // empêcher d'afficher les autres matchs de la ligue.
+  try {
+    if (LEAGUES_BY_ID[leagueId]?.kind === 'tennis') return normalizeTennis(event, leagueId, logo);
+    return [normalizeEvent(event, leagueId, logo)];
+  } catch (err) {
+    console.warn('Évènement illisible :', leagueId, event?.id, err);
+    return [];
+  }
 }
 
 function normalizeEvent(event, leagueId, logo = '') {
@@ -981,19 +1029,31 @@ export async function fetchMatchDetail(leagueId, eventId) {
     startsAt: comp?.date ? new Date(comp.date) : null,
     home,
     away,
-    stats: teamStats(data, leagueId, home.id, away.id),
-    ...keyPlays(data),
-    series: seriesInfo(comp, homeC, awayC),
+    // Chaque partie est lue à part : une forme de donnée inattendue d'ESPN
+    // dans l'une ne doit pas empêcher d'afficher les autres.
+    stats: safe(() => teamStats(data, leagueId, home.id, away.id), []),
+    ...safe(() => keyPlays(data), { goals: [], penalties: [] }),
+    series: safe(() => seriesInfo(comp, homeC, awayC), null),
     venue: data?.gameInfo?.venue?.fullName ?? '',
     link: pickLink(data?.header) || '',
-    stars: threeStars(data, comp, leagueId),
-    leaders: gameLeaders(data, home.id, away.id, leagueId),
-    winProb: winProbability(data, state),
-    videos: highlights(data),
-    box: boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]),
-    probables: probablePitchers(competitors, leagueId),
-    allPlays: allPlays(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]),
+    stars: safe(() => threeStars(data, comp, leagueId), []),
+    leaders: safe(() => gameLeaders(data, home.id, away.id, leagueId), []),
+    winProb: safe(() => winProbability(data, state), null),
+    videos: safe(() => highlights(data), []),
+    box: safe(() => boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
+    probables: safe(() => probablePitchers(competitors, leagueId), {}),
+    allPlays: safe(() => allPlays(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
   };
+}
+
+/** Lit une partie du résumé ; en cas d'erreur, `fallback` (et la trace en console). */
+function safe(read, fallback) {
+  try {
+    return read() ?? fallback;
+  } catch (err) {
+    console.warn('Partie du résumé illisible :', err);
+    return fallback;
+  }
 }
 
 /**
@@ -1007,7 +1067,8 @@ function probablePitchers(competitors, leagueId) {
     const p = (c?.probables ?? [])[0];
     const a = p?.athlete;
     if (!a?.displayName) continue;
-    const stat = (n) => (p?.statistics ?? []).find((x) => x?.name === n || x?.abbreviation === n)?.displayValue;
+    const stats = Array.isArray(p?.statistics) ? p.statistics : Array.isArray(p?.statistics?.splits?.categories) ? p.statistics.splits.categories : [];
+    const stat = (n) => stats.find((x) => x?.name === n || x?.abbreviation === n)?.displayValue;
     const record = p?.record ?? (stat('wins') && stat('losses') ? `${stat('wins')}-${stat('losses')}` : '');
     const era = stat('ERA') ?? stat('earnedRunAverage');
     out[String(c?.team?.id ?? c?.id ?? '')] = {
@@ -1789,7 +1850,7 @@ export async function fetchTeamGames(leagueId, teamId, { back = 21, ahead = 30 }
   let span = { back, ahead };
   try {
     const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/schedule`);
-    games = (data?.events ?? []).map((e) => normalizeEvent(e, leagueId)).filter((g) => g.kind === 'match');
+    games = (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId)).filter((g) => g.kind === 'match');
     span = { back: WHOLE_SEASON, ahead: WHOLE_SEASON }; // toute la saison
   } catch { /* calendrier illisible : on passe aux tableaux des scores */ }
 
@@ -1839,9 +1900,24 @@ export async function fetchF1Calendar(fromOffset, toOffset) {
  */
 export async function fetchLeagueCalendar(leagueId, fromOffset, toOffset) {
   const league = LEAGUES_BY_ID[leagueId];
-  const data = await getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${ymd(fromOffset)}-${ymd(toOffset)}`));
-  const logo = league.logo || leagueLogo(data);
-  return (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo)).map((g) => {
+  let events;
+  let logo = league.logo ?? '';
+  try {
+    const data = await getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${ymd(fromOffset)}-${ymd(toOffset)}`));
+    logo = league.logo || leagueLogo(data);
+    events = (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo));
+  } catch (err) {
+    // Certaines ligues refusent les plages de dates (HTTP 400 : LCF, Coupe du
+    // monde…) : on demande jour par jour, 7 à la fois (gardés 30 min).
+    events = [];
+    let ok = 0;
+    for (let d = fromOffset; d <= toOffset; d += 7) {
+      const days = await Promise.allSettled(Array.from({ length: Math.min(7, toOffset - d + 1) }, (_, i) => fetchDay(leagueId, d + i)));
+      for (const r of days) if (r.status === 'fulfilled') { ok += 1; events.push(...r.value); }
+    }
+    if (!ok) throw err;
+  }
+  return events.map((g) => {
     if (leagueId !== 'f1') return { ...g, raceState: g.state };
     const race = (g.sessions ?? []).find((s) => /course/i.test(s.label)) ?? g.sessions?.at(-1);
     return { ...g, startsAt: race?.startsAt ?? g.startsAt, raceState: race?.state ?? g.state };
@@ -2047,8 +2123,24 @@ export async function fetchBracket(leagueId) {
     const key = `${leagueId}:${year}`;
     let rounds = bracketCache.get(key);
     if (!rounds) {
-      const data = await getJson(`${league.path}/scoreboard`, `?seasontype=3&limit=1000&dates=${year}${cfg.from}-${year}${cfg.to}`);
-      rounds = buildBracket(data?.events ?? [], leagueId);
+      // Par tranches de 14 jours : ESPN refuse (HTTP 400) les longues plages.
+      const from = new Date(year, Number(cfg.from.slice(0, 2)) - 1, Number(cfg.from.slice(2)));
+      const to = new Date(year, Number(cfg.to.slice(0, 2)) - 1, Number(cfg.to.slice(2)));
+      const fmt = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      const chunks = [];
+      for (let a = new Date(from); a <= to; a.setDate(a.getDate() + 14)) {
+        const b = new Date(a); b.setDate(b.getDate() + 13);
+        chunks.push([fmt(a), fmt(b > to ? to : b)]);
+      }
+      const events = new Map();
+      let lastErr = null;
+      const results = await Promise.allSettled(chunks.map(([a, b]) => getJson(`${league.path}/scoreboard`, boardQuery(league, `?seasontype=3&dates=${a}-${b}`))));
+      for (const r of results) {
+        if (r.status === 'fulfilled') for (const e of r.value?.events ?? []) events.set(String(e?.id), e);
+        else lastErr = r.reason;
+      }
+      if (!events.size && lastErr) throw lastErr;
+      rounds = buildBracket([...events.values()], leagueId);
       bracketCache.set(key, rounds);
     }
     if (rounds.length) return { year, rounds };
@@ -2077,4 +2169,32 @@ export async function fetchPulledGoalies(leagueId, eventId) {
   } catch {
     return [];
   }
+}
+
+/* ---------- Diagnostic : ce qu'ESPN répond, ligue par ligue ---------- */
+
+/**
+ * Teste une ligue depuis l'ordinateur de l'utilisateur : tableau des scores
+ * du jour, liste des équipes (ligues d'équipes). Pour chaque essai :
+ * { ok, text } — le nombre trouvé, ou l'erreur d'ESPN telle quelle.
+ */
+export async function probeLeague(leagueId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  const out = { scores: null, teams: null };
+  try {
+    const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
+    const n = (data?.events ?? []).length;
+    out.scores = { ok: true, text: n ? `${n} évènement${n > 1 ? 's' : ''}` : 'aucun aujourd’hui' };
+  } catch (err) {
+    out.scores = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
+  }
+  if (league.kind === 'team') {
+    try {
+      const teams = await fetchTeams(leagueId);
+      out.teams = { ok: teams.length > 0, text: `${teams.length} équipe${teams.length > 1 ? 's' : ''}` };
+    } catch (err) {
+      out.teams = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
+    }
+  }
+  return out;
 }

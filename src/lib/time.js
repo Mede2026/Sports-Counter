@@ -54,3 +54,20 @@ export function dayName(date, now = new Date()) {
   const s = LONG_DAY.format(date);
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/**
+ * Jour seul, pour ce qui commence « dans la journée » sans heure précise
+ * (tournoi de golf : ESPN donne minuit) : « Aujourd'hui », « Demain »,
+ * « jeudi 24 sept. ».
+ */
+export function dayText(date, now = new Date()) {
+  if (!isDate(date)) return '';
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  if (date.toDateString() === now.toDateString()) return "Aujourd'hui";
+  if (date.toDateString() === tomorrow.toDateString()) return 'Demain';
+  return date.toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'short' });
+}
+
+/** Minuit pile : ESPN n'a donné que la date, pas l'heure. */
+export const isDateOnly = (date) => isDate(date) && date.getHours() === 0 && date.getMinutes() === 0;

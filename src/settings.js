@@ -1,7 +1,7 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
-import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, probeLeague, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { untilText, isDate, dayName, TIME_FMT, isDateOnly } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -193,7 +193,7 @@ function renderTennis(league) {
           <span class="check">${CHECK}</span>
           ${faceHtml(p, 'face-sm')}
           <span class="team-row__name">${p.name}</span>
-          ${p.flag ? `<img class="flag-sm" src="${p.flag}" alt="" />` : ''}
+          ${p.flag ? `<img class="flag-sm" src="${p.flag}" alt="" data-flagimg />` : ''}
         </div>`).join('') || `<div class="state">Aucun joueur ne correspond à « ${query} ».</div>`;
   }
   el.teams.innerHTML = `
@@ -208,6 +208,7 @@ function renderTennis(league) {
   document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
   document.getElementById('btnRetryTennis')?.addEventListener('click', () => { tennisPlayers.delete(league.id); loadTennis(league.id); });
   el.teams.querySelectorAll('[data-tennis]').forEach((row) => row.addEventListener('click', () => pickTennis(league.id, row.dataset.tennis)));
+  el.teams.querySelectorAll('img[data-flagimg]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
 }
 
 /** Coche ou décoche un joueur de tennis favori. */
@@ -608,6 +609,7 @@ function bindOptions() {
   notify.checked = prefs.notifications !== false;
   notify.addEventListener('change', () => { prefs.notifications = notify.checked; savePrefs(prefs); });
   document.getElementById('btnTryToast').addEventListener('click', tryToast);
+  document.getElementById('btnDiag').addEventListener('click', runDiagnostic);
 
   bindAutostart();
 }
@@ -1177,7 +1179,7 @@ function calRow(g) {
   const league = LEAGUES_BY_ID[g.leagueId];
   const chip = `<span class="cal__chip" style="color:${league?.accent ?? 'inherit'}">${league?.short ?? ''}</span>`;
   const state = g.kind === 'match' ? g.state : g.raceState ?? g.state;
-  let when = TIME_FMT.format(g.startsAt);
+  let when = g.allDay || isDateOnly(g.startsAt) ? 'Journée' : TIME_FMT.format(g.startsAt);
   if (state === 'in') when = '<span class="cal__live">En direct</span>';
   else if (state === 'post') when = '<span class="cal__done">Final</span>';
 
@@ -1495,3 +1497,30 @@ else selectLeague();
     try { backfillFavInfo(id, id === 'nhl' ? NHL_TEAMS : await fetchTeams(id)); } catch { /* sans logo */ }
   }
 })();
+
+/* ---------- Diagnostic ESPN ---------- */
+
+/** Teste toutes les ligues (4 à la fois) et affiche ✅ / ❌ avec la réponse d'ESPN. */
+async function runDiagnostic() {
+  const box = document.getElementById('diag');
+  const btn = document.getElementById('btnDiag');
+  btn.disabled = true;
+  const cell = (r) => (r ? `<td class="${r.ok ? 'diag--ok' : 'diag--err'}">${r.ok ? '✅' : '❌'} ${r.text}</td>` : '<td class="st__muted">—</td>');
+  const rows = new Map(LEAGUES.map((l) => [l.id, `<tr><td>${l.label}</td><td colspan="2" class="st__muted">…</td></tr>`]));
+  const draw = () => {
+    box.innerHTML = `<table class="st__table diag"><thead><tr><th class="st__team">Ligue</th><th>Scores du jour</th><th>Équipes</th></tr></thead>
+      <tbody>${[...rows.values()].join('')}</tbody></table>`;
+  };
+  draw();
+  const queue = [...LEAGUES];
+  const worker = async () => {
+    while (queue.length) {
+      const l = queue.shift();
+      const r = IS_DEMO ? { scores: { ok: true, text: 'démo' }, teams: l.kind === 'team' ? { ok: true, text: 'démo' } : null } : await probeLeague(l.id);
+      rows.set(l.id, `<tr><td class="st__team">${l.label}</td>${cell(r.scores)}${cell(r.teams)}</tr>`);
+      draw();
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  btn.disabled = false;
+}

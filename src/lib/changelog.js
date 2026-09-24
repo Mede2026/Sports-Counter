@@ -1,6 +1,13 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.2': [
+    '🏈 LCF, Coupe du monde, NCAA… : les équipes se chargent par une autre adresse d’ESPN, celle qui n’est pas bloquée.',
+    '🩺 Nouveau : Réglages → Diagnostic teste chaque ligue depuis ton ordi. Envoie une capture si une ligue ne marche pas.',
+    '🛡️ Fenêtre Match : une partie illisible n’empêche plus d’afficher le reste, et l’erreur exacte s’affiche.',
+    '🎾 Icônes pour l’ATP, la WTA, le golf et les compétitions internationales ; drapeaux corrigés.',
+    '⛳ Les tournois de golf affichent leur jour (plus de « 0 h 00 ») ; la Coupe des Présidents montre le pointage des équipes.',
+  ],
   '0.9.1': [
     '⭐ Joueurs favoris dans tous les sports : Réglages → Joueurs favoris, choisis la ligue puis cherche dans toute la ligue.',
     '🏈 Notification quand ton joueur marque un touché, ⚾ frappe un circuit ou fait marquer.',

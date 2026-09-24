@@ -9,7 +9,7 @@ import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
 import { visibleTeamColor, applyTeamAccent } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
-import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
+import { whenText, untilText, isDate, TIME_FMT, dayText, isDateOnly } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
 import { translated, translateAll, autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 import { faceHtml, bindFaces } from './lib/face.js';
@@ -55,6 +55,9 @@ function statusHtml(g) {
   if (g.state === 'in') {
     const text = [g.session, g.clock, g.statusText].filter(Boolean).join(' · ');
     return `<div class="status status--live"><span class="dot"></span>${esc(text || 'En direct')}</div>`;
+  }
+  if (g.state === 'pre' && isDate(g.startsAt) && (g.allDay || isDateOnly(g.startsAt))) {
+    return `<div class="status">${esc([g.session, dayText(g.startsAt)].filter(Boolean).join(' · '))}</div>`;
   }
   if (g.state === 'pre' && isDate(g.startsAt)) {
     const until = untilText(g.startsAt);
@@ -530,6 +533,11 @@ function golfHtml(g) {
   if (g.state === 'pre' || !g.players?.length) {
     return hero + `<div class="state">Le tableau des meneurs apparaîtra au début du tournoi.</div>`;
   }
+  if (g.teamEvent) {
+    const rows = g.players.map((t) => `<li><span class="pos">${t.winner ? '🏆' : ''}</span>${faceHtml(t, 'face')}
+      <span class="drv"><b>${esc(t.name)}</b></span><span class="gap golf__score">${esc(String(t.score).replace('.', ','))} pts</span></li>`).join('');
+    return hero + section('Pointage des équipes', `<ol class="grid">${rows}</ol>`);
+  }
   const thru = (p) => (g.state !== 'in' || !p.thru ? '' : /^\d+$/.test(p.thru) ? `${p.thru} trous` : p.thru === 'F' ? 'Ronde finie' : p.thru);
   const rows = g.players.map((p) => `<li>
     <span class="pos">${g.state === 'post' && p.pos <= 3 ? MEDALS[p.pos] : esc(p.posText)}</span>
@@ -685,10 +693,10 @@ async function load() {
         [g, table] = IS_DEMO
           ? [demoDetail(), new Map([['10', { rank: 3, group: 'Atlantique', points: '27' }]])]
           : await Promise.all([fetchMatchDetail(current.league, current.event), fetchStandings(current.league)]);
-      } catch {
+      } catch (detailErr) {
         // Résumé illisible : on se contente du tableau des scores.
         const basic = await fromScoreboard();
-        if (!basic) throw new Error('Match introuvable.');
+        if (!basic) throw new Error(`Match introuvable.\n${errText(detailErr)}`);
         g = { ...basic, stats: [], goals: [], penalties: [] };
       }
       el.title.textContent = `${g.away.abbr} @ ${g.home.abbr}`;

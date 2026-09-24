@@ -5,7 +5,7 @@ import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { visibleTeamColor } from './lib/color.js';
 import { detectEvents, remember, favFights } from './lib/events.js';
-import { whenText, shortWhen, untilText, isDate, TIME_FMT } from './lib/time.js';
+import { whenText, shortWhen, untilText, isDate, TIME_FMT, dayText, isDateOnly } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
 import { diskCache } from './lib/cache.js';
@@ -78,6 +78,10 @@ function statusBlock(game) {
   if (game.state === 'in') {
     const text = [game.session, game.clock, game.statusText].filter(Boolean).join(' · ');
     return `<span class="status status--live"><span class="dot"></span>${text || 'En direct'}</span>`;
+  }
+  if (game.state === 'pre' && isDate(game.startsAt) && (game.allDay || isDateOnly(game.startsAt))) {
+    // Commence « dans la journée » (tournoi de golf) : le jour, sans « 0 h 00 ».
+    return `<span class="status">${[game.session, dayText(game.startsAt)].filter(Boolean).join(' · ')}</span>`;
   }
   if (game.state === 'pre' && isDate(game.startsAt)) {
     // Bientôt : l'heure seule suffit, le compte à rebours dit le jour.
@@ -158,9 +162,10 @@ function compactCard(game) {
   const tip = `${status} — cliquer pour les détails`;
   const cls = `row${game.state === 'in' ? ' row--live' : ''}`;
   const pre = game.state === 'pre';
-  const middleWhen = pre && soon(game.startsAt)
-    ? untilSpan(game.startsAt, true) || shortWhen(game.startsAt)
-    : shortWhen(game.startsAt) || game.statusText;
+  const middleWhen = pre && (game.allDay || isDateOnly(game.startsAt)) ? dayText(game.startsAt)
+    : pre && soon(game.startsAt)
+      ? untilSpan(game.startsAt, true) || shortWhen(game.startsAt)
+      : shortWhen(game.startsAt) || game.statusText;
 
   if (game.kind === 'card') {
     // Le combat d'un favori passe avant le combat principal.
@@ -176,7 +181,10 @@ function compactCard(game) {
 
   if (game.kind === 'golf') {
     const lead = game.state !== 'pre' ? game.players?.[0] : null;
-    const text = pre ? middleWhen : lead ? `${game.state === 'post' ? '🏆' : '1.'} ${lastName(lead)} ${lead.score}` : game.statusText;
+    const [ta, tb] = game.players ?? [];
+    const text = pre ? middleWhen
+      : game.teamEvent && ta && tb ? `${ta.short || ta.name} ${ta.score} – ${tb.score} ${tb.short || tb.name}`
+      : lead ? `${game.state === 'post' ? '🏆' : '1.'} ${lastName(lead)} ${lead.score}` : game.statusText;
     return `<div ${cardAttrs(game, cls, tip)}>
       ${crestHtml({ logo: game.logo, abbr: league?.short ?? '⛳', color: league?.accent })}
       <span class="row__event row__event--two"><small class="row__label">${game.title}</small><span>${text}</span></span>
@@ -255,6 +263,12 @@ function ufcCard(game, league, head) {
 
 /** Golf : les 5 premiers du tableau, score par rapport à la normale. */
 function golfBoard(game) {
+  // Épreuve par équipes : « USA 10,5 – 7,5 International ».
+  if (game.teamEvent && game.state !== 'pre') {
+    const [a, b] = game.players;
+    const pts = (t) => String(t?.score ?? '').replace('.', ',');
+    return a && b ? `<div class="golf__teams"><b class="${a.winner ? 'win' : ''}">${a.name}</b><span>${pts(a)} – ${pts(b)}</span><b class="${b.winner ? 'win' : ''}">${b.name}</b></div>` : '';
+  }
   const top = (game.players ?? []).slice(0, 5);
   if (!top.length || game.state === 'pre') return '';
   return `<ol class="podium podium--golf">${top.map((p) => `
@@ -514,7 +528,7 @@ function checkReminders() {
     }
   }
   for (const g of followed) {
-    if (g.state !== 'pre' || !isDate(g.startsAt)) continue;
+    if (g.state !== 'pre' || !isDate(g.startsAt) || g.allDay || isDateOnly(g.startsAt)) continue;
     const left = g.startsAt.getTime() - now;
     if (left <= 0 || left > minutes * 60000) continue;
     reminded ??= loadReminded();
