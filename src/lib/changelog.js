@@ -1,6 +1,14 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.8.1': [
+    '📍 Le widget reste collé à ses bords (par exemple en bas à gauche, sur la barre des tâches) : il ne remonte plus après une mise à jour.',
+    '🏆 Classement des joueurs : la saison régulière en cours (ou la dernière), plus les records de tous les temps.',
+    '🇫🇷 Catégories bien traduites (« Buts », « Matchs joués »…) et une seule sélectionnée à la fois.',
+    '👤 Photos retrouvées pour bien plus de joueurs ; sinon, leurs initiales au lieu d’un cercle vide.',
+    '🏎️ F1 dans Classements : boutons Pilotes et Constructeurs.',
+    '✨ Icône nette à toutes les tailles (zone de notification, barre des tâches, menu Démarrer).',
+  ],
   '0.8.0': [
     '🎩 Notification quand un joueur réussit un tour du chapeau (3 buts dans le match).',
     '🥅 Filet désert : tu sais quand une équipe retire son gardien en fin de match.',

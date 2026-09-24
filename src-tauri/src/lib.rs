@@ -56,6 +56,25 @@ const SETTLE_DELAY: Duration = Duration::from_millis(250);
 /// Numéro du dernier déplacement : seul le plus récent déclenche le recadrage.
 static SETTLE_GEN: AtomicU64 = AtomicU64::new(0);
 
+/// Bords de l'écran auxquels l'utilisateur a collé le widget. Ils sont
+/// gardés sur le disque : au démarrage et à chaque changement de hauteur, le
+/// widget y est recollé exactement, au lieu d'être replacé par son coin haut
+/// gauche (qui le faisait remonter un peu à chaque mise à jour).
+static ANCHOR: Mutex<Edges> = Mutex::new(Edges {
+    left: false,
+    right: false,
+    top: false,
+    bottom: false,
+});
+
+/// Faux tant que le widget s'installe au démarrage : ses premiers
+/// déplacements (restauration, première hauteur) ne changent pas l'ancrage.
+static ANCHOR_READY: AtomicBool = AtomicBool::new(false);
+
+/// Temps laissé au widget pour prendre sa place avant d'écouter les
+/// déplacements de l'utilisateur.
+const ANCHOR_GRACE: Duration = Duration::from_secs(4);
+
 /// Raccourcis clavier globaux, choisis dans les réglages : [afficher/masquer
 /// le widget, fenêtre Match]. Par défaut Ctrl + Alt + S et Ctrl + Alt + M.
 static SHORTCUTS: Mutex<[Option<Shortcut>; 2]> = Mutex::new([None, None]);
@@ -520,7 +539,7 @@ fn place_bottom_left(win: &WebviewWindow) {
 }
 
 /// Bords de l'écran contre lesquels le widget se trouve.
-#[derive(serde::Serialize, Clone, Copy, Default, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Default, PartialEq)]
 struct Edges {
     left: bool,
     right: bool,
@@ -562,6 +581,122 @@ fn settle_target(win: &WebviewWindow) -> Option<(PhysicalPosition<i32>, (i32, i3
     Some((pos, (x, y), edges))
 }
 
+/// Fichier où l'ancrage du widget est gardé.
+fn anchor_file(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("widget-anchor.json"))
+}
+
+/// Relit l'ancrage gardé. Renvoie faux s'il n'y en a pas encore.
+fn load_anchor(app: &AppHandle) -> bool {
+    let Some(file) = anchor_file(app) else {
+        return false;
+    };
+    match std::fs::read(file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Edges>(&bytes).ok())
+    {
+        Some(edges) => {
+            *ANCHOR.lock().unwrap() = edges;
+            true
+        }
+        None => false,
+    }
+}
+
+/// Première fois avec l'ancrage : un widget laissé près d'un bord (même
+/// remonté de quelques centimètres par les anciennes versions) y est recollé.
+const MIGRATE_REACH: f64 = 220.0;
+
+fn migrate_anchor(win: &WebviewWindow) {
+    let (Some((left, top, right, bottom, scale)), Ok(pos), Ok(size)) =
+        (work_area(win), win.outer_position(), win.outer_size())
+    else {
+        return;
+    };
+    let reach = (MIGRATE_REACH * scale).round() as i32;
+    let (w, h) = (size.width as i32, size.height as i32);
+    let near_left = pos.x - left <= reach;
+    let near_bottom = bottom - (pos.y + h) <= reach;
+    let edges = Edges {
+        left: near_left,
+        right: !near_left && right - (pos.x + w) <= reach,
+        bottom: near_bottom,
+        top: !near_bottom && pos.y - top <= reach,
+    };
+    if edges == Edges::default() {
+        return;
+    }
+    ANCHOR_READY.store(true, Ordering::SeqCst);
+    save_anchor(win.app_handle(), edges);
+    ANCHOR_READY.store(false, Ordering::SeqCst);
+    place_anchored(win);
+}
+
+/// Retient les bords où l'utilisateur a laissé le widget.
+fn save_anchor(app: &AppHandle, edges: Edges) {
+    if !ANCHOR_READY.load(Ordering::SeqCst) {
+        return;
+    }
+    {
+        let mut current = ANCHOR.lock().unwrap();
+        if *current == edges {
+            return;
+        }
+        *current = edges;
+    }
+    if let (Some(file), Ok(json)) = (anchor_file(app), serde_json::to_vec(&edges)) {
+        if let Some(dir) = file.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(file, json);
+    }
+}
+
+/// Position qui recolle un widget de taille `size` à ses bords d'ancrage.
+/// Sur un axe sans bord retenu, la position actuelle est gardée.
+fn anchored_position(
+    win: &WebviewWindow,
+    pos: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+) -> Option<(i32, i32)> {
+    let edges = *ANCHOR.lock().unwrap();
+    if edges == Edges::default() {
+        return None;
+    }
+    let (left, top, right, bottom, _) = work_area(win)?;
+    // `max` : un widget plus grand que l'écran reste accroché en haut à gauche.
+    let x = if edges.left {
+        left
+    } else if edges.right {
+        (right - size.width as i32).max(left)
+    } else {
+        pos.x
+    };
+    let y = if edges.bottom {
+        (bottom - size.height as i32).max(top)
+    } else if edges.top {
+        top
+    } else {
+        pos.y
+    };
+    Some((x, y))
+}
+
+/// Recolle le widget à ses bords d'ancrage, s'il en a.
+fn place_anchored(win: &WebviewWindow) {
+    let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) else {
+        return;
+    };
+    if let Some((x, y)) = anchored_position(win, pos, size) {
+        if (x, y) != (pos.x, pos.y) {
+            let _ = win.set_position(PhysicalPosition::new(x, y));
+        }
+    }
+}
+
 /// Recadrage immédiat, sans animation (au démarrage).
 fn settle(win: &WebviewWindow) {
     if let Some((pos, (x, y), _)) = settle_target(win) {
@@ -596,6 +731,7 @@ fn settle_later(win: WebviewWindow) {
         let Some((from, to, edges)) = settle_target(&win) else {
             return;
         };
+        save_anchor(win.app_handle(), edges);
         if (from.x, from.y) == to {
             return;
         }
@@ -639,16 +775,20 @@ fn fit_widget(app: AppHandle, height: f64, width: Option<f64>) {
         .unwrap_or((false, false));
 
     let _ = win.set_size(PhysicalSize::new(new_w, new_h));
-    let x = if grow_left {
-        pos.x + size.width as i32 - new_w as i32
-    } else {
-        pos.x
-    };
-    let y = if grow_up {
-        pos.y + size.height as i32 - new_h as i32
-    } else {
-        pos.y
-    };
+    // Collé à des bords : il y reste exactement. Sinon, il grandit du côté
+    // opposé au bord de l'écran le plus proche.
+    let (x, y) = anchored_position(&win, pos, PhysicalSize::new(new_w, new_h)).unwrap_or((
+        if grow_left {
+            pos.x + size.width as i32 - new_w as i32
+        } else {
+            pos.x
+        },
+        if grow_up {
+            pos.y + size.height as i32 - new_h as i32
+        } else {
+            pos.y
+        },
+    ));
     if x != pos.x || y != pos.y {
         let _ = win.set_position(PhysicalPosition::new(x, y));
     }
@@ -1126,6 +1266,7 @@ pub fn run() {
             let needs_anchor = layout_marker.as_ref().map(|f| !f.exists()).unwrap_or(true);
 
             build_tray(&handle)?;
+            let has_anchor = load_anchor(&handle);
             watch_fullscreen(handle.clone());
             watch_updates(handle.clone());
 
@@ -1175,8 +1316,27 @@ pub fn run() {
                     }
                 } else {
                     settle(&win);
+                    if has_anchor {
+                        place_anchored(&win);
+                    } else {
+                        migrate_anchor(&win);
+                    }
+                }
+                // Au premier lancement, le widget est en bas à gauche : c'est
+                // aussi son ancrage tant que l'utilisateur ne le déplace pas.
+                if needs_anchor {
+                    *ANCHOR.lock().unwrap() = Edges {
+                        left: true,
+                        bottom: true,
+                        ..Edges::default()
+                    };
                 }
             }
+            // Passé le temps d'installation, les déplacements comptent.
+            tauri::async_runtime::spawn(async {
+                tokio::time::sleep(ANCHOR_GRACE).await;
+                ANCHOR_READY.store(true, Ordering::SeqCst);
+            });
 
             Ok(())
         })

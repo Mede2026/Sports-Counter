@@ -611,3 +611,19 @@ kbd {
 .br__team--win span, .br__team--win b { color: var(--text); font-weight: 800; }
 .br__team--out { opacity: 0.45; }
 .br__status { margin-top: 3px; font-size: 10.5px; color: var(--text-muted); }
+
+/* Pas de photo chez ESPN : les initiales, dans le même cercle. */
+.face--ini {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.face-xs.face--ini { font-size: 7.5px; }
+.st__season { margin: 0 6px 10px; font-size: 12px; font-weight: 650; color: var(--text-muted); }

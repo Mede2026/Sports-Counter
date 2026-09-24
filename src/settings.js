@@ -9,6 +9,7 @@ import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { visibleTeamColor } from './lib/color.js';
 import { NHL_TEAMS } from './lib/teams-nhl.js';
 import { autoFr, TRANSLATED_EVENT } from './lib/translate.js';
+import { faceHtml, bindFaces } from './lib/face.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -149,7 +150,7 @@ function renderWhole(league) {
     list = shown.map(({ f, mine }) => `
       <div class="team-row driver-row${mine ? ' team-row--on' : ''}" data-fighter="${f.id}">
         <span class="check">${CHECK}</span>
-        ${f.photo ? `<img class="face-sm" src="${f.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}
+        ${faceHtml(f, 'face-sm')}
         <span class="team-row__name">${f.name}${f.record ? ` <small class="st__muted">${f.record}</small>` : ''}</span>
         <span class="team-row__abbr">${autoFr(f.weight)}</span>
       </div>`).join('') || `<div class="state">Aucun combattant ne correspond à « ${query} ».</div>`;
@@ -163,7 +164,7 @@ function renderWhole(league) {
     </div>
     <div class="subhead">Tes combattants favoris <small>coche-en autant que tu veux : leur combat est mis en évidence, avec un rappel avant et une notification quand ils gagnent ou perdent</small></div>
     ${list}`;
-  el.teams.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+  bindFaces(el.teams);
   document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
   document.getElementById('btnRetryFighters')?.addEventListener('click', () => { fightersErr = null; loadFighters(); });
   el.teams.querySelectorAll('[data-fighter]').forEach((row) => row.addEventListener('click', () => pickFighter(row.dataset.fighter)));
@@ -228,7 +229,7 @@ function renderF1(league) {
       const mine = favs.some((f) => sameDriver(d, f));
       return `<div class="team-row driver-row${mine ? ' team-row--on' : ''}" data-driver="${d.id}">
         <span class="check">${CHECK}</span>
-        ${d.photo ? `<img class="face-sm" src="${d.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}
+        ${faceHtml(d, 'face-sm')}
         <span class="team-row__name">${d.name}</span>
         <span class="team-row__abbr">${d.team ?? ''}</span>
       </div>`;
@@ -244,7 +245,7 @@ function renderF1(league) {
     <div class="subhead">Tes pilotes favoris <small>coche-en autant que tu veux : mis en évidence dans le widget, avec des notifications s'ils prennent la tête ou montent sur le podium</small></div>
     ${list}`;
   bindCrests(el.teams);
-  el.teams.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+  bindFaces(el.teams);
   document.getElementById('rowFollowF1').addEventListener('click', toggleLeague);
   document.getElementById('btnRetryDrivers')?.addEventListener('click', () => { driversErr = null; loadDrivers(); });
   el.teams.querySelectorAll('.driver-row').forEach((row) => {
@@ -578,7 +579,7 @@ function renderPlayerChips() {
     ? list.map((p, i) => `<span class="chip-player">${p.photo ? `<img class="face-xs" src="${p.photo}" alt="" data-face />` : ''}${p.name}
         <button type="button" data-i="${i}" title="Retirer">×</button></span>`).join('')
     : '<small>Aucun</small>';
-  box.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+  bindFaces(box);
   box.querySelectorAll('button[data-i]').forEach((b) => b.addEventListener('click', (e) => {
     e.preventDefault();
     prefs.favPlayers.splice(Number(b.dataset.i), 1);
@@ -636,11 +637,11 @@ function renderPlayers() {
   el.players.innerHTML = list.map((p) => `
     <div class="team-row${isFavPlayer(p) ? ' team-row--on' : ''}" data-player="${p.id}">
       <span class="check">${CHECK}</span>
-      <img class="face-sm" src="${p.photo}" alt="" data-face />
+      ${faceHtml(p, 'face-sm')}
       <span class="team-row__name">${p.name}</span>
       <span class="team-row__abbr">${[p.jersey ? `#${p.jersey}` : '', p.pos].filter(Boolean).join(' · ')}</span>
     </div>`).join('') || `<div class="state">Aucun joueur ne correspond à « ${playerQuery} ».</div>`;
-  el.players.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => { img.style.visibility = 'hidden'; }, { once: true }));
+  bindFaces(el.players);
   el.players.querySelectorAll('.team-row').forEach((row) => row.addEventListener('click', () => {
     const p = roster.find((x) => x.id === row.dataset.player);
     togglePlayer({ id: p.id, name: p.name, photo: p.photo, teamId: p.teamId });
@@ -684,24 +685,32 @@ function showStandings() {
   loadStandings(false);
 }
 
+let standingsShown = null; // ligue affichée au dernier chargement
+
 async function loadStandings() {
   const leagueId = standingsLeague;
-  // La F1 n'a qu'un classement (pilotes, constructeurs) : pas de choix Équipes/Joueurs.
-  document.getElementById('standingsMode').hidden = leagueId === 'f1';
+  const f1 = leagueId === 'f1';
+  // En arrivant sur la F1, le classement des pilotes d'abord.
+  if (f1 && standingsShown !== 'f1') standingsMode = 'players';
+  standingsShown = leagueId;
+  // F1 : les boutons deviennent Pilotes / Constructeurs.
+  const btn = (mode) => document.querySelector(`#standingsMode button[data-mode="${mode}"]`);
+  btn('teams').textContent = f1 ? 'Constructeurs' : 'Équipes';
+  btn('players').textContent = f1 ? 'Pilotes' : 'Joueurs';
   document.getElementById('modeBracket').hidden = !hasBracket(leagueId);
-  if (standingsMode === 'bracket' && !hasBracket(leagueId)) standingsMode = 'teams';
+  if (standingsMode === 'bracket' && !hasBracket(leagueId)) standingsMode = f1 ? 'players' : 'teams';
   document.querySelectorAll('#standingsMode button').forEach((b) => b.classList.toggle('seg--on', b.dataset.mode === standingsMode));
-  if (standingsMode === 'players' && leagueId !== 'f1') { loadPlayerLeaders(leagueId); return; }
+  if (standingsMode === 'players' && !f1) { loadPlayerLeaders(leagueId); return; }
   if (standingsMode === 'bracket') { loadBracket(leagueId); return; }
   el.standings.innerHTML = '<div class="state">Chargement du classement…</div>';
   try {
     const html = leagueId === 'f1'
-      ? f1StandingsHtml(IS_DEMO ? demoF1Standings() : await fetchF1Standings())
+      ? f1StandingsHtml(IS_DEMO ? demoF1Standings() : await fetchF1Standings(), standingsMode === 'players' ? 'drivers' : 'teams')
       : teamStandingsHtml(leagueId, IS_DEMO ? demoStandings() : await fetchStandingsTable(leagueId));
     if (standingsLeague !== leagueId) return; // autre ligue choisie entre-temps
     el.standings.innerHTML = html || '<div class="state">ESPN ne donne pas encore de classement pour cette ligue.</div>';
     bindCrests(el.standings);
-    el.standings.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => { img.style.visibility = 'hidden'; }, { once: true }));
+    bindFaces(el.standings);
     el.standings.querySelector('.st__row--fav')?.scrollIntoView({ block: 'center' });
   } catch (err) {
     if (standingsLeague === leagueId) el.standings.innerHTML = errorBlock('Classement indisponible.', err);
@@ -742,7 +751,8 @@ async function renderLeaders() {
   const chips = `<div class="cat-chips">${cats.map((c) => `
     <button type="button" class="cat-chip${c.name === cat.name ? ' cat-chip--on' : ''}" data-cat="${c.name}">${autoFr(c.label)}</button>`).join('')}</div>`;
   const draw = (players) => {
-    el.standings.innerHTML = chips + `<table class="st__table st__table--players">
+    const season = cat.season ? `<div class="st__season">Saison régulière ${cat.season}</div>` : '';
+    el.standings.innerHTML = chips + season + `<table class="st__table st__table--players">
       <thead><tr><th class="st__rank">#</th><th class="st__team">Joueur</th><th>Équipe</th><th>${autoFr(cat.label)}</th></tr></thead>
       <tbody>${cat.leaders.map((l, i) => {
         const p = players[i];
@@ -750,14 +760,14 @@ async function renderLeaders() {
         const fav = prefs.favorites.includes(`${leagueId}:${l.teamId}`) || (p?.name && isFavPlayer(p));
         return `<tr class="${fav ? 'st__row--fav' : ''}">
           <td class="st__rank">${({ 1: '🥇', 2: '🥈', 3: '🥉' })[l.rank] ?? l.rank}</td>
-          <td class="st__team"><span class="st__cell">${p?.photo ? `<img class="face-sm" src="${p.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}
+          <td class="st__team"><span class="st__cell">${faceHtml(p, 'face-sm')}
             <span>${p?.name ?? '…'}${p?.pos ? ` <small class="st__muted">${p.pos}</small>` : ''}</span></span></td>
           <td>${t ? `<span class="st__cell st__cell--c">${crestHtml({ logo: t.logo, abbr: t.abbr }, 'crest-sm')}${t.abbr}</span>` : ''}</td>
           <td><b>${l.value}</b></td>
         </tr>`;
       }).join('')}</tbody></table>`;
     bindCrests(el.standings);
-    el.standings.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => { img.style.visibility = 'hidden'; }, { once: true }));
+    bindFaces(el.standings);
     el.standings.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => { leaderCat = b.dataset.cat; renderLeaders(); }));
   };
   // D'abord les valeurs, puis les noms et photos dès qu'ils arrivent.
@@ -874,14 +884,17 @@ function demoBracket() {
 }
 
 /** Championnat de F1 : pilotes (tes favoris en évidence) et constructeurs. */
-function f1StandingsHtml({ drivers, teams }) {
+/** Championnat de F1 : `which` = 'drivers' (pilotes) ou 'teams' (constructeurs). */
+function f1StandingsHtml({ drivers, teams }, which = 'drivers') {
+  if (which === 'drivers') teams = [];
+  else drivers = [];
   if (!drivers?.length && !teams?.length) return '';
   const favs = prefs.favDrivers ?? [];
   const medal = (n) => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[n] ?? n);
   const driverRows = drivers.map((d) => `
     <tr class="${favs.some((f) => sameDriver(d, f)) ? 'st__row--fav' : ''}">
       <td class="st__rank">${medal(d.rank)}</td>
-      <td class="st__team"><span class="st__cell">${d.photo ? `<img class="face-sm" src="${d.photo}" alt="" data-face />` : '<span class="face-sm"></span>'}<span>${d.name}</span></span></td>
+      <td class="st__team"><span class="st__cell">${faceHtml(d, 'face-sm')}<span>${d.name}</span></span></td>
       <td class="st__muted">${d.team}</td>
       <td><b>${d.points}</b></td>
     </tr>`).join('');

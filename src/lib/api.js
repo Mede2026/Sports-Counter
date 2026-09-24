@@ -275,6 +275,17 @@ function sessionLabel(comp) {
  * Photo d'un pilote. ESPN range les portraits de la course automobile sous
  * « rpm » ; on prend celle de la réponse quand elle y est.
  */
+/**
+ * Adresse de la photo d'un joueur sur les serveurs d'images d'ESPN, quand la
+ * réponse n'en donne pas : ESPN la range par ligue (« nhl », « soccer »…).
+ */
+export function headshotUrl(leagueId, id) {
+  if (!id) return '';
+  const dir = { f1: 'rpm', ufc: 'mma' }[leagueId]
+    ?? (LEAGUES_BY_ID[leagueId]?.path.startsWith('soccer/') ? 'soccer' : LEAGUES_BY_ID[leagueId]?.path.split('/')[1]);
+  return dir ? `https://a.espncdn.com/i/headshots/${dir}/players/full/${id}.png` : '';
+}
+
 export function driverPhoto(athlete, id) {
   const href = athlete?.headshot?.href ?? athlete?.headshot ?? '';
   if (typeof href === 'string' && href.startsWith('https://')) return href;
@@ -536,7 +547,7 @@ function liveClock(leagueId, state, frStatus, clock, statusText = '') {
 function fighterOf(c) {
   const a = c?.athlete ?? {};
   const id = String(a.id ?? c?.id ?? '');
-  const photo = a.headshot?.href ?? (id ? `https://a.espncdn.com/i/headshots/mma/players/full/${id}.png` : '');
+  const photo = a.headshot?.href ?? headshotUrl('ufc', id);
   return {
     id,
     name: a.displayName ?? a.fullName ?? c?.displayName ?? '',
@@ -846,8 +857,8 @@ export async function fetchMatchDetail(leagueId, eventId) {
     series: seriesInfo(comp, homeC, awayC),
     venue: data?.gameInfo?.venue?.fullName ?? '',
     link: pickLink(data?.header) || '',
-    stars: threeStars(data, comp),
-    leaders: gameLeaders(data, home.id, away.id),
+    stars: threeStars(data, comp, leagueId),
+    leaders: gameLeaders(data, home.id, away.id, leagueId),
     winProb: winProbability(data, state),
     videos: highlights(data),
     box: boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]),
@@ -1016,13 +1027,17 @@ function allPlays(data, sport) {
 
 /* ---------- Fenêtre Match : étoiles, meneurs, chances, vidéos ---------- */
 
-const athletePhoto = (a) => a?.headshot?.href ?? a?.headshot ?? '';
+/** Photo d'un athlète : celle de la réponse, sinon l'adresse habituelle d'ESPN. */
+const athletePhoto = (a, leagueId) => {
+  const href = a?.headshot?.href ?? a?.headshot ?? '';
+  return typeof href === 'string' && href.startsWith('https://') ? href : headshotUrl(leagueId, a?.id);
+};
 
 /**
  * Les 3 étoiles du match (hockey), quand ESPN les nomme (« firstStar »…).
  * Liste vide sinon.
  */
-function threeStars(data, comp) {
+function threeStars(data, comp, leagueId) {
   const pools = [comp?.status?.featuredAthletes, comp?.featuredAthletes, data?.header?.featuredAthletes, data?.featuredAthletes];
   const order = (x) => (/first|1/i.test(x) ? 1 : /second|2/i.test(x) ? 2 : /third|3/i.test(x) ? 3 : 9);
   for (const pool of pools) {
@@ -1031,7 +1046,7 @@ function threeStars(data, comp) {
       .map((f) => ({
         rank: order(`${f.name ?? ''} ${f.displayName ?? ''}`),
         name: f.athlete.displayName ?? f.athlete.shortName ?? '',
-        photo: athletePhoto(f.athlete),
+        photo: athletePhoto(f.athlete, leagueId),
         teamId: String(f.team?.id ?? f.athlete.team?.id ?? ''),
         line: f.statistics?.map?.((s) => s?.displayValue).filter(Boolean).join(' · ') ?? '',
       }))
@@ -1060,13 +1075,13 @@ export const LEADER_FR = {
  * Meneurs du match, par catégorie : le meilleur de chaque équipe.
  * [{ label, away: { name, photo, value }, home: {…} }], 3 catégories au plus.
  */
-function gameLeaders(data, homeId, awayId) {
+function gameLeaders(data, homeId, awayId, leagueId) {
   const byTeam = new Map((data?.leaders ?? []).map((t) => [String(t?.team?.id ?? ''), t?.leaders ?? []]));
   const home = byTeam.get(String(homeId)) ?? [];
   const away = byTeam.get(String(awayId)) ?? [];
   const best = (cats, name) => {
     const l = cats.find((c) => c?.name === name)?.leaders?.[0];
-    return l?.athlete ? { name: l.athlete.displayName ?? l.athlete.shortName ?? '', photo: athletePhoto(l.athlete), value: l.displayValue ?? '' } : null;
+    return l?.athlete ? { name: l.athlete.displayName ?? l.athlete.shortName ?? '', photo: athletePhoto(l.athlete, leagueId), value: l.displayValue ?? '' } : null;
   };
   const names = [...new Set([...home, ...away].map((c) => c?.name).filter(Boolean))];
   return names
@@ -1264,8 +1279,62 @@ const LEADER_ORDER = {
 };
 
 const LEADERS_TTL = 60 * 60 * 1000;
-const leadersCache = diskCache('leaders', LEADERS_TTL);
-const athleteCache = diskCache('athletes', 7 * 24 * 3600 * 1000);
+// v2 : les meneurs de la saison en cours (la v1 gardait ceux de tous les
+// temps) et les photos reconstituées quand ESPN n'en donne pas.
+const leadersCache = diskCache('leaders.v2', LEADERS_TTL);
+const athleteCache = diskCache('athletes.v2', 7 * 24 * 3600 * 1000);
+
+// Noms français des catégories, d'après le nom affiché par ESPN (en minuscules).
+// La traduction automatique donnait des contresens (« Goals » → « Objectifs »).
+const LEADER_FR_TEXT = {
+  goals: 'Buts', assists: 'Passes', points: 'Points', 'penalty minutes': 'Minutes de pénalité',
+  wins: 'Victoires', 'games played': 'Matchs joués', 'plus/minus': '+/-', 'plus minus': '+/-',
+  'save percentage': "% d'arrêts", 'save pct': "% d'arrêts", 'goals against average': 'Moyenne de buts alloués',
+  shutouts: 'Blanchissages', saves: 'Arrêts', 'power play goals': 'Buts en avantage numérique',
+  'shots': 'Tirs', 'time on ice': 'Temps de glace', 'game-winning goals': 'Buts gagnants',
+  defensive: 'Défense', offensive: 'Attaque', rebounds: 'Rebonds', steals: 'Interceptions', blocks: 'Contres',
+  'points per game': 'Points par match', 'rebounds per game': 'Rebonds par match',
+  'assists per game': 'Passes par match', 'steals per game': 'Interceptions par match',
+  'blocks per game': 'Contres par match', 'field goal percentage': 'Tirs réussis (%)',
+  'passing yards': 'Verges par la passe', 'rushing yards': 'Verges au sol', 'receiving yards': 'Verges en réception',
+  sacks: 'Sacs du quart', interceptions: 'Interceptions', tackles: 'Plaqués', touchdowns: 'Touchés',
+  'batting average': 'Moyenne au bâton', 'home runs': 'Circuits', 'runs batted in': 'Points produits', rbis: 'Points produits',
+  hits: 'Coups sûrs', 'stolen bases': 'Buts volés', 'earned run average': 'Moyenne de points mérités',
+  era: 'Moyenne de points mérités', strikeouts: 'Retraits au bâton',
+};
+
+const leaderLabel = (c) => LEADER_FR[c?.name]
+  ?? LEADER_FR_TEXT[String(c?.displayName ?? '').toLowerCase()]
+  ?? LEADER_FR_TEXT[String(c?.name ?? '').toLowerCase()]
+  ?? autoFr(c?.displayName ?? c?.name ?? '');
+
+/**
+ * Saison affichée : « 2025-2026 » au hockey et au basket (ESPN la nomme par
+ * son année de fin), « 2025-2026 » au soccer (année de début), l'année seule ailleurs.
+ */
+function seasonLabel(leagueId, year) {
+  const sport = LEAGUES_BY_ID[leagueId]?.path.split('/')[0];
+  if (leagueId === 'wnba' || leagueId === 'mls') return String(year);
+  if (sport === 'hockey' || sport === 'basketball') return `${year - 1}-${year}`;
+  if (sport === 'soccer') return `${year}-${year + 1}`;
+  return String(year);
+}
+
+/**
+ * Saisons où chercher les meneurs, la plus pertinente d'abord : celle en
+ * cours d'après le tableau des scores, ou la précédente en présaison.
+ */
+async function leaderSeasons(league) {
+  let year = new Date().getFullYear();
+  let type = 2;
+  try {
+    const board = await getJson(`${league.path}/scoreboard`);
+    const season = board?.leagues?.[0]?.season ?? board?.season ?? {};
+    year = Number(season.year) || year;
+    type = Number(season.type?.type ?? season.type) || type;
+  } catch { /* année civile par défaut */ }
+  return type === 1 ? [year - 1, year] : [year, year - 1];
+}
 
 /**
  * Meneurs de la ligue, par catégorie : [{ name, label, leaders: [{ rank,
@@ -1277,13 +1346,34 @@ export async function fetchLeagueLeaders(leagueId) {
   const hit = leadersCache.get(leagueId);
   if (hit) return hit;
   const [sport, code] = league.path.split('/');
-  const data = await getCore(`/v2/sports/${sport}/leagues/${code}/leaders?limit=10&lang=en&region=us`);
+  // Saison régulière (type 2) : sans saison précise, ESPN renvoie les
+  // meneurs de tous les temps (Gretzky, Ovechkin…).
+  let data = null;
+  let year = null;
+  for (const y of await leaderSeasons(league)) {
+    try {
+      const d = await getCore(`/v2/sports/${sport}/leagues/${code}/seasons/${y}/types/2/leaders?limit=10&lang=en&region=us`);
+      if ((d?.categories ?? []).some((c) => (c?.leaders ?? []).length)) { data = d; year = y; break; }
+    } catch { /* saison pas encore commencée : on essaie la suivante */ }
+  }
+  if (!data) return [];
   const order = LEADER_ORDER[sport] ?? [];
-  const rankOf = (name) => { const i = order.indexOf(name); return i === -1 ? 99 : i; };
+  const rankOf = (key) => { const i = order.indexOf(key); return i === -1 ? 99 : i; };
+  const season = seasonLabel(leagueId, year);
+  const used = new Set();
   const cats = (data?.categories ?? [])
     .map((c) => ({
-      name: c?.name ?? '',
-      label: LEADER_FR[c?.name] ?? autoFr(c?.displayName ?? c?.name ?? ''),
+      key: c?.name ?? '',
+      // Identifiant unique de la catégorie (ESPN peut répéter un même nom).
+      name: (() => {
+        const base = c?.name || c?.displayName || 'cat';
+        let id = base;
+        for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+        used.add(id);
+        return id;
+      })(),
+      label: leaderLabel(c),
+      season,
       leaders: (c?.leaders ?? []).slice(0, 10).map((l, i) => ({
         rank: i + 1,
         value: l?.displayValue ?? String(l?.value ?? ''),
@@ -1292,7 +1382,7 @@ export async function fetchLeagueLeaders(leagueId) {
       })).filter((l) => l.ref),
     }))
     .filter((c) => c.name && c.leaders.length)
-    .sort((a, b) => rankOf(a.name) - rankOf(b.name))
+    .sort((a, b) => rankOf(a.key) - rankOf(b.key))
     .slice(0, 8);
   if (cats.length) leadersCache.set(leagueId, cats);
   return cats;
@@ -1303,11 +1393,14 @@ export async function fetchAthlete(ref) {
   const hit = athleteCache.get(ref);
   if (hit) return hit;
   const a = await getCore(ref.includes('?') ? ref : `${ref}?lang=en&region=us`);
+  // Ligue lue dans l'adresse (« …/leagues/nhl/… ») pour la photo de secours.
+  const code = /\/leagues\/([^/]+)\//.exec(ref)?.[1] ?? '';
+  const leagueId = Object.keys(LEAGUES_BY_ID).find((id) => LEAGUES_BY_ID[id].path.split('/')[1] === code) ?? '';
   const athlete = {
     id: String(a?.id ?? ''),
     name: a?.displayName ?? a?.fullName ?? '',
     short: a?.shortName ?? '',
-    photo: a?.headshot?.href ?? '',
+    photo: athletePhoto(a, leagueId),
     pos: a?.position?.abbreviation ?? '',
     jersey: a?.jersey ?? '',
   };
@@ -1496,7 +1589,6 @@ export async function fetchRoster(leagueId, teamId) {
   const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/roster`);
   // Au hockey, les joueurs sont groupés par position ({ position, items }).
   const flat = (data?.athletes ?? []).flatMap((a) => (Array.isArray(a?.items) ? a.items : [a]));
-  const sport = league.path.split('/')[1];
   return flat
     .filter((a) => a?.id && a?.displayName)
     .map((a) => ({
@@ -1505,7 +1597,7 @@ export async function fetchRoster(leagueId, teamId) {
       short: a.shortName ?? a.displayName,
       jersey: a.jersey ?? '',
       pos: a.position?.abbreviation ?? '',
-      photo: a.headshot?.href ?? `https://a.espncdn.com/i/headshots/${sport}/players/full/${a.id}.png`,
+      photo: athletePhoto(a, leagueId),
       teamId: String(teamId),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'fr'));

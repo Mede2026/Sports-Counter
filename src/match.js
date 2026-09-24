@@ -12,6 +12,7 @@ import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
 import { translated, translateAll, autoFr, TRANSLATED_EVENT } from './lib/translate.js';
+import { faceHtml, bindFaces } from './lib/face.js';
 
 const REFRESH_LIVE_MS = 20_000;
 const REFRESH_IDLE_MS = 300_000;
@@ -202,9 +203,7 @@ function winProbHtml(g) {
   </div>`;
 }
 
-const personFace = (x, cls = 'face') => (x?.photo
-  ? `<img class="${cls}" src="${esc(x.photo)}" alt="" data-face />`
-  : `<span class="${cls}"></span>`);
+const personFace = (x, cls = 'face') => faceHtml(x, cls);
 
 /** Les 3 étoiles du match (hockey). */
 function starsHtml(g) {
@@ -546,7 +545,7 @@ function paint(html) {
   lastHtml = html;
   el.main.innerHTML = html;
   bindCrests(el.main);
-  el.main.querySelectorAll('img[data-face]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+  bindFaces(el.main);
   document.getElementById('btnRetry')?.addEventListener('click', load);
   // Vidéo des faits saillants : ouverte sur ESPN, dans le navigateur.
   el.main.querySelectorAll('.video[data-href]').forEach((b) => b.addEventListener('click', async () => {

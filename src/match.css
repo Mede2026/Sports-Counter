@@ -474,3 +474,19 @@ span.crest-xs { border-radius: 4px; }
 .pl--score { box-shadow: inset 3px 0 0 var(--gold); padding-left: 8px; }
 .pl__score { display: block; margin-top: 3px; font-size: 11px; font-weight: 750; color: var(--gold); }
 .pl__more { display: block; margin: 10px auto 0; }
+
+/* Pas de photo chez ESPN : les initiales, dans le même cercle. */
+.face--ini {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.face--lg.face--ini { font-size: 16px; }
+.face--xl.face--ini { font-size: 20px; }
