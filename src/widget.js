@@ -1,6 +1,6 @@
 import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
-import { loadPrefs } from './lib/store.js';
+import { loadPrefs, savePrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { visibleTeamColor, playingColors, alternating, LIVE_THEME } from './lib/color.js';
@@ -735,14 +735,30 @@ async function updateWallpaper() {
     canvas.height = Math.round(screen.height * scale);
     const spots = await renderWallpaper(canvas, model, prefs, followed);
     const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
-    if (!blob) return;
+    // Mode quitté pendant le dessin (« Remettre mon fond d'écran ») : on ne pose rien.
+    if (!blob || !wallpaperMode()) return;
     await invoke('set_wallpaper', new Uint8Array(await blob.arrayBuffer()));
     // Un clic sur un match du fond d'écran ouvre sa fenêtre Match.
     invoke('set_wallpaper_spots', { width: canvas.width, height: canvas.height, spots }).catch(() => {});
     wallpaperKey = key;
     wallpaperAt = Date.now();
   } catch (err) {
-    console.warn('fond d’écran :', errText(err));
+    if (String(err).includes('fond-change')) {
+      // Fond d'écran changé à la main dans Windows : on respecte son choix,
+      // le mode s'arrête et le widget revient.
+      prefs.widgetMode = 'always';
+      savePrefs(prefs);
+      wallpaperRestored = true;
+      shownByMode = undefined;
+      applyWidgetMode(false);
+      sendToast({
+        title: '🖼️ Fond d’écran d’infos arrêté',
+        body: 'Tu as choisi un autre fond d’écran : l’app ne le remplace plus.',
+        team: { abbr: 'SC', logo: '', color: '#4aa3ff' },
+      });
+    } else {
+      console.warn('fond d’écran :', errText(err));
+    }
   } finally {
     wallpaperBusy = false;
   }
@@ -1336,6 +1352,7 @@ window.addEventListener('storage', (e) => {
   if (lastRender) render(...lastRender);
   shownByMode = undefined; // réglage peut-être changé : réappliquer
   wallpaperAt = 0; // réglages changés : le fond d'écran se redessine tout de suite
+  if (!wallpaperMode()) updateWallpaper(); // mode quitté : fond d'origine remis sans attendre
   if ((prefs.widgetMode ?? 'always') !== 'live') applyWidgetMode(false);
   syncFullscreenOption();
   refresh();

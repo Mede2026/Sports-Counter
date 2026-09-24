@@ -1400,16 +1400,33 @@ fn set_wallpaper(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(),
     }
     let dir = wallpaper_dir(&app)?;
     let original = dir.join("origine.txt");
-    if !original.exists() {
-        if let Some(path) = current_wallpaper() {
-            // Déjà un de nos fonds (l'app a été réinstallée) : rien à noter.
-            if !path.starts_with(&*dir.to_string_lossy()) {
-                std::fs::write(&original, path).map_err(|e| e.to_string())?;
-                if let Some((style, tile)) = wallpaper_fit() {
-                    let _ =
-                        std::fs::write(dir.join("origine-style.txt"), format!("{style}\n{tile}"));
-                }
+    let active = dir.join(ACTIVE_FILE);
+    let current = current_wallpaper().unwrap_or_default();
+
+    // Fond d'écran changé à la main dans Windows depuis notre dernière image :
+    // on respecte son choix au lieu de l'écraser. Le widget quitte le mode.
+    if let Ok(ours) = std::fs::read_to_string(&active) {
+        if !current.is_empty()
+            && current != ours.trim()
+            && !current.starts_with(&*dir.to_string_lossy())
+        {
+            forget_original(&dir);
+            return Err(WALLPAPER_CHANGED.into());
+        }
+    }
+
+    if !original.exists() && !current.starts_with(&*dir.to_string_lossy()) {
+        std::fs::write(&original, &current).map_err(|e| e.to_string())?;
+        // Une copie de l'image elle-même : Windows garde souvent le fond dans
+        // un fichier à lui (« TranscodedWallpaper ») qu'il remplacera par le
+        // nôtre. Sans copie, impossible de remettre le vrai fond ensuite.
+        if let Ok(bytes) = std::fs::read(&current) {
+            if is_image(&bytes) && bytes.len() <= 40 * 1024 * 1024 {
+                let _ = std::fs::write(dir.join(ORIGINAL_COPY), bytes);
             }
+        }
+        if let Some((style, tile)) = wallpaper_fit() {
+            let _ = std::fs::write(dir.join("origine-style.txt"), format!("{style}\n{tile}"));
         }
     }
     // « Remplir » : l'image couvre l'écran sans déformation. Les zones
@@ -1420,7 +1437,51 @@ fn set_wallpaper(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(),
     let flip = NEXT_WALLPAPER.fetch_add(1, Ordering::SeqCst) % 2;
     let file = dir.join(format!("sports-counter-{flip}.jpg"));
     std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
-    apply_wallpaper(&file.to_string_lossy())
+    let path = file.to_string_lossy().to_string();
+    apply_wallpaper(&path)?;
+    // Ce qu'on vient de poser, pour reconnaître un changement fait à la main.
+    let _ = std::fs::write(&active, current_wallpaper().unwrap_or(path));
+    Ok(())
+}
+
+/// Réponse de `set_wallpaper` quand l'utilisateur a choisi un autre fond d'écran.
+const WALLPAPER_CHANGED: &str = "fond-change";
+/// Chemin du dernier fond posé par l'app (présent tant que le mode est actif).
+const ACTIVE_FILE: &str = "actif.txt";
+/// Copie de l'image du fond d'écran d'origine.
+const ORIGINAL_COPY: &str = "origine-copie";
+
+/// Oublie le fond d'origine noté (l'utilisateur en a choisi un nouveau).
+fn forget_original(dir: &std::path::Path) {
+    for name in [
+        "origine.txt",
+        "origine-style.txt",
+        ORIGINAL_COPY,
+        ACTIVE_FILE,
+    ] {
+        let _ = std::fs::remove_file(dir.join(name));
+    }
+    WALL_SPOTS.lock().unwrap().spots.clear();
+}
+
+/// Vrai pour le fichier interne où Windows range le fond d'écran : son contenu
+/// change dès qu'un autre fond est posé, il ne sert donc pas à le remettre.
+fn is_windows_copy(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.contains("transcodedwallpaper") || lower.contains("\\themes\\cachedfiles")
+}
+
+/// Extension d'après les premiers octets d'une image.
+fn image_ext(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(b"\x89PNG") {
+        "png"
+    } else if bytes.starts_with(b"BM") {
+        "bmp"
+    } else if bytes.starts_with(b"RIFF") {
+        "webp"
+    } else {
+        "jpg"
+    }
 }
 
 static NEXT_WALLPAPER: AtomicU64 = AtomicU64::new(0);
@@ -1442,15 +1503,20 @@ fn is_image(bytes: &[u8]) -> bool {
 fn wallpaper_photo(app: AppHandle) -> Result<tauri::ipc::Response, String> {
     let dir = wallpaper_dir(&app)?;
     let chosen = dir.join(PHOTO_FILE);
+    let copy = dir.join(ORIGINAL_COPY);
     let path = if chosen.exists() {
         chosen
+    } else if copy.exists() {
+        copy
     } else if let Ok(original) = std::fs::read_to_string(dir.join("origine.txt")) {
         std::path::PathBuf::from(original.trim())
     } else {
         std::path::PathBuf::from(current_wallpaper().unwrap_or_default())
     };
     // Jamais un de nos propres fonds : l'image s'afficherait dans elle-même.
-    if path.as_os_str().is_empty() || (path.starts_with(&dir) && !path.ends_with(PHOTO_FILE)) {
+    let own =
+        path.starts_with(&dir) && !path.ends_with(PHOTO_FILE) && !path.ends_with(ORIGINAL_COPY);
+    if path.as_os_str().is_empty() || own || is_windows_copy(&path.to_string_lossy()) {
         return Err("aucune photo".into());
     }
     let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
@@ -1653,11 +1719,12 @@ fn watch_desktop_clicks(_app: AppHandle) {}
 #[tauri::command]
 fn restore_wallpaper(app: AppHandle) -> Result<(), String> {
     let dir = wallpaper_dir(&app)?;
-    let original = dir.join("origine.txt");
     WALL_SPOTS.lock().unwrap().spots.clear();
-    let Ok(path) = std::fs::read_to_string(&original) else {
+    let Ok(path) = std::fs::read_to_string(dir.join("origine.txt")) else {
+        let _ = std::fs::remove_file(dir.join(ACTIVE_FILE));
         return Ok(()); // jamais changé
     };
+    let path = path.trim().to_string();
     // Sa façon d'afficher le fond d'écran d'abord : Windows la relit en le posant.
     if let Ok(fit) = std::fs::read_to_string(dir.join("origine-style.txt")) {
         let mut parts = fit.lines();
@@ -1665,9 +1732,29 @@ fn restore_wallpaper(app: AppHandle) -> Result<(), String> {
             set_wallpaper_fit(style.trim(), tile.trim());
         }
     }
-    apply_wallpaper(path.trim())?;
-    let _ = std::fs::remove_file(original);
-    let _ = std::fs::remove_file(dir.join("origine-style.txt"));
+    // Le fichier d'origine s'il existe encore et n'est pas la copie interne
+    // de Windows ; sinon la copie gardée par l'app ; sinon une couleur unie
+    // (mieux que de laisser nos infos, devenues périmées).
+    let usable = !path.is_empty()
+        && !is_windows_copy(&path)
+        && !path.starts_with(&*dir.to_string_lossy())
+        && std::path::Path::new(&path).exists();
+    let target = if usable {
+        path
+    } else if let Ok(bytes) = std::fs::read(dir.join(ORIGINAL_COPY)) {
+        let file = dir.join(format!("fond-origine.{}", image_ext(&bytes)));
+        std::fs::write(&file, &bytes).map_err(|e| e.to_string())?;
+        file.to_string_lossy().to_string()
+    } else if !path.is_empty()
+        && !path.starts_with(&*dir.to_string_lossy())
+        && !is_windows_copy(&path)
+    {
+        path
+    } else {
+        String::new()
+    };
+    apply_wallpaper(&target)?;
+    forget_original(&dir);
     Ok(())
 }
 
@@ -1883,7 +1970,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "toggle" => toggle_widget(app),
             "settings" => spawn_settings(app),
-            "quit" => app.exit(0),
+            "quit" => {
+                // L'image d'infos deviendrait périmée : on remet le fond d'origine.
+                // Il reviendra au prochain démarrage si le mode est toujours choisi.
+                let _ = restore_wallpaper(app.clone());
+                app.exit(0)
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| match event {

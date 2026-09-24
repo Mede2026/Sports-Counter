@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.6': [
+    '🖼️ Fond d’écran : « Remettre mon fond d’écran » (Réglages → Fond d’écran) remet vraiment le tien. L’app en garde maintenant une copie.',
+    '🖼️ Si tu choisis un autre fond d’écran dans Windows, l’app ne l’écrase plus : le mode s’arrête et le widget revient.',
+    '🖼️ Quitter l’app remet ton fond d’écran (tes infos seraient devenues périmées).',
+    '🏈 LCF : les derniers logos manquants (équipes renommées, comme Eskimos → Elks).',
+  ],
   '0.9.5': [
     '🖼️ Nouveau mode Fond d’écran : tes matchs, résultats, la forme et le classement de tes équipes deviennent ton fond d’écran. Clique sur un match pour l’ouvrir.',
     '🎨 Fond d’écran personnalisable : couleur, photo, côté du panneau, sections affichées (Réglages → Fond d’écran).',

@@ -167,7 +167,7 @@ async function getSportsDb(query) {
 }
 
 const tsdbTeams = (data) => (data?.teams ?? [])
-  .map((t) => ({ name: squash(t?.strTeam), alt: squash(t?.strTeamAlternate), logo: t?.strBadge ?? t?.strTeamBadge ?? t?.strLogo ?? '' }))
+  .map((t) => ({ name: squash(t?.strTeam), alt: squash(t?.strTeamAlternate), league: squash(t?.strLeague), logo: t?.strBadge ?? t?.strTeamBadge ?? t?.strLogo ?? '' }))
   .filter((t) => t.name && /^https:\/\//.test(t.logo));
 
 /** Logos de la ligue chez TheSportsDB : [{ name, alt, logo }] (noms tassés). */
@@ -207,7 +207,9 @@ async function sportsDbTeamLogo(league, team) {
   const names = [team.full, team.name].filter((n) => n && n.length > 3);
   for (const name of names) {
     try {
-      const list = tsdbTeams(await getSportsDb(`searchteams.php?t=${tsdbName(name)}`));
+      // Seulement les équipes de cette ligue : « Edmonton » ne doit pas donner les Oilers.
+      const list = tsdbTeams(await getSportsDb(`searchteams.php?t=${tsdbName(name)}`))
+        .filter((t) => !t.league || t.league === squash(league.sportsDb));
       const logo = matchLogo(list, team.full, team.name, team.short) || (list.length === 1 ? list[0].logo : '');
       if (logo) return { name: squash(name), alt: '', logo };
     } catch (err) {
@@ -273,7 +275,12 @@ async function fillLogos(leagueId, teams) {
   const league = LEAGUES_BY_ID[leagueId];
   const missing = teams.filter((t) => t && !t.logo);
   if (!league?.sportsDb || !missing.length) return teams;
-  const apply = (list) => missing.forEach((t) => { if (!t.logo) t.logo = matchLogo(list, t.full, t.name, t.short); });
+  // Puis le surnom seul (« Lions » pour « British Columbia Lions »), et en
+  // dernier la ville : une équipe renommée (Eskimos → Elks) garde sa ville.
+  const words = (t) => String(t.full || t.name || '').trim().split(/\s+/);
+  const apply = (list) => missing.forEach((t) => {
+    if (!t.logo) t.logo = matchLogo(list, t.full, t.name, t.short, words(t).slice(-1)[0], words(t)[0]);
+  });
 
   // 1. Ce qu'on sait déjà (gardé une semaine) : aucune requête.
   apply(logoCache.get(leagueId) ?? []);

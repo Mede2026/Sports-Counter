@@ -829,6 +829,23 @@ function initWallpaper() {
   pick('wallDivision', 'division');
   pick('wallF1', 'f1');
 
+  wallEl('btnWallOff').addEventListener('click', async () => {
+    // Le widget revient ; le fond d'origine est remis tout de suite.
+    if (['wallpaper', 'both'].includes(prefs.widgetMode)) {
+      prefs.widgetMode = 'always';
+      document.getElementById('optWidgetMode').value = 'always';
+      savePrefs(prefs);
+    }
+    syncWallRows();
+    const msg = wallEl('wallOffMsg');
+    if (!inTauri()) { msg.textContent = 'Dans l’app seulement.'; return; }
+    try {
+      await window.__TAURI__.core.invoke('restore_wallpaper');
+      msg.textContent = 'Ton fond d’écran est revenu. S’il n’est pas le bon : Paramètres Windows → Personnalisation → Arrière-plan.';
+    } catch (err) {
+      msg.textContent = errText(err);
+    }
+  });
   wallEl('btnWallOn').addEventListener('click', () => {
     prefs.widgetMode = 'wallpaper';
     document.getElementById('optWidgetMode').value = 'wallpaper';
