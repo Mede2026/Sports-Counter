@@ -89,6 +89,7 @@
     <!-- Joueurs favoris (hockey) -->
     <div class="panel" id="playersView" hidden>
       <div class="toolbar">
+        <select id="playerLeague" title="Ligue"></select>
         <select id="playerTeam" title="Équipe"></select>
         <input class="search" id="playerSearch" type="search" placeholder="Rechercher un joueur…" />
       </div>
@@ -215,9 +216,9 @@
       </section>
 
       <section class="prefs__group">
-        <h2>Hockey</h2>
+        <h2>Joueurs favoris</h2>
         <div class="pref">
-          <span class="pref__txt"><b>Joueurs favoris</b><small>Notification spéciale 🚨 quand l'un d'eux marque.</small>
+          <span class="pref__txt"><b>Tous les sports</b><small>Une notification spéciale quand l'un d'eux marque ou fait une passe, et sa fiche à la fin du match.</small>
             <span class="chips" id="favPlayersChips"></span></span>
           <button class="ghost ghost--small" id="btnPickPlayers" type="button">Choisir</button>
         </div>

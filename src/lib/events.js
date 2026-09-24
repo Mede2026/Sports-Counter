@@ -139,7 +139,9 @@ function matchEvents(g, before, opts = {}) {
         scorer,
         // Pour chercher le buteur (s'il manque), les passes et ses buts du
         // match (tour du chapeau) dans le résumé détaillé.
-        goal: isGoal ? { leagueId: g.leagueId, eventId: g.id, teamId: team.id } : null,
+        // Football et baseball aussi : pour reconnaître un de tes joueurs
+        // favoris dans le jeu qui a fait marquer.
+        goal: { leagueId: g.leagueId, eventId: g.id, teamId: team.id, points: !isGoal },
       });
     }
   }

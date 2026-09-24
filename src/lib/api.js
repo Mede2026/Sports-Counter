@@ -433,7 +433,7 @@ function lastScorers(comp) {
  * hockey). Noms vides si ESPN ne les fournit pas ou si l'adresse est illisible.
  */
 export async function fetchGoal(leagueId, eventId, teamId) {
-  const none = { scorer: '', assists: [], goals: 0 };
+  const none = { scorer: '', assists: [], goals: 0, text: '' };
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || !eventId) return none;
   try {
@@ -452,7 +452,7 @@ export async function fetchGoal(leagueId, eventId, teamId) {
     const scorer = scorerName(last);
     // Buts de ce joueur dans le match, celui-ci compris (3 = tour du chapeau).
     const goals = scorer ? used.filter((p) => isScoring(p) && scorerName(p) === scorer).length : 0;
-    return { scorer, assists: assistNames(last), goals };
+    return { scorer, assists: assistNames(last), goals, text: String(last?.text ?? last?.shortText ?? '') };
   } catch {
     return none;
   }
@@ -1865,27 +1865,31 @@ export async function fetchRoster(leagueId, teamId) {
 }
 
 /**
- * Tous les joueurs de la LNH, pour les chercher par leur nom : les 32
- * alignements, 8 à la fois. `onProgress(faites, total)` suit le chargement.
- * Une équipe illisible est sautée ; rien de lisible du tout lève l'erreur.
+ * Tous les joueurs d'une ligue, pour les chercher par leur nom : les
+ * alignements de toutes ses équipes, 8 à la fois. `onProgress(faites, total)`
+ * suit le chargement. Une équipe illisible est sautée ; rien de lisible du
+ * tout lève l'erreur.
  */
-export async function fetchAllNhlPlayers(onProgress = () => {}) {
+export async function fetchAllPlayers(leagueId, onProgress = () => {}) {
+  const teams = leagueId === 'nhl' ? NHL_TEAMS : await fetchTeams(leagueId);
   const all = [];
   let done = 0;
   let lastErr = null;
-  for (let i = 0; i < NHL_TEAMS.length; i += 8) {
-    const batch = NHL_TEAMS.slice(i, i + 8);
-    const results = await Promise.allSettled(batch.map((t) => fetchRoster('nhl', t.id)));
+  for (let i = 0; i < teams.length; i += 8) {
+    const batch = teams.slice(i, i + 8);
+    const results = await Promise.allSettled(batch.map((t) => fetchRoster(leagueId, t.id)));
     results.forEach((r, k) => {
-      if (r.status === 'fulfilled') all.push(...r.value.map((p) => ({ ...p, team: batch[k].abbr })));
+      if (r.status === 'fulfilled') all.push(...r.value.map((p) => ({ ...p, team: batch[k].abbr, leagueId })));
       else lastErr = r.reason;
     });
     done += batch.length;
-    onProgress(done, NHL_TEAMS.length);
+    onProgress(done, teams.length);
   }
   if (!all.length && lastErr) throw lastErr;
   return all.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
 }
+
+export const fetchAllNhlPlayers = (onProgress) => fetchAllPlayers('nhl', onProgress);
 
 async function loadRoster(leagueId, teamId) {
   const league = LEAGUES_BY_ID[leagueId];

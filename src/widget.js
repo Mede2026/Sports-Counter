@@ -348,7 +348,9 @@ function emptyHtml() {
 function notifyEvents(games) {
   const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [], favTennis: prefs.favTennis ?? [] };
   const events = detectEvents(seen, games, opts);
+  const ended = seen ? games.filter((g) => g.kind === 'match' && g.state === 'post' && seen.get(g.id)?.state === 'in') : [];
   seen = remember(seen, games, opts);
+  if (prefs.notifications !== false && inTauri()) ended.forEach((g) => favFinalLines(g));
   if (!events.length || prefs.notifications === false || !inTauri()) return;
 
   // L'une après l'autre, dans l'ordre : un but qui attend le nom de son
@@ -370,10 +372,25 @@ async function sendToast(e) {
       fetchGoal(e.goal.leagueId, e.goal.eventId, e.goal.teamId),
       new Promise((r) => setTimeout(() => r(null), SCORER_TIMEOUT_MS)),
     ]);
-    scorer = goal?.scorer || scorer;
-    assists = goal?.assists ?? [];
-    goals = goal?.goals ?? 0;
-    if (scorer) e = { ...e, title: `But de ${scorer} !` };
+    if (e.goal.points) {
+      // Football, baseball : un de tes joueurs nommé dans le jeu qui a fait marquer ?
+      const text = goal?.text ?? '';
+      // Nom de famille entier (lettres accentuées comprises) dans le texte du jeu.
+      const named = (name) => new RegExp(`(^|[^\\p{L}])${lastOf(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}])`, 'iu').test(text);
+      const star = (prefs.favPlayers ?? []).find((p) => p.name && (p.leagueId ?? 'nhl') === e.goal.leagueId && named(p.name));
+      if (star) {
+        const sport = sportOf(e.goal.leagueId);
+        const title = sport === 'baseball'
+          ? (/homer|home run/i.test(text) ? `⚾ CIRCUIT DE ${lastOf(star.name).toUpperCase()} !` : `⚾ ${lastOf(star.name)} fait marquer !`)
+          : (/touchdown|\btd\b/i.test(text) ? `🏈 TOUCHÉ DE ${lastOf(star.name).toUpperCase()} !` : `🏈 ${lastOf(star.name)} fait marquer !`);
+        e = { ...e, title, team: star.photo ? { ...e.team, logo: star.photo, round: true } : e.team, big: true };
+      }
+    } else {
+      scorer = goal?.scorer || scorer;
+      assists = goal?.assists ?? [];
+      goals = goal?.goals ?? 0;
+      if (scorer) e = { ...e, title: `But de ${scorer} !` };
+    }
   }
   // Un de tes joueurs favoris a marqué ou fait une passe : notification
   // spéciale, avec sa photo.
@@ -581,23 +598,73 @@ async function checkEmptyNets(games) {
 const DIGEST_KEY = 'sports-counter.digest';
 let digestRunning = false;
 
-/** « Suzuki 1 B 2 A » : la fiche d'un joueur favori dans le box score. */
-function favLine(detail) {
-  const favs = prefs.favPlayers ?? [];
-  const lines = [];
+const lastOf = (name) => String(name ?? '').trim().split(/\s+/).pop();
+
+// Ce qu'on retient de la fiche d'un joueur, par groupe du box score :
+// [colonne, singulier, pluriel]. Le premier groupe où il figure décide.
+const STAT_LINES = [
+  [/attaquant|défenseur/i, [['B', 'but', 'buts'], ['A', 'passe', 'passes'], ['TB', 'tir', 'tirs']]],
+  [/gardien/i, [['ARR', 'arrêt', 'arrêts'], ['BA', 'but accordé', 'buts accordés']]],
+  [/frappeur/i, [['CS-VB', 'en', null], ['CC', 'circuit', 'circuits'], ['PP', 'point produit', 'points produits']]],
+  [/lanceur/i, [['ML', 'manche lancée', 'manches lancées'], ['RB', 'retrait au bâton', 'retraits au bâton'], ['PM', 'point mérité', 'points mérités']]],
+  [/passes/i, [['VG', 'verge par la passe', 'verges par la passe'], ['TC', 'touché', 'touchés']]],
+  [/course/i, [['VG', 'verge au sol', 'verges au sol'], ['TC', 'touché', 'touchés']]],
+  [/réception/i, [['RÉC', 'réception', 'réceptions'], ['VG', 'verge', 'verges'], ['TC', 'touché', 'touchés']]],
+  [/partants|remplaçants/i, [['B', 'but', 'buts'], ['PD', 'passe décisive', 'passes décisives'], ['T', 'tir', 'tirs']]],
+  [/^$/, [['PTS', 'point', 'points'], ['REB', 'rebond', 'rebonds'], ['PD', 'passe', 'passes']]],
+];
+
+/** « 1 but, 2 passes, 4 tirs » : la fiche d'un joueur dans le box score, ou ''. */
+function statLine(detail, fav) {
   for (const team of detail?.box ?? []) {
     for (const grp of team.groups) {
-      const col = (label) => grp.cols.findIndex((c) => c.label === label);
-      const [b, a] = [col('B'), col('A')];
-      if (b < 0 || a < 0) continue;
-      for (const p of grp.players) {
-        if (!favs.some((f) => sameDriver(f, p))) continue;
-        const last = p.name.split(/\s+/).pop();
-        lines.push(`${last} ${p.stats[b] || 0} B ${p.stats[a] || 0} A`);
+      const p = grp.players.find((x) => (fav.id && x.id === fav.id) || sameDriver(fav, x));
+      if (!p) continue;
+      const rule = STAT_LINES.find(([re]) => re.test(grp.name ?? ''))?.[1];
+      if (!rule) return '';
+      const parts = [];
+      for (const [label, one, many] of rule) {
+        const i = grp.cols.findIndex((c) => c.label === label);
+        if (i < 0) continue;
+        const v = String(p.stats[i] ?? '').trim();
+        if (!v || v === '--') continue;
+        if (many === null) { parts.push(v.replace('-', ` ${one} `)); continue; } // « 2 en 4 »
+        const n = Number(v);
+        parts.push(`${v} ${Number.isFinite(n) && Math.abs(n) <= 1 ? one : many}`);
       }
+      return parts.join(', ');
     }
   }
-  return lines;
+  return '';
+}
+
+/** « Suzuki : 1 but, 2 passes » pour chaque joueur favori de ce match. */
+function favLine(detail) {
+  const ids = [String(detail?.home?.id ?? ''), String(detail?.away?.id ?? '')];
+  return (prefs.favPlayers ?? [])
+    .filter((f) => (f.leagueId ?? 'nhl') === detail?.leagueId && (!f.teamId || ids.includes(String(f.teamId))))
+    .map((f) => { const line = statLine(detail, f); return line ? `${lastOf(f.name)} : ${line}` : ''; })
+    .filter(Boolean);
+}
+
+/** Fin d'un match où jouent tes joueurs favoris : leur fiche en notification. */
+async function favFinalLines(game) {
+  const favs = (prefs.favPlayers ?? []).filter((f) => (f.leagueId ?? 'nhl') === game.leagueId
+    && [String(game.home.id), String(game.away.id)].includes(String(f.teamId ?? '')));
+  if (!favs.length) return;
+  let detail;
+  try { detail = await fetchMatchDetail(game.leagueId, game.id); } catch { return; }
+  for (const f of favs) {
+    const line = statLine(detail, f);
+    if (!line) continue;
+    const mine = String(f.teamId) === String(game.home.id) ? game.home : game.away;
+    sendToast({
+      title: `⭐ ${f.name} : ${line}`,
+      body: `${game.away.abbr} ${game.away.score} – ${game.home.score} ${game.home.abbr} · Final`,
+      team: f.photo ? { ...mine, logo: f.photo, round: true } : mine,
+      link: game.link,
+    });
+  }
 }
 
 /**
@@ -627,7 +694,8 @@ async function morningDigest() {
     const scores = games.slice(0, 4).map((g) => `${g.away.abbr} ${g.away.score}-${g.home.score} ${g.home.abbr}`);
     const stars = [];
     if ((prefs.favPlayers ?? []).length) {
-      for (const g of games.filter((x) => sportOf(x.leagueId) === 'hockey').slice(0, 3)) {
+      const favLeagues = new Set((prefs.favPlayers ?? []).map((p) => p.leagueId ?? 'nhl'));
+      for (const g of games.filter((x) => favLeagues.has(x.leagueId)).slice(0, 3)) {
         try { stars.push(...favLine(await fetchMatchDetail(g.leagueId, g.id))); } catch { /* sans fiche */ }
       }
     }
@@ -814,7 +882,8 @@ async function fitWindow() {
 function selectedLeagues() {
   const fromFavs = prefs.favorites.map((f) => f.split(':')[0]);
   // Joueurs favoris de la LNH et joueurs de tennis : leurs ligues sont suivies.
-  const fromPlayers = (prefs.favPlayers ?? []).length ? ['nhl'] : [];
+  // Joueurs d'avant la 0.9.1 : tous de la LNH.
+  const fromPlayers = (prefs.favPlayers ?? []).map((p) => p.leagueId ?? 'nhl');
   const fromTennis = (prefs.favTennis ?? []).map((p) => p.leagueId).filter(Boolean);
   return [...new Set([...fromFavs, ...prefs.leagues, ...fromPlayers, ...fromTennis])];
 }
@@ -836,7 +905,7 @@ function keepGame(game) {
     .map((f) => f.split(':')[1]);
   // Équipes de tes joueurs favoris : leurs matchs sont suivis, pour être
   // prévenu de leurs buts et de leurs passes.
-  if (game.leagueId === 'nhl') favIds.push(...(prefs.favPlayers ?? []).map((p) => String(p.teamId ?? '')).filter(Boolean));
+  favIds.push(...(prefs.favPlayers ?? []).filter((p) => (p.leagueId ?? 'nhl') === game.leagueId).map((p) => String(p.teamId ?? '')).filter(Boolean));
   return favIds.includes(game.home?.id) || favIds.includes(game.away?.id);
 }
 

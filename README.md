@@ -68,6 +68,10 @@ seulement les équipes que tu choisis.
 - **F1, fenêtre Match** : un bouton par séance (essais, qualifs, sprint, course)
   et l'onglet Championnat (pilotes et constructeurs).
 - **Taille du widget** : petit, moyen ou grand.
+- **Joueurs favoris de tous les sports** (Réglages → Joueurs favoris) : ligue,
+  puis recherche dans toute la ligue. Leurs matchs sont suivis, avec une
+  notification pour leurs buts, passes, touchés et circuits, et leur fiche à la
+  fin du match.
 - **Joueurs et pilotes favoris** : notification « 🚨 BUT DE … » ou « 🅰️ PASSE DE … »
   avec la photo du joueur ; en F1, « ⬆️ … dépasse … » pendant la course.
 - **Encore plus de notifications** : tour du chapeau 🎩, filet désert 🥅,

@@ -1,6 +1,6 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllNhlPlayers, fetchTennisPlayers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -687,9 +687,13 @@ function bindSwitch(id, key) {
 
 /* ---------- Joueurs favoris (hockey) ---------- */
 
-const rosters = new Map(); // idÉquipe -> joueurs | Error
+const rosters = new Map(); // "ligue:équipe" (ou "ligue:all") -> joueurs | Error
+let playerLeague = 'nhl';
 let playerTeam = null;
 let playerQuery = '';
+const rosterKey = (team = playerTeam) => `${playerLeague}:${team}`;
+// Ligues où l'on peut choisir des joueurs : celles qui ont des équipes.
+const PLAYER_LEAGUES = () => LEAGUES.filter((l) => l.kind === 'team' && l.id !== 'intl');
 
 const isFavPlayer = (p) => (prefs.favPlayers ?? []).some((f) => (f.id && f.id === p.id) || sameDriver(f, p));
 
@@ -697,7 +701,7 @@ function renderPlayerChips() {
   const box = document.getElementById('favPlayersChips');
   const list = prefs.favPlayers ?? [];
   box.innerHTML = list.length
-    ? list.map((p, i) => `<span class="chip-player">${p.photo ? `<img class="face-xs" src="${p.photo}" alt="" data-face />` : ''}${p.name}
+    ? list.map((p, i) => `<span class="chip-player">${p.photo ? `<img class="face-xs" src="${p.photo}" alt="" data-face />` : ''}${p.name}<small class="st__muted"> ${LEAGUES_BY_ID[p.leagueId ?? 'nhl']?.short ?? ''}</small>
         <button type="button" data-i="${i}" title="Retirer">×</button></span>`).join('')
     : '<small>Aucun</small>';
   bindFaces(box);
@@ -711,45 +715,65 @@ function renderPlayerChips() {
 
 function showPlayers() {
   setView('players');
-  const select = document.getElementById('playerTeam');
-  if (!select.options.length) {
-    // Tes équipes de la LNH d'abord, puis toute la ligue.
-    const mine = prefs.favorites.filter((k) => k.startsWith('nhl:')).map((k) => k.slice(4));
-    const byId = new Map(NHL_TEAMS.map((t) => [t.id, t]));
-    const sorted = [...NHL_TEAMS].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-    select.innerHTML = [
-      // Recherche dans les 32 équipes d'un coup.
-      '<option value="all">🔎 Toute la LNH</option>',
-      ...mine.filter((id) => byId.has(id)).map((id) => `<option value="${id}">★ ${byId.get(id).name}</option>`),
-      ...sorted.filter((t) => !mine.includes(t.id)).map((t) => `<option value="${t.id}">${t.name}</option>`),
-    ].join('');
-    playerTeam = 'all';
-    select.value = playerTeam;
+  const leagueSel = document.getElementById('playerLeague');
+  if (!leagueSel.options.length) {
+    // Les ligues de tes équipes d'abord.
+    const mine = new Set(prefs.favorites.map((k) => k.split(':')[0]));
+    const list = PLAYER_LEAGUES();
+    const sorted = [...list.filter((l) => mine.has(l.id)), ...list.filter((l) => !mine.has(l.id))];
+    leagueSel.innerHTML = sorted.map((l) => `<option value="${l.id}">${mine.has(l.id) ? '★ ' : ''}${l.label}</option>`).join('');
+    playerLeague = mine.has('nhl') || !sorted.length ? 'nhl' : sorted[0].id;
+    leagueSel.value = playerLeague;
+    fillPlayerTeams();
+    return;
   }
   loadRoster(playerTeam);
 }
 
+/** Équipes de la ligue choisie : « Toute la ligue », tes équipes, puis les autres. */
+async function fillPlayerTeams() {
+  const select = document.getElementById('playerTeam');
+  const league = LEAGUES_BY_ID[playerLeague];
+  select.innerHTML = '<option value="all">Chargement…</option>';
+  let teamsList = [];
+  try {
+    teamsList = playerLeague === 'nhl' ? NHL_TEAMS : IS_DEMO ? DEMO_TEAMS : await fetchTeams(playerLeague);
+  } catch { /* la recherche dans toute la ligue affichera l'erreur */ }
+  const mine = prefs.favorites.filter((k) => k.startsWith(`${playerLeague}:`)).map((k) => k.split(':')[1]);
+  const sorted = [...teamsList].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  select.innerHTML = [
+    `<option value="all">🔎 Toute la ${league?.label ?? 'ligue'}</option>`,
+    ...sorted.filter((t) => mine.includes(t.id)).map((t) => `<option value="${t.id}">★ ${t.name}</option>`),
+    ...sorted.filter((t) => !mine.includes(t.id)).map((t) => `<option value="${t.id}">${t.name}</option>`),
+  ].join('');
+  select.value = 'all';
+  loadRoster('all');
+}
+
 async function loadRoster(teamId) {
   playerTeam = teamId;
-  if (!rosters.has(teamId)) {
+  const key = rosterKey(teamId);
+  const leagueId = playerLeague;
+  if (!rosters.has(key)) {
     el.players.innerHTML = '<div class="state">Chargement des joueurs…</div>';
+    const label = LEAGUES_BY_ID[leagueId]?.label ?? '';
     const progress = (done, total) => {
-      if (playerTeam === 'all') el.players.innerHTML = `<div class="state">Chargement des joueurs de la LNH… ${done} / ${total} équipes</div>`;
+      if (rosterKey() === key) el.players.innerHTML = `<div class="state">Chargement des joueurs de la ${label}… ${done} / ${total} équipes</div>`;
     };
     try {
       const all = () => (IS_DEMO
         ? Promise.resolve(NHL_TEAMS.slice(0, 3).flatMap((t) => demoRoster(t.id).map((p) => ({ ...p, teamId: t.id, team: t.abbr }))))
-        : fetchAllNhlPlayers(progress));
-      rosters.set(teamId, teamId === 'all' ? await all() : IS_DEMO ? demoRoster(teamId) : await fetchRoster('nhl', teamId));
+        : fetchAllPlayers(leagueId, progress));
+      rosters.set(key, teamId === 'all' ? await all() : IS_DEMO ? demoRoster(teamId) : await fetchRoster(leagueId, teamId));
     } catch (err) {
-      rosters.set(teamId, err instanceof Error ? err : new Error(String(err)));
+      rosters.set(key, err instanceof Error ? err : new Error(String(err)));
     }
   }
-  if (playerTeam === teamId && view === 'players') renderPlayers();
+  if (rosterKey() === key && view === 'players') renderPlayers();
 }
 
 function renderPlayers() {
-  const roster = rosters.get(playerTeam);
+  const roster = rosters.get(rosterKey());
   if (roster instanceof Error) {
     const offline = isOffline(roster);
     el.players.innerHTML = offline
@@ -757,14 +781,14 @@ function renderPlayers() {
       : errorBlock("ESPN ne donne pas l'alignement de cette équipe à l'app.", roster,
         '<br />Ajoute ton joueur par son nom, juste au-dessus.');
     // Sans réseau, on retentera à la prochaine ouverture.
-    if (offline) rosters.delete(playerTeam);
+    if (offline) rosters.delete(rosterKey());
     return;
   }
   const q = playerQuery.trim().toLowerCase();
   // Toute la LNH : plus de 800 joueurs, on attend quelques lettres.
   const everyone = playerTeam === 'all';
   if (everyone && q.length < 2) {
-    el.players.innerHTML = `<div class="state">Tape au moins 2 lettres du nom d'un joueur : la recherche couvre les ${(roster ?? []).length} joueurs de la LNH.</div>`;
+    el.players.innerHTML = `<div class="state">Tape au moins 2 lettres du nom d'un joueur : la recherche couvre les ${(roster ?? []).length} joueurs de la ${LEAGUES_BY_ID[playerLeague]?.label ?? 'ligue'}.</div>`;
     return;
   }
   // Sans accents ni majuscules : « lafreniere » trouve « Lafrenière ».
@@ -780,7 +804,7 @@ function renderPlayers() {
   bindFaces(el.players);
   el.players.querySelectorAll('.team-row').forEach((row) => row.addEventListener('click', () => {
     const p = roster.find((x) => x.id === row.dataset.player);
-    togglePlayer({ id: p.id, name: p.name, photo: p.photo, teamId: p.teamId });
+    togglePlayer({ id: p.id, name: p.name, photo: p.photo, teamId: p.teamId, leagueId: playerLeague });
   }));
 }
 
@@ -1442,13 +1466,14 @@ document.getElementById('standingsMode').addEventListener('click', (e) => {
 });
 document.getElementById('btnCalRefresh').addEventListener('click', () => loadCalendar(true));
 document.getElementById('playerTeam').addEventListener('change', (e) => loadRoster(e.target.value));
+document.getElementById('playerLeague').addEventListener('change', (e) => { playerLeague = e.target.value; fillPlayerTeams(); });
 document.getElementById('playerSearch').addEventListener('input', (e) => { playerQuery = e.target.value; renderPlayers(); });
 document.getElementById('playerAdd').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = document.getElementById('playerFree');
   const name = input.value.trim().replace(/\s+/g, ' ');
   if (name.length < 3) return;
-  if (!isFavPlayer({ name })) togglePlayer({ id: '', name, photo: '', teamId: '' });
+  if (!isFavPlayer({ name })) togglePlayer({ id: '', name, photo: '', teamId: '', leagueId: playerLeague });
   input.value = '';
 });
 

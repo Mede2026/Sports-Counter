@@ -1,6 +1,11 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.1': [
+    '⭐ Joueurs favoris dans tous les sports : Réglages → Joueurs favoris, choisis la ligue puis cherche dans toute la ligue.',
+    '🏈 Notification quand ton joueur marque un touché, ⚾ frappe un circuit ou fait marquer.',
+    '📋 À la fin du match, la fiche de tes joueurs : « 32 points, 8 rebonds », « 1 but, 2 passes », « 2 en 4, 1 circuit »…',
+  ],
   '0.9.0': [
     '🌍 Compétitions internationales : Coupe du monde, Euro, Copa América, Gold Cup… Suis ton pays ou toute la compétition.',
     '⛳ Golf (PGA, LPGA) : le tableau des meneurs en direct, et une notification quand le meneur change.',
