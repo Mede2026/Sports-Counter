@@ -813,6 +813,39 @@ function flashEdges(edges) {
   }
 }
 
+const UPDATE_ICON = document.getElementById('btnUpdate').innerHTML;
+const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8"
+  stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>`;
+let updateTimer = null;
+
+/** Bouton du widget : cherche une mise à jour. S'il y en a une, la notification
+ *  habituelle propose « Installer » ou « Plus tard » ; sinon, un ✓ vert. */
+async function checkUpdate() {
+  const btn = document.getElementById('btnUpdate');
+  if (btn.classList.contains('icon-btn--busy')) return;
+  const show = (state, title, icon = UPDATE_ICON) => {
+    btn.className = `icon-btn${state ? ` icon-btn--${state}` : ''}`;
+    btn.title = title;
+    btn.innerHTML = icon;
+  };
+  clearTimeout(updateTimer);
+  show('busy', 'Recherche d’une mise à jour…');
+  try {
+    if (!inTauri()) throw new Error('seulement dans l’app');
+    const { invoke } = window.__TAURI__.core;
+    const r = await invoke('check_update');
+    if (r.available) {
+      show('ok', `Mise à jour ${r.available} disponible`);
+      await invoke('notify', { toast: { kind: 'update', version: r.available } });
+    } else {
+      show('ok', `Sports Counter est à jour (v${r.current})`, CHECK_ICON);
+    }
+  } catch (err) {
+    show('err', `Recherche impossible : ${errText(err)}`);
+  }
+  updateTimer = setTimeout(() => show('', 'Rechercher une mise à jour'), 4000);
+}
+
 /** Transmet à Rust les options qu'il applique lui-même : plein écran, premier plan, raccourcis. */
 async function syncFullscreenOption() {
   const keys = { ...DEFAULT_SHORTCUTS, ...prefs.shortcuts };
@@ -1137,6 +1170,7 @@ async function hideWidget() {
 }
 
 document.getElementById('btnRefresh').addEventListener('click', () => refresh(true));
+document.getElementById('btnUpdate').addEventListener('click', checkUpdate);
 document.getElementById('btnSettings').addEventListener('click', openSettings);
 document.getElementById('btnHide').addEventListener('click', hideWidget);
 

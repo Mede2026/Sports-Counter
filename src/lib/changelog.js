@@ -2,6 +2,7 @@
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
   '0.9.3': [
+    '⬇️ Nouveau bouton dans le widget (à gauche de ↻) : cherche une mise à jour en un clic.',
     '⛳ Golfeurs favoris : choisis-les dans Réglages → PGA/LPGA. Leur rang dans le widget ⭐, et une notification quand ils prennent la tête, entrent dans le top 10 ou terminent.',
     '🎾 Tennis : une notification à chaque manche gagnée ou perdue par tes joueurs.',
     '🔔 Widget « Sur le bureau » : les notifications passent quand même devant toutes les fenêtres.',

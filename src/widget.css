@@ -124,6 +124,11 @@ html, body {
 .icon-btn:active { background: rgba(255, 255, 255, 0.16); }
 .icon-btn svg { width: 14px; height: 14px; display: block; }
 
+/* Bouton « mise à jour » : il bat pendant la recherche, puis dit le résultat. */
+.icon-btn--busy svg { animation: pulse 1s ease-in-out infinite; }
+.icon-btn--ok, .icon-btn--ok:hover { color: #3ecf8e; }
+.icon-btn--err, .icon-btn--err:hover { color: #ff6b6b; }
+
 /* ---------- Liste des matchs ---------- */
 
 .games { display: flex; flex-direction: column; }
