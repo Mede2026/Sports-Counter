@@ -269,11 +269,15 @@ function golfBoard(game) {
     const pts = (t) => String(t?.score ?? '').replace('.', ',');
     return a && b ? `<div class="golf__teams"><b class="${a.winner ? 'win' : ''}">${a.name}</b><span>${pts(a)} – ${pts(b)}</span><b class="${b.winner ? 'win' : ''}">${b.name}</b></div>` : '';
   }
+  const favs = prefs.favGolfers ?? [];
+  const isFav = (p) => favs.some((f) => sameDriver(f, p));
   const top = (game.players ?? []).slice(0, 5);
   if (!top.length || game.state === 'pre') return '';
-  return `<ol class="podium podium--golf">${top.map((p) => `
-    <li><span class="podium__medal">${game.state === 'post' && p.pos <= 3 ? MEDALS[p.pos] : `<span class="podium__pos">${p.posText}</span>`}</span>
-      <span class="podium__name">${p.short || p.name}</span>
+  // Tes golfeurs hors du top 5 : leur rang, dessous.
+  const mine = (game.players ?? []).slice(5).filter(isFav);
+  return `<ol class="podium podium--golf">${[...top, ...mine].map((p, i) => `
+    <li class="${isFav(p) ? 'podium__fav' : ''}${i === 5 ? ' podium__extra' : ''}"><span class="podium__medal">${game.state === 'post' && p.pos <= 3 ? MEDALS[p.pos] : `<span class="podium__pos">${p.posText}</span>`}</span>
+      <span class="podium__name">${isFav(p) ? '⭐ ' : ''}${p.short || p.name}</span>
       <span class="podium__gap">${p.score || ''}${game.state === 'in' && p.thru ? ` <small>(${/^\d+$/.test(p.thru) ? p.thru : p.thru === 'F' ? 'fini' : p.thru})</small>` : ''}</span></li>`).join('')}</ol>`;
 }
 
@@ -360,7 +364,7 @@ function emptyHtml() {
  * évènement (but, début, fin…). Le premier relevé sert seulement de référence.
  */
 function notifyEvents(games) {
-  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [], favTennis: prefs.favTennis ?? [] };
+  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [], favTennis: prefs.favTennis ?? [], favGolfers: prefs.favGolfers ?? [] };
   const events = detectEvents(seen, games, opts);
   const ended = seen ? games.filter((g) => g.kind === 'match' && g.state === 'post' && seen.get(g.id)?.state === 'in') : [];
   seen = remember(seen, games, opts);
@@ -899,7 +903,8 @@ function selectedLeagues() {
   // Joueurs d'avant la 0.9.1 : tous de la LNH.
   const fromPlayers = (prefs.favPlayers ?? []).map((p) => p.leagueId ?? 'nhl');
   const fromTennis = (prefs.favTennis ?? []).map((p) => p.leagueId).filter(Boolean);
-  return [...new Set([...fromFavs, ...prefs.leagues, ...fromPlayers, ...fromTennis])];
+  const fromGolf = (prefs.favGolfers ?? []).map((p) => p.leagueId).filter(Boolean);
+  return [...new Set([...fromFavs, ...prefs.leagues, ...fromPlayers, ...fromTennis, ...fromGolf])];
 }
 
 /** Un de tes joueurs de tennis favoris joue ce match ? */
@@ -911,6 +916,8 @@ function keepGame(game) {
   if (game.kind === 'tennis') {
     return !!favTennisIn(game) || (prefs.leagues.includes(game.leagueId) && game.state === 'in');
   }
+  // Golf : tout le circuit, ou les tournois où jouent tes golfeurs.
+  if (game.kind === 'golf' && (prefs.favGolfers ?? []).some((f) => (game.players ?? []).some((p) => sameDriver(f, p)))) return true;
   // Une ligue suivie en entier passe sans filtre.
   if (prefs.leagues.includes(game.leagueId)) return true;
   if (isWholeLeague(game.leagueId)) return false;

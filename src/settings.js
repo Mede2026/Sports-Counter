@@ -1,6 +1,6 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, probeLeague, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchGolfers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, probeLeague, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT, isDateOnly } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -53,6 +53,7 @@ const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 function countFor(id) {
   const whole = prefs.leagues.includes(id) ? 1 : 0;
   if (LEAGUES_BY_ID[id]?.kind === 'tennis') return whole + (prefs.favTennis ?? []).filter((p) => p.leagueId === id).length;
+  if (LEAGUES_BY_ID[id]?.kind === 'golf') return whole + (prefs.favGolfers ?? []).filter((p) => p.leagueId === id).length;
   if (isWholeLeague(id)) return whole;
   // Compétition internationale : ses équipes nationales, et « toute la compétition ».
   return prefs.favorites.filter((f) => f.startsWith(`${id}:`)).length + whole;
@@ -77,7 +78,8 @@ function renderLeagues() {
     b.addEventListener('click', () => showLeague(b.dataset.id));
   });
 
-  const total = prefs.favorites.length + prefs.leagues.length;
+  const total = prefs.favorites.length + prefs.leagues.length
+    + (prefs.favTennis ?? []).length + (prefs.favGolfers ?? []).length;
   el.summary.textContent = total ? `${total} sélection${total > 1 ? 's' : ''}` : 'aucune sélection';
 }
 
@@ -112,7 +114,7 @@ function renderTeams() {
   const whole = league.tournament ? `
     <div class="team-row${prefs.leagues.includes(current) ? ' team-row--on' : ''}" id="rowFollowWhole">
       <span class="check">${CHECK}</span>
-      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
+      ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
       <span class="team-row__name">Suivre toute la compétition <small class="st__muted">tous les matchs, une notification à chaque but</small></span>
     </div>
     <div class="subhead">Ou seulement tes pays <small>par exemple le Canada : ses matchs, ses buts et ses résultats</small></div>` : '';
@@ -143,17 +145,76 @@ function renderTeams() {
 
 /* ---------- Golf : suivre les tournois ---------- */
 
+const golfers = new Map(); // idLigue -> golfeurs | Error
+
+async function loadGolfers(leagueId) {
+  if (golfers.has(leagueId)) return;
+  renderTeams();
+  try {
+    golfers.set(leagueId, IS_DEMO ? demoGolfers(leagueId) : await fetchGolfers(leagueId));
+  } catch (err) {
+    golfers.set(leagueId, err instanceof Error ? err : new Error(String(err)));
+  }
+  if (current === leagueId && view === 'teams') renderTeams();
+}
+
 function renderGolf(league) {
   const on = prefs.leagues.includes(league.id);
+  const favs = (prefs.favGolfers ?? []).filter((p) => p.leagueId === league.id);
+  const players = golfers.get(league.id);
+  const q = query.trim().toLowerCase();
+  let list;
+  if (players instanceof Error) {
+    list = errorBlock('Impossible de charger les golfeurs.', players, '<br /><button class="ghost" id="btnRetryGolf">Réessayer</button>');
+  } else if (!players) {
+    list = '<div class="state">Chargement des golfeurs…</div>';
+  } else {
+    const all = [...favs.filter((f) => !players.some((p) => sameDriver(p, f))), ...players];
+    list = all
+      .filter((p) => !q || p.name.toLowerCase().includes(q))
+      .map((p) => ({ p, mine: favs.some((f) => sameDriver(p, f)) }))
+      .sort((a, b) => Number(b.mine) - Number(a.mine))
+      .map(({ p, mine }) => `
+        <div class="team-row driver-row${mine ? ' team-row--on' : ''}" data-golfer="${p.id}">
+          <span class="check">${CHECK}</span>
+          ${faceHtml(p, 'face-sm')}
+          <span class="team-row__name">${p.name}</span>
+          ${p.flag ? `<img class="flag-sm" src="${p.flag}" alt="" data-flagimg />` : ''}
+        </div>`).join('') || `<div class="state">Aucun golfeur ne correspond à « ${query} ».</div>`;
+  }
   el.teams.innerHTML = `
     <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
       <span class="check">${CHECK}</span>
-      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
-      <span class="team-row__name">Suivre tous les tournois du ${league.label}</span>
+      ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
+      <span class="team-row__name">Suivre tous les tournois du ${league.label} <small class="st__muted">les 5 premiers, le meneur, le vainqueur</small></span>
     </div>
-    <div class="state">Le widget montre le tournoi de la semaine : les 5 premiers et leur score par rapport à la normale.
-      Tu reçois une notification quand le meneur change et pour le vainqueur.</div>`;
+    <div class="subhead">Tes golfeurs favoris <small>leur rang dans le widget, et une notification quand ils prennent la tête, entrent dans le top 10 ou terminent le tournoi</small></div>
+    ${list}`;
+  bindFaces(el.teams);
+  bindCrests(el.teams);
   document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
+  document.getElementById('btnRetryGolf')?.addEventListener('click', () => { golfers.delete(league.id); loadGolfers(league.id); });
+  el.teams.querySelectorAll('img[data-flagimg]').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+  el.teams.querySelectorAll('[data-golfer]').forEach((row) => row.addEventListener('click', () => pickGolfer(league.id, row.dataset.golfer)));
+}
+
+function pickGolfer(leagueId, id) {
+  const players = golfers.get(leagueId);
+  const pool = [...(Array.isArray(players) ? players : []), ...(prefs.favGolfers ?? [])];
+  const p = pool.find((x) => x.id === id);
+  if (!p) return;
+  prefs.favGolfers ??= [];
+  const i = prefs.favGolfers.findIndex((x) => sameDriver(p, x));
+  if (i === -1) prefs.favGolfers.push({ id: p.id, name: p.name, short: p.short, photo: p.photo, leagueId });
+  else prefs.favGolfers.splice(i, 1);
+  savePrefs(prefs);
+  renderLeagues();
+  renderTeams();
+}
+
+function demoGolfers(leagueId) {
+  const names = leagueId === 'lpga' ? ['Nelly Korda', 'Brooke Henderson', 'Jeeno Thitikul', 'Lydia Ko'] : ['Scottie Scheffler', 'Rory McIlroy', 'Corey Conners', 'Nick Taylor', 'Taylor Pendrith'];
+  return names.map((name, i) => ({ id: `${leagueId}${i}`, name, short: name, photo: '', flag: '', leagueId }));
 }
 
 /* ---------- Tennis : joueurs favoris, et tout le direct ---------- */
@@ -199,7 +260,7 @@ function renderTennis(league) {
   el.teams.innerHTML = `
     <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
       <span class="check">${CHECK}</span>
-      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
+      ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
       <span class="team-row__name">Tous les matchs en direct <small class="st__muted">de la ${league.label}, pendant qu'ils se jouent</small></span>
     </div>
     <div class="subhead">Tes joueurs favoris <small>leurs matchs dans le widget, un rappel avant, puis une notification quand ils gagnent ou perdent</small></div>
@@ -274,7 +335,7 @@ function renderWhole(league) {
   el.teams.innerHTML = `
     <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
       <span class="check">${CHECK}</span>
-      <span class="crest-sm" style="background:${league.accent}">${league.short}</span>
+      ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
       <span class="team-row__name">Suivre tous les galas de l'${league.label}</span>
     </div>
     <div class="subhead">Tes combattants favoris <small>coche-en autant que tu veux : leur combat est mis en évidence, avec un rappel avant et une notification quand ils gagnent ou perdent</small></div>
@@ -424,8 +485,8 @@ function showLeague(id) {
   el.search.value = '';
   const kind = LEAGUES_BY_ID[id]?.kind;
   el.search.placeholder = kind === 'event' ? 'Rechercher un pilote…' : kind === 'card' ? 'Rechercher un combattant…'
-    : kind === 'tennis' ? 'Rechercher un joueur…' : kind === 'golf' ? '' : 'Rechercher une équipe…';
-  el.search.hidden = kind === 'golf';
+    : kind === 'tennis' ? 'Rechercher un joueur…' : kind === 'golf' ? 'Rechercher un golfeur…' : 'Rechercher une équipe…';
+  el.search.hidden = false;
   setView('teams');
   selectLeague();
 }
@@ -503,7 +564,7 @@ async function selectLeague() {
 
   if (league.kind === 'event') { renderTeams(); loadDrivers(); return; }
   if (league.kind === 'card') { renderTeams(); loadFighters(); return; }
-  if (league.kind === 'golf') { renderTeams(); return; }
+  if (league.kind === 'golf') { renderTeams(); loadGolfers(current); return; }
   if (league.kind === 'tennis') { renderTeams(); loadTennis(current); return; }
 
   if (cache.has(current)) { teams = cache.get(current); renderTeams(); return; }
@@ -1359,6 +1420,7 @@ document.getElementById('btnClear').addEventListener('click', () => {
   if (kind === 'event') prefs.favDrivers = [];
   if (kind === 'card') prefs.favFighters = [];
   if (kind === 'tennis') prefs.favTennis = (prefs.favTennis ?? []).filter((p) => p.leagueId !== current);
+  if (kind === 'golf') prefs.favGolfers = (prefs.favGolfers ?? []).filter((p) => p.leagueId !== current);
   savePrefs(prefs);
   if (kind === 'event') renderFavDriver();
   if (kind === 'card') renderFavFighters();

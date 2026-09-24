@@ -1780,6 +1780,47 @@ export async function fetchTennisPlayers(leagueId) {
   return players;
 }
 
+/* ---------- Golfeurs (réglages) ---------- */
+
+const golfersCache = diskCache('golfers', 24 * 3600 * 1000);
+
+/**
+ * Golfeurs du tournoi en cours et des récents, pour choisir ses favoris :
+ * [{ id, name, short, photo, flag, leagueId }], triés par nom. Chaque tranche
+ * de dates est demandée à part : une refusée n'empêche pas les autres.
+ */
+export async function fetchGolfers(leagueId) {
+  const hit = golfersCache.get(leagueId);
+  if (hit) return hit;
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league) return [];
+  const found = new Map();
+  const absorb = (data) => {
+    for (const ev of data?.events ?? []) {
+      for (const c of ev?.competitions?.[0]?.competitors ?? []) {
+        if (!c?.athlete) continue;
+        const p = golferOf(c, 0);
+        if (p.id && p.name && !found.has(p.id)) found.set(p.id, { id: p.id, name: p.name, short: p.short, photo: p.photo, flag: p.flag, leagueId });
+      }
+    }
+  };
+  let lastErr = null;
+  const ranges = [];
+  for (let end = 0; end > -84; end -= 14) ranges.push([end - 13, end]);
+  const results = await Promise.allSettled([
+    getJson(`${league.path}/scoreboard`),
+    ...ranges.map(([a, b]) => getJson(`${league.path}/scoreboard`, `?dates=${ymd(a)}-${ymd(b)}`)),
+  ]);
+  for (const r of results) {
+    if (r.status === 'fulfilled') absorb(r.value);
+    else lastErr = r.reason;
+  }
+  if (!found.size) throw lastErr ?? new Error('aucun golfeur trouvé');
+  const golfers = [...found.values()].sort((x, y) => x.name.localeCompare(y.name, 'fr'));
+  golfersCache.set(leagueId, golfers);
+  return golfers;
+}
+
 /* ---------- Pilotes de F1 (réglages) ---------- */
 
 const DRIVERS_KEY = 'sports-counter.drivers.f1.v2';

@@ -48,8 +48,13 @@ function favPositions(g, favs) {
 
 /** Ce qu'il faut retenir d'un match pour le comparer au relevé suivant. */
 export function snapshot(g, opts = {}) {
-  if (g.kind === 'golf') return { state: g.state, leader: g.state === 'in' ? g.players?.[0]?.name ?? '' : '' };
-  if (g.kind === 'tennis') return { state: g.state };
+  if (g.kind === 'golf') {
+    // Rang de chaque golfeur favori, pour voir ses remontées.
+    const favs = Object.fromEntries((opts.favGolfers ?? [])
+      .map((f) => [f.id || f.name, (g.players ?? []).find((p) => sameDriver(f, p))?.pos ?? null]));
+    return { state: g.state, leader: g.state === 'in' ? g.players?.[0]?.name ?? '' : '', favs };
+  }
+  if (g.kind === 'tennis') return { state: g.state, sets: g.a?.sets?.length ?? 0 };
   if (g.kind === 'match') return { state: g.state, home: g.home.score, away: g.away.score, period: g.period ?? null };
   if (g.kind === 'card') {
     // État de chaque combat d'un combattant favori, pour voir son début et sa fin.
@@ -314,15 +319,33 @@ function cardEvents(g, before, opts = {}) {
 
 /* ---------- Golf : nouveau meneur, vainqueur ---------- */
 
-function golfEvents(g, before) {
+function golfEvents(g, before, opts = {}) {
   const out = [];
+  if (g.teamEvent) return out; // Coupe des Présidents : pas de meneur individuel
   const team = { abbr: '⛳', logo: g.logo ?? '', color: '#5bd38a' };
   const lead = g.players?.[0];
   const face = (p) => (p?.photo ? { ...team, logo: p.photo, round: true } : team);
-  if (before.state !== 'post' && g.state === 'post' && lead) {
-    out.push({ title: `🏆 ${lead.name} remporte le tournoi !`, body: `${lead.score} · ${g.title}`, team: face(lead), link: g.link ?? '', big: true });
+  const link = g.link ?? '';
+  const where = `${g.session ? `${g.session} · ` : ''}${g.title}`;
+  const favs = opts.favGolfers ?? [];
+  const favOf = (p) => favs.find((f) => sameDriver(f, p));
+  const finished = before.state !== 'post' && g.state === 'post';
+
+  if (finished && lead) {
+    out.push({ title: `🏆 ${favOf(lead) ? '⭐ ' : ''}${lead.name} remporte le tournoi !`, body: `${lead.score} · ${g.title}`, team: face(lead), link, big: true });
   } else if (g.state === 'in' && before.state === 'in' && lead && before.leader && lead.name !== before.leader) {
-    out.push({ title: `⛳ ${lead.name} prend la tête`, body: `${lead.score} · ${g.session ? `${g.session} · ` : ''}${g.title}`, team: face(lead), link: g.link ?? '' });
+    out.push({ title: `⛳ ${favOf(lead) ? '⭐ ' : ''}${lead.name} prend la tête`, body: `${lead.score} · ${where}`, team: face(lead), link, big: !!favOf(lead) });
+  }
+  // Tes golfeurs : entrée dans le top 10, rang final.
+  for (const f of favs) {
+    const p = (g.players ?? []).find((x) => sameDriver(f, x));
+    if (!p || p === lead) continue;
+    const was = before.favs?.[f.id || f.name];
+    if (finished) {
+      out.push({ title: `⛳ ${p.name} termine ${p.posText}`, body: `${p.score} · ${g.title}`, team: face(p), link });
+    } else if (g.state === 'in' && before.state === 'in' && p.pos <= 10 && was != null && was > 10) {
+      out.push({ title: `⛳ ${p.name} entre dans le top 10`, body: `${p.posText} · ${p.score} · ${where}`, team: face(p), link });
+    }
   }
   return out;
 }
@@ -340,6 +363,15 @@ function tennisEvents(g, before, opts) {
   const sets = me.sets.map((n, i) => `${n}-${opp.sets[i] ?? 0}`).join(' ');
   if (before.state === 'pre' && g.state === 'in') {
     return [{ title: `🎾 ${me.name} entre sur le court`, body: `contre ${opp.name} · ${where}`, team: face, link: g.link ?? '' }];
+  }
+  // Une manche vient de se terminer (la suivante a commencé).
+  const n = g.a?.sets?.length ?? 0;
+  if (g.state === 'in' && before.state === 'in' && before.sets > 0 && n > before.sets) {
+    const i = before.sets - 1;
+    const mine = me.sets[i] ?? 0;
+    const theirs = opp.sets[i] ?? 0;
+    const title = mine > theirs ? `🎾 Manche pour ${me.name} (${mine}-${theirs})` : `🎾 ${me.name} perd la manche (${mine}-${theirs})`;
+    return [{ title, body: `${sets} · contre ${opp.name} · ${where}`, team: face, link: g.link ?? '' }];
   }
   if (before.state !== 'post' && g.state === 'post') {
     if (me.winner) return [{ title: `🏆 Victoire de ${me.name} !`, body: [sets, `contre ${opp.name}`, where].filter(Boolean).join(' · '), team: face, link: g.link ?? '', big: true }];
@@ -360,7 +392,7 @@ export function detectEvents(prev, games, opts = {}) {
     if (!before) continue; // match apparu : rien n'a « changé »
     if (g.kind === 'match') out.push(...matchEvents(g, before, opts));
     else if (g.kind === 'card') out.push(...cardEvents(g, before, opts));
-    else if (g.kind === 'golf') out.push(...golfEvents(g, before));
+    else if (g.kind === 'golf') out.push(...golfEvents(g, before, opts));
     else if (g.kind === 'tennis') out.push(...tennisEvents(g, before, opts));
     else out.push(...sessionEvents(g, before, opts));
   }

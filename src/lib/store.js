@@ -39,6 +39,8 @@ const DEFAULTS = {
   favFighters: [],
   // Joueurs de tennis favoris : [{ id, name, short, photo, leagueId }].
   favTennis: [],
+  // Golfeurs favoris : [{ id, name, short, photo, leagueId }].
+  favGolfers: [],
   // Mode Grand Prix : top 5 et écarts pendant une course.
   gpMode: true,
   // Joueurs de hockey favoris : [{ id, name, photo, teamId }].

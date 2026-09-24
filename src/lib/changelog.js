@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.3': [
+    '⛳ Golfeurs favoris : choisis-les dans Réglages → PGA/LPGA. Leur rang dans le widget ⭐, et une notification quand ils prennent la tête, entrent dans le top 10 ou terminent.',
+    '🎾 Tennis : une notification à chaque manche gagnée ou perdue par tes joueurs.',
+    '🔔 Widget « Sur le bureau » : les notifications passent quand même devant toutes les fenêtres.',
+    '🖥️ Cliquer sur le bureau de Windows n’est plus pris pour un jeu en plein écran (les notifications ne sont plus bloquées).',
+  ],
   '0.9.2': [
     '🏈 LCF, Coupe du monde, NCAA… : les équipes se chargent par une autre adresse d’ESPN, celle qui n’est pas bloquée.',
     '🩺 Nouveau : Réglages → Diagnostic teste chaque ligue depuis ton ordi. Envoie une capture si une ligue ne marche pas.',

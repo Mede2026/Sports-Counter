@@ -859,11 +859,87 @@ fn fullscreen_app_running() -> bool {
     // SAFETY : l'unique argument est un pointeur vers un i32 valide qui vit
     // pendant tout l'appel, comme l'exige la fonction.
     let hr = unsafe { SHQueryUserNotificationState(&mut state) };
-    hr >= 0
-        && matches!(
-            state,
-            QUNS_BUSY | QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE
-        )
+    if hr < 0 {
+        return false;
+    }
+    match state {
+        QUNS_RUNNING_D3D_FULL_SCREEN | QUNS_PRESENTATION_MODE => true,
+        // « Occupé » est aussi renvoyé quand on clique sur le bureau : on
+        // vérifie qu'une vraie fenêtre couvre tout l'écran.
+        QUNS_BUSY => foreground_covers_screen(),
+        _ => false,
+    }
+}
+
+/// Vrai si la fenêtre au premier plan couvre tout son écran, barre des tâches
+/// comprise — sauf le bureau de Windows lui-même, qui couvre aussi l'écran.
+#[cfg(windows)]
+fn foreground_covers_screen() -> bool {
+    #[repr(C)]
+    #[derive(Default)]
+    struct Rect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+    #[repr(C)]
+    #[derive(Default)]
+    struct MonitorInfo {
+        size: u32,
+        monitor: Rect,
+        work: Rect,
+        flags: u32,
+    }
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetForegroundWindow() -> isize;
+        fn GetShellWindow() -> isize;
+        fn GetDesktopWindow() -> isize;
+        fn GetClassNameW(hwnd: isize, name: *mut u16, max: i32) -> i32;
+        fn GetWindowRect(hwnd: isize, rect: *mut Rect) -> i32;
+        fn MonitorFromWindow(hwnd: isize, flags: u32) -> isize;
+        fn GetMonitorInfoW(monitor: isize, info: *mut MonitorInfo) -> i32;
+    }
+    const MONITOR_DEFAULTTONEAREST: u32 = 2;
+    // Bureau, fond d'écran et barre des tâches : jamais « plein écran ».
+    const SHELL_CLASSES: [&str; 4] = [
+        "Progman",
+        "WorkerW",
+        "Shell_TrayWnd",
+        "Shell_SecondaryTrayWnd",
+    ];
+
+    // SAFETY : fonctions de user32 appelées avec des pointeurs vers des
+    // variables locales valides pendant tout l'appel ; une fenêtre fermée
+    // entre-temps fait seulement échouer l'appel (valeur 0).
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg == 0 || fg == GetShellWindow() || fg == GetDesktopWindow() {
+            return false;
+        }
+        let mut name = [0u16; 64];
+        let len = GetClassNameW(fg, name.as_mut_ptr(), name.len() as i32).max(0) as usize;
+        let class = String::from_utf16_lossy(&name[..len]);
+        if SHELL_CLASSES.contains(&class.as_str()) {
+            return false;
+        }
+        let mut win = Rect::default();
+        let mut info = MonitorInfo {
+            size: std::mem::size_of::<MonitorInfo>() as u32,
+            ..Default::default()
+        };
+        if GetWindowRect(fg, &mut win) == 0
+            || GetMonitorInfoW(MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST), &mut info) == 0
+        {
+            return false;
+        }
+        let screen = &info.monitor;
+        win.left <= screen.left
+            && win.top <= screen.top
+            && win.right >= screen.right
+            && win.bottom >= screen.bottom
+    }
 }
 
 #[cfg(not(windows))]
@@ -906,6 +982,48 @@ fn to_front(win: &WebviewWindow) {
     let _ = win.set_always_on_top(false);
     let _ = win.set_always_on_top(true);
 }
+
+/// Met la notification tout devant, tout de suite. Les appels de `to_front`
+/// sont asynchrones : on confirme par un appel direct à Windows, pour qu'elle
+/// passe devant la fenêtre active même quand le widget est sur le bureau.
+#[cfg(windows)]
+fn force_topmost(win: &WebviewWindow) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWindowPos(
+            hwnd: isize,
+            after: isize,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+    const HWND_TOPMOST: isize = -1;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+    const SWP_SHOWWINDOW: u32 = 0x0040;
+    if let Ok(hwnd) = win.hwnd() {
+        // SAFETY : la fenêtre appartient à l'app et existe ; sans déplacer ni
+        // redimensionner, l'appel change seulement son ordre d'empilement.
+        unsafe {
+            SetWindowPos(
+                hwnd.0 as isize,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            );
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn force_topmost(_win: &WebviewWindow) {}
 
 /// Place la notification :
 /// - widget affiché : juste au-dessus de lui (en dessous s'il n'y a pas la
@@ -963,6 +1081,7 @@ fn show_toast(app: AppHandle) {
     if let Some(win) = app.get_webview_window(TOAST) {
         let _ = win.show();
         to_front(&win);
+        force_topmost(&win);
     }
 }
 
