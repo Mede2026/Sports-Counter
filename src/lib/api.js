@@ -131,6 +131,75 @@ async function teamsFromCore(league) {
   return teams;
 }
 
+/* ---------- Logos de secours (TheSportsDB) ---------- */
+
+// ESPN n'a pas de logo pour certaines ligues (la LCF) : on les prend chez
+// TheSportsDB, une base sportive gratuite, une fois par semaine.
+const SPORTSDB = 'https://www.thesportsdb.com/api/v1/json/3';
+const logoCache = diskCache('logos.sportsdb', TEAMS_TTL);
+const logoLoads = new Map();
+const squash = (text) => String(text ?? '').normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+async function getSportsDb(query) {
+  try {
+    return await viaPage(`${SPORTSDB}/${query}`);
+  } catch (err) {
+    if (!inTauri()) throw err;
+    return viaRust(`tsdb/${query}`);
+  }
+}
+
+/** Logos de la ligue chez TheSportsDB : [{ name, alt, logo }] (noms tassés). */
+function sportsDbLogos(league) {
+  if (!league?.sportsDb) return Promise.resolve([]);
+  const hit = logoCache.get(league.id);
+  if (hit) return Promise.resolve(hit);
+  if (!logoLoads.has(league.id)) {
+    const load = getSportsDb(`search_all_teams.php?l=${league.sportsDb.replace(/ /g, '_')}`)
+      .then((data) => {
+        const list = (data?.teams ?? [])
+          .map((t) => ({ name: squash(t?.strTeam), alt: squash(t?.strTeamAlternate), logo: t?.strBadge ?? t?.strTeamBadge ?? t?.strLogo ?? '' }))
+          .filter((t) => t.name && /^https:\/\//.test(t.logo));
+        if (list.length) logoCache.set(league.id, list);
+        return list;
+      })
+      .catch(() => [])
+      .finally(() => logoLoads.delete(league.id));
+    logoLoads.set(league.id, load);
+  }
+  return logoLoads.get(league.id);
+}
+
+/** Le logo d'une équipe d'après son nom complet, puis son surnom (« Alouettes »). */
+export function matchLogo(list, ...names) {
+  for (const raw of names) {
+    const q = squash(raw);
+    if (q.length < 3) continue;
+    const exact = list.find((t) => t.name === q || t.alt === q);
+    if (exact) return exact.logo;
+    if (q.length < 4) continue;
+    const near = list.filter((t) => t.name.endsWith(q) || t.name.startsWith(q));
+    if (near.length === 1) return near[0].logo;
+  }
+  return '';
+}
+
+/** Complète, sur place, les logos manquants d'une liste d'équipes. */
+async function fillLogos(leagueId, teams) {
+  const league = LEAGUES_BY_ID[leagueId];
+  const missing = teams.filter((t) => t && !t.logo);
+  if (!league?.sportsDb || !missing.length) return teams;
+  const list = await sportsDbLogos(league);
+  if (list.length) for (const t of missing) t.logo = matchLogo(list, t.full, t.name, t.short);
+  return teams;
+}
+
+/** Même chose pour les deux équipes de chaque match. */
+async function fillGameLogos(leagueId, games) {
+  await fillLogos(leagueId, games.flatMap((g) => [g?.home, g?.away]).filter(Boolean));
+  return games;
+}
+
 /** Listes intégrées à l'app, pour les ligues dont on a une copie vérifiée. */
 const BUNDLED_TEAMS = { nhl: NHL_TEAMS };
 
@@ -211,37 +280,50 @@ export async function fetchTeams(leagueId) {
   if (BUNDLED_TEAMS[leagueId]) return [...BUNDLED_TEAMS[leagueId]].sort(byName);
 
   const cached = readTeamsCache(leagueId);
-  if (cached) return cached;
+  if (cached) return fillLogos(leagueId, cached);
 
-  let teams = [];
+  // Trois sources, dans l'ordre, jusqu'à avoir toute la ligue : une liste
+  // partielle est complétée par la suivante au lieu d'être gardée telle quelle.
+  const target = league.teams || 1;
+  const byId = new Map();
+  const merge = (list) => list.forEach((t) => {
+    const had = byId.get(t.id);
+    // Même équipe vue deux fois : on garde le logo et les couleurs trouvés.
+    byId.set(t.id, had ? { ...t, ...Object.fromEntries(Object.entries(had).filter(([, v]) => v)) } : t);
+  });
   let directoryErr = null;
   try {
-    teams = await teamsFromDirectory(league);
+    merge(await teamsFromDirectory(league));
   } catch (err) {
     directoryErr = err;
   }
 
-  // 2. Liste refusée (la LNH et la LCF, par exemple) : l'API « core » d'ESPN,
-  //    qui donne aussi les équipes, une adresse par équipe.
-  if (!teams.length) {
+  // 2. Liste refusée ou incomplète (la LNH et la LCF, par exemple) : l'API
+  //    « core » d'ESPN, qui donne aussi les équipes, une adresse par équipe.
+  if (byId.size < target) {
     try {
-      teams = await teamsFromCore(league);
+      merge(await teamsFromCore(league));
     } catch { /* on passe au calendrier */ }
   }
 
-  if (!teams.length) {
+  // 3. Les équipes vues au calendrier.
+  if (byId.size < target) {
     try {
-      teams = await teamsFromSchedule(league);
+      merge(await teamsFromSchedule(league));
     } catch (err) {
-      throw new Error(
-        `Liste : ${errText(directoryErr ?? 'vide')}\nCalendrier : ${errText(err)}`,
-      );
+      if (!byId.size) {
+        throw new Error(
+          `Liste : ${errText(directoryErr ?? 'vide')}\nCalendrier : ${errText(err)}`,
+        );
+      }
     }
   }
 
+  const teams = [...byId.values()];
   if (!teams.length) throw new Error(errText(directoryErr ?? 'aucune équipe trouvée'));
 
   teams.sort(byName);
+  await fillLogos(leagueId, teams);
   // Une liste incomplète (ligue hors saison, peu de matchs au calendrier) n'est
   // pas gardée : on retentera à la prochaine ouverture des réglages.
   if (teams.length >= (league.teams ?? 0)) writeTeamsCache(leagueId, teams);
@@ -254,6 +336,7 @@ function normalizeCompetitor(c, state) {
     id: String(t.id ?? ''),
     abbr: t.abbreviation ?? t.shortDisplayName ?? '???',
     name: t.shortDisplayName ?? t.displayName ?? '',
+    full: t.displayName ?? '',
     logo: t.logo ?? t.logos?.[0]?.href ?? '',
     color: t.color ? `#${t.color}` : null,
     alt: t.alternateColor ? `#${t.alternateColor}` : null,
@@ -862,7 +945,7 @@ export async function fetchScoreboard(leagueId) {
   if (!league) return [];
   const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
   const logo = league.logo || leagueLogo(data);
-  return (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo));
+  return fillGameLogos(leagueId, (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo)));
 }
 
 // Calendrier des jours à venir : il change peu, inutile de le redemander à
@@ -883,7 +966,7 @@ async function fetchDay(leagueId, offsetDays) {
 
   const data = await getJson(`${league.path}/scoreboard`, boardQuery(league, `?dates=${date}`));
   const logo = league.logo || leagueLogo(data);
-  const events = (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo));
+  const events = await fillGameLogos(leagueId, (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo)));
   dayCache.set(key, events);
   return events;
 }
@@ -959,7 +1042,17 @@ function teamStats(data, leagueId, homeId, awayId) {
     labels.add(label);
     rows.push({ label, home: h, away: a });
   }
-  return rows;
+  // Zéro des deux côtés : souvent, ESPN n'a simplement pas cette statistique
+  // pour ce match (pré-saison, petite ligue : « Possession 0 – 0 »). On
+  // n'affiche pas de faux zéros ; un vrai 0 – 0 n'apprend rien de toute façon.
+  const zero = (v) => !/[1-9]/.test(v);
+  rows.splice(0, rows.length, ...rows.filter((r) => !(zero(r.home) && zero(r.away))));
+  // Hockey : moins de tirs que de buts, le compte des tirs est faux.
+  const goals = (team) => Number.parseInt(scoreText(team?.score ?? 0), 10) || 0;
+  const comps = data?.header?.competitions?.[0]?.competitors ?? [];
+  const scored = (id) => goals(comps.find((c) => String(c?.team?.id ?? c?.id) === String(id)));
+  return rows.filter((r) => r.label !== 'Tirs au but'
+    || (Number.parseInt(r.home, 10) >= scored(homeId) && Number.parseInt(r.away, 10) >= scored(awayId)));
 }
 
 const assistNames = (p) => (p?.participants ?? [])
@@ -1424,7 +1517,17 @@ const groupFr = (name) => GROUP_FR.find(([re]) => re.test(name ?? ''))?.[1] ?? a
 
 const STANDINGS_TTL = 60 * 60 * 1000;
 // idLigue -> groupes du classement, gardés sur le disque 1 h.
-const standingsCache = diskCache('standings', STANDINGS_TTL);
+const standingsCache = diskCache('standings.v2', STANDINGS_TTL);
+
+/** Vrai pour un classement de pré-saison (type de saison 1 chez ESPN). */
+const isPreseason = (st) => [st?.seasonType, st?.seasonType?.type, st?.season?.type]
+  .some((t) => Number(t?.type ?? t) === 1);
+
+/** Pré-saison : les matchs préparatoires ne comptent pas, tout le monde à zéro. */
+const ZERO_STATS = { winPercent: '.000', gamesBehind: '-' };
+function zeroStats(stats) {
+  return Object.fromEntries(Object.keys(stats).map((k) => [k, ZERO_STATS[k] ?? '0']));
+}
 
 /** Rang de chaque équipe dans son groupe, trié comme ESPN le calcule. */
 function rankEntries(entries) {
@@ -1456,12 +1559,22 @@ export async function fetchStandingsTable(leagueId) {
   const hit = standingsCache.get(leagueId);
   if (hit) return hit;
 
-  const data = await getJson(`${league.path}/standings`, '', { v2: true });
+  // La saison régulière : sans précision, ESPN donne les matchs préparatoires
+  // pendant la pré-saison.
+  // Le tableau des matchs dit aussi si on est en pré-saison.
+  const board = getJson(`${league.path}/scoreboard`).catch(() => null);
+  const load = (query) => getJson(`${league.path}/standings`, query, { v2: true }).catch(() => null);
+  let data = await load('?seasontype=2');
+  const boardPre = isPreseason({ seasonType: (await board)?.leagues?.[0]?.season?.type });
   const groups = [];
   const walk = (node) => {
     const entries = node?.standings?.entries;
     if (entries?.length) {
-      const rows = rankEntries(entries).map((e, i) => {
+      const preseason = boardPre || isPreseason(node.standings);
+      const ranked = preseason
+        ? [...entries].sort((a, b) => String(a?.team?.displayName ?? '').localeCompare(String(b?.team?.displayName ?? ''), 'fr'))
+        : rankEntries(entries);
+      const rows = ranked.map((e, i) => {
         const t = e?.team ?? {};
         return {
           id: String(t.id ?? ''),
@@ -1473,11 +1586,18 @@ export async function fetchStandingsTable(leagueId) {
           stats: Object.fromEntries((e?.stats ?? []).filter((x) => x?.name).map((x) => [x.name, x.displayValue ?? String(x.value ?? '')])),
         };
       }).filter((r) => r.id);
-      groups.push({ name: groupFr(node?.name ?? node?.abbreviation ?? league.label), rows });
+      if (preseason) rows.forEach((r) => { r.stats = zeroStats(r.stats); });
+      groups.push({ name: groupFr(node?.name ?? node?.abbreviation ?? league.label), rows, preseason });
     }
     (node?.children ?? []).forEach(walk);
   };
   walk(data);
+  // Saison régulière encore vide : le classement par défaut, remis à zéro.
+  if (!groups.length) {
+    data = await getJson(`${league.path}/standings`, '', { v2: true });
+    walk(data);
+  }
+  for (const g of groups) await fillLogos(leagueId, g.rows);
   if (groups.length) standingsCache.set(leagueId, groups);
   return groups;
 }
@@ -1490,6 +1610,7 @@ export async function fetchStandings(leagueId) {
   const table = new Map();
   try {
     for (const g of await fetchStandingsTable(leagueId)) {
+      if (g.preseason) continue; // pas de rang avant la saison régulière
       for (const r of g.rows) table.set(r.id, { rank: r.rank, group: g.name, points: r.stats.points ?? '' });
     }
   } catch { /* classement indisponible : la fenêtre s'en passe */ }
@@ -2232,7 +2353,15 @@ export async function probeLeague(leagueId) {
   if (league.kind === 'team') {
     try {
       const teams = await fetchTeams(leagueId);
-      out.teams = { ok: teams.length > 0, text: `${teams.length} équipe${teams.length > 1 ? 's' : ''}` };
+      const want = league.teams || 0;
+      const bare = teams.filter((t) => !t.logo).length;
+      out.teams = {
+        ok: teams.length > 0 && teams.length >= want && !bare,
+        text: [
+          want ? `${teams.length}/${want} équipes` : `${teams.length} équipe${teams.length > 1 ? 's' : ''}`,
+          bare ? `${bare} sans logo` : '',
+        ].filter(Boolean).join(' · '),
+      };
     } catch (err) {
       out.teams = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
     }

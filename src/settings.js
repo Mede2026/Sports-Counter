@@ -1014,14 +1014,17 @@ function demoLeaders() {
 function teamStandingsHtml(leagueId, groups) {
   const cols = STANDING_COLS[sportOf(leagueId)] ?? [['wins', 'V'], ['losses', 'D']];
   const fav = (id) => prefs.favorites.includes(`${leagueId}:${id}`);
-  return groups.map((g) => `
+  const note = groups.some((g) => g.preseason)
+    ? '<div class="st__note">Pré-saison : les matchs préparatoires ne comptent pas. Le classement part de zéro au premier match de la saison régulière.</div>'
+    : '';
+  return note + groups.map((g) => `
     <div class="st">
       <div class="st__group">${autoFr(g.name)}</div>
       <table class="st__table">
         <thead><tr><th class="st__rank">#</th><th class="st__team">Équipe</th>${cols.map(([, h]) => `<th>${h}</th>`).join('')}</tr></thead>
         <tbody>${g.rows.map((r) => `
           <tr class="${fav(r.id) ? 'st__row--fav' : ''}">
-            <td class="st__rank">${r.rank}</td>
+            <td class="st__rank">${g.preseason ? '–' : r.rank}</td>
             <td class="st__team"><span class="st__cell">${crestHtml({ logo: r.logo, abbr: r.abbr }, 'crest-sm')}<span>${r.short || r.name}</span></span></td>
             ${cols.map(([k]) => `<td>${r.stats[k] ?? '–'}</td>`).join('')}
           </tr>`).join('')}</tbody>

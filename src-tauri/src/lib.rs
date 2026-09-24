@@ -23,6 +23,8 @@ const ESPN_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports";
 const ESPN_BASE_V2: &str = "https://site.api.espn.com/apis/v2/sports";
 /// API « core » d'ESPN (meneurs de la ligue, fiches des joueurs), préfixe « core/ ».
 const ESPN_CORE: &str = "https://sports.core.api.espn.com";
+/// TheSportsDB, base sportive gratuite : seulement pour les logos manquants.
+const SPORTSDB: &str = "https://www.thesportsdb.com/api/v1/json/3";
 /// Options du moteur WebView2, identiques pour TOUTES les fenêtres : elles
 /// partagent un même dossier de données, et WebView2 refuse d'ouvrir une
 /// fenêtre dont les options diffèrent des autres. Doit rester égale à
@@ -127,6 +129,9 @@ async fn espn_get(path: String) -> Result<String, String> {
         format!("{ESPN_BASE_V2}/{rest}")
     } else if let Some(rest) = path.strip_prefix("core/") {
         format!("{ESPN_CORE}/{rest}")
+    } else if let Some(rest) = path.strip_prefix("tsdb/") {
+        // Logos de secours, pour les ligues dont ESPN n'a pas les logos (LCF).
+        format!("{SPORTSDB}/{rest}")
     } else {
         format!("{ESPN_BASE}/{path}")
     };

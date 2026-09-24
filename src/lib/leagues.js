@@ -19,7 +19,9 @@ export const LEAGUES = [
   { id: 'nba',  group: 'Basketball', label: 'NBA',                path: 'basketball/nba',        kind: 'team',  accent: '#ff7a45', short: 'NBA', teams: 30 },
   { id: 'wnba', group: 'Basketball', label: 'WNBA',               path: 'basketball/wnba',       kind: 'team',  accent: '#f58fd0', short: 'WNBA', teams: 15 },
   { id: 'nfl',  group: 'Football',   label: 'NFL',                path: 'football/nfl',          kind: 'team',  accent: '#7bd88f', short: 'NFL', teams: 32 },
-  { id: 'cfl',  group: 'Football',   label: 'LCF',                path: 'football/cfl',          kind: 'team',  accent: '#e84a4a', short: 'LCF', teams: 9 },
+  { id: 'cfl',  group: 'Football',   label: 'LCF',                path: 'football/cfl',          kind: 'team',  accent: '#e84a4a', short: 'LCF', teams: 9,
+    // ESPN n'a pas les logos de la LCF : on les prend chez TheSportsDB.
+    sportsDb: 'Canadian Football League' },
   { id: 'ncaaf', group: 'Football',  label: 'Football universitaire', path: 'football/college-football', kind: 'team', accent: '#5fc4a8', short: 'NCAA', teams: 130,
     // Toute la première division (FBS), pas seulement les matchs du top 25.
     query: 'groups=80&limit=300', teamsQuery: '?groups=80&limit=1000', coreTeams: 'groups/80/teams' },

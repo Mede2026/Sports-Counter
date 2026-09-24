@@ -1,6 +1,13 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.4': [
+    '🏈 LCF : les vrais logos des équipes (pris chez TheSportsDB quand ESPN n’en a pas), partout dans l’app.',
+    '📊 Classement en pré-saison : les matchs préparatoires ne comptent plus. Tout le monde part de zéro.',
+    '🎯 Plus de faux « 0 » : les statistiques qu’ESPN ne donne pas pour un match (tirs, possession…) sont masquées.',
+    '🧩 Listes d’équipes : si une source d’ESPN en oublie, les autres complètent la liste.',
+    '🩺 Diagnostic : le nombre d’équipes trouvées sur le nombre attendu, et celles sans logo.',
+  ],
   '0.9.3': [
     '⬇️ Nouveau bouton dans le widget (à gauche de ↻) : cherche une mise à jour en un clic.',
     '⛳ Golfeurs favoris : choisis-les dans Réglages → PGA/LPGA. Leur rang dans le widget ⭐, et une notification quand ils prennent la tête, entrent dans le top 10 ou terminent.',

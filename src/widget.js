@@ -133,7 +133,13 @@ function gapText(gap) {
 
 /** Tirs au but (hockey), quand ESPN les donne dans le tableau des scores. */
 function shotsLine(game) {
-  if (game.state === 'pre' || !game.away.shots || !game.home.shots) return '';
+  if (game.state === 'pre' || sportOf(game.leagueId) !== 'hockey') return '';
+  const [a, h] = [game.away.shots, game.home.shots].map((v) => Number.parseInt(v, 10));
+  if (!Number.isFinite(a) || !Number.isFinite(h)) return '';
+  // Moins de tirs que de buts : ESPN ne compte pas les tirs de ce match
+  // (pré-saison, par exemple). Mieux vaut rien qu'un faux « 0 ».
+  const goals = [game.away.score, game.home.score].map((v) => Number.parseInt(v, 10) || 0);
+  if (a < goals[0] || h < goals[1] || (a + h === 0 && goals[0] + goals[1] > 0)) return '';
   return `<div class="shots"><span>Tirs au but</span><b>${game.away.shots}</b><i></i><b>${game.home.shots}</b></div>`;
 }
 

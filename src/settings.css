@@ -651,3 +651,14 @@ kbd {
 
 /* Drapeaux : rectangle entier, jamais rogné ni entouré d'un halo. */
 img[data-flag] { object-fit: contain; border-radius: 3px; background: transparent !important; box-shadow: none !important; filter: none !important; }
+
+/* Classement en pré-saison : une ligne d'explication au-dessus des tableaux. */
+.st__note {
+  margin: 4px 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(74, 163, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
