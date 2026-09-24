@@ -54,6 +54,7 @@ const DEFAULTS = {
   // Résultats d'hier de tes équipes, en notification le matin.
   morningDigest: true,
   notifyPenalties: true,
+  showRecords: true,
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).
   shortcuts: { ...DEFAULT_SHORTCUTS },
 };

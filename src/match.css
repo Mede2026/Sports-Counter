@@ -539,3 +539,20 @@ span.crest-xs { border-radius: 4px; }
 
 /* Drapeaux : rectangle entier, jamais rogné ni entouré d'un halo. */
 img[data-flag] { object-fit: contain; border-radius: 3px; background: transparent !important; box-shadow: none !important; filter: none !important; }
+
+/* Baseball : compte, retraits et buts occupés sous le lanceur et le frappeur. */
+.mound__count {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.mound__count b { color: var(--text); font-weight: 700; margin-left: 3px; }
+.mound__count .bases { margin-left: auto; width: 28px; height: 20px; }
+.bases rect { fill: none; stroke: currentColor; stroke-width: 1.2; }
+.bases rect.on { fill: #f2c55c; stroke: #f2c55c; }

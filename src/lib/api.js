@@ -1048,8 +1048,62 @@ function normalizeEvent(event, leagueId, logo = '') {
     away: normalizeCompetitor(away, base.state),
     scorers: lastScorers(comp),
     series: seriesInfo(comp, home, away),
+    situation: base.state === 'in' ? safe(() => baseballSituation(comp?.situation, leagueId), null) : null,
   };
 }
+
+/* ---------- Baseball : le lanceur et le frappeur en ce moment ---------- */
+
+// Abréviations d'ESPN dans les résumés (« 5.0 IP, 3 H, 1 ER, 7 K ») -> québécois.
+const PITCH_ABBR = { IP: 'ML', H: 'CS', R: 'P', ER: 'PM', BB: 'BB', K: 'RB', SO: 'RB', HR: 'CC', PC: 'lancers', P: 'lancers', HBP: 'AL', RBI: 'PP', SB: 'BV', AB: 'VB' };
+
+/** « 5.0 IP, 3 H, 1 ER, 7 K » -> « 5.0 ML, 3 CS, 1 PM, 7 RB ». Frappeur : « 1-2, HR » -> « 1 en 2, CC ». */
+export function baseballLineFr(summary) {
+  return String(summary ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const hits = /^(\d+)-(\d+)$/.exec(part);
+      if (hits) return `${hits[1]} en ${hits[2]}`;
+      const m = /^([\d.]+)?\s*([A-Za-z]+)$/.exec(part);
+      if (!m) return part;
+      const label = PITCH_ABBR[m[2].toUpperCase()] ?? m[2];
+      return m[1] ? `${m[1]} ${label}` : label;
+    })
+    .join(', ');
+}
+
+/**
+ * Situation d'un match de baseball en direct : { pitcher, batter, balls,
+ * strikes, outs, bases: [1re, 2e, 3e] }. null hors baseball ou sans données.
+ */
+export function baseballSituation(sit, leagueId) {
+  if (sportOfLeague(leagueId) !== 'baseball' || !sit) return null;
+  const person = (x) => {
+    const a = x?.athlete;
+    if (!a) return null;
+    return {
+      id: String(a.id ?? x.playerId ?? ''),
+      name: a.displayName ?? a.fullName ?? '',
+      short: a.shortName ?? a.displayName ?? '',
+      teamId: String(a.team?.id ?? ''),
+      photo: athletePhoto(a, leagueId),
+      line: baseballLineFr(x.summary),
+    };
+  };
+  const out = {
+    pitcher: person(sit.pitcher),
+    batter: person(sit.batter),
+    balls: Number(sit.balls) || 0,
+    strikes: Number(sit.strikes) || 0,
+    outs: Number(sit.outs) || 0,
+    bases: [!!sit.onFirst, !!sit.onSecond, !!sit.onThird],
+  };
+  return out.pitcher || out.batter ? out : null;
+}
+
+const sportOfLeague = (leagueId) => LEAGUES_BY_ID[leagueId]?.path.split('/')[0] ?? '';
 
 /** Tous les évènements du jour pour une ligue, sous une forme uniforme. */
 export async function fetchScoreboard(leagueId) {
@@ -1247,6 +1301,7 @@ export async function fetchMatchDetail(leagueId, eventId) {
     videos: safe(() => highlights(data), []),
     box: safe(() => boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
     probables: safe(() => probablePitchers(competitors, leagueId), {}),
+    situation: safe(() => baseballSituation(data?.situation ?? data?.header?.competitions?.[0]?.situation, leagueId), null),
     allPlays: safe(() => allPlays(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
   };
 }
@@ -1276,10 +1331,17 @@ function probablePitchers(competitors, leagueId) {
     const stat = (n) => stats.find((x) => x?.name === n || x?.abbreviation === n)?.displayValue;
     const record = p?.record ?? (stat('wins') && stat('losses') ? `${stat('wins')}-${stat('losses')}` : '');
     const era = stat('ERA') ?? stat('earnedRunAverage');
+    const k = stat('strikeouts') ?? stat('SO') ?? stat('K');
+    const ip = stat('innings') ?? stat('inningsPitched') ?? stat('IP');
     out[String(c?.team?.id ?? c?.id ?? '')] = {
       name: a.displayName,
       photo: athletePhoto(a, leagueId),
-      line: [record, era ? `MPM ${era}` : ''].filter(Boolean).join(', '),
+      line: [
+        String(record).replace(/[()]/g, ''),
+        era ? `MPM ${era}` : '',
+        k ? `${k} RB` : '',
+        ip ? `${ip} ML` : '',
+      ].filter(Boolean).join(', '),
     };
   }
   return out;
@@ -2241,11 +2303,45 @@ export async function fetchAllPlayers(leagueId, onProgress = () => {}) {
 
 export const fetchAllNhlPlayers = (onProgress) => fetchAllPlayers('nhl', onProgress);
 
+/**
+ * Secours : l'alignement par l'API « core » d'ESPN (la LCF, par exemple, où
+ * l'adresse habituelle ne répond pas). La liste donne une adresse par joueur,
+ * lue ensuite 10 à la fois.
+ */
+async function rosterFromCore(league, teamId) {
+  const [sport, code] = league.path.split('/');
+  const year = new Date().getFullYear();
+  let refs = [];
+  for (const y of [year, year - 1]) {
+    try {
+      const list = await getCore(`/v2/sports/${sport}/leagues/${code}/seasons/${y}/teams/${encodeURIComponent(teamId)}/athletes?limit=200&lang=en&region=us`);
+      refs = (list?.items ?? []).map((x) => corePath(x?.$ref)).filter(Boolean);
+      if (refs.length) break;
+    } catch { /* saison précédente */ }
+  }
+  const athletes = [];
+  for (let i = 0; i < refs.length; i += 10) {
+    const results = await Promise.allSettled(refs.slice(i, i + 10).map((r) => getCore(r.includes('?') ? r : `${r}?lang=en&region=us`)));
+    for (const r of results) if (r.status === 'fulfilled' && r.value?.id) athletes.push(r.value);
+  }
+  return athletes;
+}
+
 async function loadRoster(leagueId, teamId) {
   const league = LEAGUES_BY_ID[leagueId];
-  const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/roster`);
-  // Au hockey, les joueurs sont groupés par position ({ position, items }).
-  const flat = (data?.athletes ?? []).flatMap((a) => (Array.isArray(a?.items) ? a.items : [a]));
+  let flat = [];
+  let siteErr = null;
+  try {
+    const data = await getJson(`${league.path}/teams/${encodeURIComponent(teamId)}/roster`);
+    // Au hockey, les joueurs sont groupés par position ({ position, items }).
+    flat = (data?.athletes ?? []).flatMap((a) => (Array.isArray(a?.items) ? a.items : [a]));
+  } catch (err) {
+    siteErr = err;
+  }
+  if (!flat.some((a) => a?.id && a?.displayName)) {
+    flat = await rosterFromCore(league, teamId).catch(() => []);
+    if (!flat.length && siteErr) throw siteErr;
+  }
   return flat
     .filter((a) => a?.id && a?.displayName)
     .map((a) => ({

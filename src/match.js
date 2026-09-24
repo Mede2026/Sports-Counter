@@ -275,6 +275,60 @@ function teamSwitch(g, pick) {
 const personLine = (p, extra = '') => `<li class="lu__p">${faceHtml(p ?? { name: '?' }, 'face')}
   <span class="drv"><b>${isStar(p?.name) ? '⭐ ' : ''}${esc(p?.name ?? '—')}</b>${extra ? `<small>${esc(extra)}</small>` : ''}</span></li>`;
 
+/** Stats d'un lanceur dans le box score : « 6.0 ML · 3 CS · 1 PM · 2 BB · 8 RB · 94 lancers ». */
+function pitchingLine(p, cols) {
+  const stat = (label) => {
+    const i = cols.findIndex((c) => c.label === label);
+    return i === -1 ? '' : String(p.stats?.[i] ?? '').trim();
+  };
+  const pitches = (stat('LAN-PR') || stat('LAN')).split('-')[0];
+  return [
+    stat('ML') && `${stat('ML')} ML`,
+    stat('CS') && `${stat('CS')} CS`,
+    stat('PM') && `${stat('PM')} PM`,
+    stat('BB') && `${stat('BB')} BB`,
+    stat('RB') && `${stat('RB')} RB`,
+    pitches && `${pitches} lancers`,
+    stat('MPM') && `MPM ${stat('MPM')}`,
+  ].filter(Boolean).join(' · ');
+}
+
+/** Petit losange des buts occupés (1re, 2e, 3e). */
+function basesSvg(bases = []) {
+  const cell = (on, x, y) => `<rect x="${x}" y="${y}" width="7" height="7" transform="rotate(45 ${x + 3.5} ${y + 3.5})"${on ? ' class="on"' : ''}/>`;
+  return `<svg class="bases" viewBox="0 0 28 20" aria-hidden="true">${cell(bases[1], 10.5, 1)}${cell(bases[2], 3, 9)}${cell(bases[0], 18, 9)}</svg>`;
+}
+
+/**
+ * Baseball : en direct, le lanceur au monticule et le frappeur (stats du
+ * match, compte, retraits, buts occupés) ; avant le match, les partants
+ * annoncés et leur fiche de la saison.
+ */
+function moundHtml(g) {
+  if (sportOf(g.leagueId) !== 'baseball') return '';
+  const sit = g.situation;
+  if (g.state === 'in' && sit && (sit.pitcher || sit.batter)) {
+    const team = (p) => [g.away, g.home].find((t) => String(t.id) === String(p?.teamId))?.abbr ?? '';
+    const rows = [
+      sit.pitcher && personLine(sit.pitcher, ['Lanceur', team(sit.pitcher), sit.pitcher.line].filter(Boolean).join(' · ')),
+      sit.batter && personLine(sit.batter, ['Au bâton', team(sit.batter), sit.batter.line].filter(Boolean).join(' · ')),
+    ].filter(Boolean).join('');
+    const count = `<div class="mound__count"><span>Balles <b>${sit.balls}</b></span><span>Prises <b>${sit.strikes}</b></span>
+      <span>Retraits <b>${sit.outs}</b></span>${basesSvg(sit.bases)}</div>`;
+    return `<ul class="lu__list">${rows}</ul>${count}`;
+  }
+  if (g.state === 'pre') {
+    const rows = [g.away, g.home]
+      .map((t) => {
+        const p = g.probables?.[String(t.id)];
+        return p ? personLine(p, [t.abbr, p.line].filter(Boolean).join(' · ')) : '';
+      })
+      .join('');
+    return rows ? `<ul class="lu__list">${rows}</ul>` : '';
+  }
+  return '';
+}
+
 function lineupHtml(g) {
   const pick = sideTeam(g, [String(g.away.id), String(g.home.id)]);
   const id = String(pick.id);
@@ -312,7 +366,7 @@ function lineupHtml(g) {
     html += section('Ordre des frappeurs', `<ol class="lu__list">${rows}</ol>`);
   }
   if (pitching?.players.length) {
-    html += section('Lanceurs', `<ul class="lu__list">${pitching.players.map((p, i) => personLine(p, i ? 'Releveur' : 'Partant')).join('')}</ul>`);
+    html += section('Lanceurs', `<ul class="lu__list">${pitching.players.map((p, i) => personLine(p, [i ? 'Releveur' : 'Partant', pitchingLine(p, pitching.cols)].filter(Boolean).join(' · '))).join('')}</ul>`);
   }
   return html;
 }
@@ -413,6 +467,7 @@ function matchHtml(g, table) {
   if (tab === 'plays') return head + allPlaysHtml(g);
   const goalsTitle = ['hockey', 'soccer'].includes(sportOf(g.leagueId)) ? 'Buts' : 'Jeux marquants';
   return head
+    + section(g.state === 'pre' ? 'Lanceurs partants' : 'Au monticule', moundHtml(g))
     + section('Chances de victoire', winProbHtml(g))
     + section('Faits saillants', videosHtml(g))
     + section('Les 3 étoiles', starsHtml(g))
@@ -696,6 +751,12 @@ async function load() {
         const basic = await fromScoreboard();
         if (!basic) throw new Error(`Match introuvable.\n${errText(detailErr)}`);
         g = { ...basic, stats: [], goals: [], penalties: [] };
+      }
+      // Baseball en direct : lanceur et frappeur, du tableau des scores si le
+      // résumé ne les donne pas.
+      if (sportOf(current.league) === 'baseball' && g.state === 'in' && !g.situation) {
+        const basic = await fromScoreboard().catch(() => null);
+        if (basic?.situation) g = { ...g, situation: basic.situation };
       }
       el.title.textContent = `${g.away.abbr} @ ${g.home.abbr}`;
       const match = g;

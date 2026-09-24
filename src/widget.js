@@ -48,7 +48,7 @@ function teamRow(game, team, dim) {
   const prev = lastScores.get(key);
   const bumped = prev !== undefined && prev !== team.score && game.state === 'in';
   lastScores.set(key, team.score);
-  const record = team.record ? ` <span class="team__rec">${team.record}</span>` : '';
+  const record = team.record && prefs.showRecords !== false ? ` <span class="team__rec">${team.record}</span>` : '';
   return `
     <div class="team${dim ? ' team--loser' : ''}">
       ${crestHtml(team)}
@@ -144,6 +144,24 @@ function shotsLine(game) {
   return `<div class="shots"><span>Tirs au but</span><b>${game.away.shots}</b><i></i><b>${game.home.shots}</b></div>`;
 }
 
+/** Petit losange des buts occupés (1re, 2e, 3e), pour le baseball en direct. */
+function basesSvg(bases = []) {
+  const cell = (on, x, y) => `<rect x="${x}" y="${y}" width="5" height="5" transform="rotate(45 ${x + 2.5} ${y + 2.5})" ${on ? 'class="on"' : ''}/>`;
+  return `<svg class="bases" viewBox="0 0 20 14" aria-hidden="true">${cell(bases[1], 7.5, 1)}${cell(bases[2], 2, 6.5)}${cell(bases[0], 13, 6.5)}</svg>`;
+}
+
+/**
+ * Baseball en direct : le lanceur au monticule et ses stats du match
+ * (« 5.0 ML, 7 RB »), puis le compte, les retraits et les buts occupés.
+ */
+function pitcherLine(game) {
+  const sit = game.situation;
+  if (game.state !== 'in' || !sit?.pitcher) return '';
+  const count = `${sit.balls}-${sit.strikes} · ${sit.outs} retrait${sit.outs > 1 ? 's' : ''}`;
+  return `<div class="pitch"><span class="pitch__who">⚾ <b>${attr(lastName(sit.pitcher))}</b>${sit.pitcher.line ? ` ${attr(sit.pitcher.line)}` : ''}</span>
+    <span class="pitch__count">${count}</span>${basesSvg(sit.bases)}</div>`;
+}
+
 function scoreSpan(game, team) {
   const key = `${game.id}:${team.id}`;
   const prev = lastScores.get(key);
@@ -171,7 +189,7 @@ function compactCard(game) {
   const pre = game.state === 'pre';
   const middleWhen = pre && (game.allDay || isDateOnly(game.startsAt)) ? dayText(game.startsAt)
     : pre && soon(game.startsAt)
-      ? untilSpan(game.startsAt, true) || shortWhen(game.startsAt)
+      ? untilSpan(game.startsAt) || shortWhen(game.startsAt)
       : shortWhen(game.startsAt) || game.statusText;
 
   if (game.kind === 'card') {
@@ -224,8 +242,12 @@ function compactCard(game) {
   const middle = pre
     ? `<span class="row__when">${middleWhen}</span>`
     : `${scoreSpan(game, a)}<span class="row__sep"></span>${scoreSpan(game, b)}`;
+  // Fiche de chaque équipe (victoires-défaites) sous son logo, si ESPN la donne.
+  const side = (t) => (prefs.showRecords !== false && t.record
+    ? `<span class="row__team">${crestHtml(t)}<small class="row__rec">${attr(t.record)}</small></span>`
+    : crestHtml(t));
   return `<div ${cardAttrs(game, cls, tip)}>
-    ${crestHtml(a)}${middle}${crestHtml(b)}
+    ${side(a)}${middle}${side(b)}
   </div>`;
 }
 
@@ -352,7 +374,7 @@ function gameCard(game) {
   return `<div ${cardAttrs(game, '', 'Cliquer pour les détails du match')}>${head}
     ${teamRow(game, game.away, done && game.home.winner)}
     ${teamRow(game, game.home, done && game.away.winner)}
-    ${shotsLine(game)}
+    ${shotsLine(game)}${pitcherLine(game)}
     ${seriesLine(game.series)}
   </div>`;
 }

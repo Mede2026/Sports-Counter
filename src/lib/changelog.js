@@ -1,6 +1,13 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.7': [
+    '⚾ Baseball : le lanceur au monticule et ses stats du match (manches, retraits au bâton, lancers) dans le widget, avec le compte et les buts occupés.',
+    '⚾ Fenêtre Match : « Au monticule » (lanceur et frappeur), les partants annoncés avant le match, et les stats de chaque lanceur dans l’Alignement.',
+    '📊 Fiche des équipes (victoires-défaites) aussi en mode compact, sous chaque logo.',
+    '🏈 LCF : les joueurs apparaissent (nouvelle adresse d’ESPN).',
+    '⏱️ Compte à rebours écrit « dans 4 h 19 » : on ne le confond plus avec une heure.',
+  ],
   '0.9.6': [
     '🖼️ Fond d’écran : « Remettre mon fond d’écran » (Réglages → Fond d’écran) remet vraiment le tien. L’app en garde maintenant une copie.',
     '🖼️ Si tu choisis un autre fond d’écran dans Windows, l’app ne l’écrase plus : le mode s’arrête et le widget revient.',

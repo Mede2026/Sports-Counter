@@ -660,6 +660,7 @@ function bindOptions() {
   look.addEventListener('change', () => { prefs.widgetTheme = look.value; savePrefs(prefs); });
 
   bindSwitch('optShowForm', 'showForm');
+  bindSwitch('optShowRecords', 'showRecords');
   bindSwitch('optTranslate', 'translate');
   bindSwitch('optDigest', 'morningDigest');
   bindSwitch('optPenalties', 'notifyPenalties');
