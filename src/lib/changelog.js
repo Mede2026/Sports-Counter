@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.8.3': [
+    '✅ « Tout décocher » décoche aussi tes pilotes (F1) et tes combattants (UFC).',
+  ],
   '0.8.2': [
     '📅 Le calendrier s’ouvre toujours sur aujourd’hui ; remonte pour voir les résultats des 14 derniers jours.',
     '⬆️ Le bouton « Voir 14 jours plus tôt » charge des résultats plus anciens, sans perdre ta place.',

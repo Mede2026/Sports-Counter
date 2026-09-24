@@ -1168,11 +1168,19 @@ async function bindAutostart() {
   });
 }
 
+// « Tout décocher » : tout ce qui est coché dans la ligue affichée — équipes,
+// ligue suivie en entier, et en F1 et à l'UFC, les pilotes et combattants.
 document.getElementById('btnClear').addEventListener('click', () => {
+  prefs.favInfo ??= {};
   prefs.favorites.filter((f) => f.startsWith(`${current}:`)).forEach(forgetFavorite);
   prefs.favorites = prefs.favorites.filter((f) => !f.startsWith(`${current}:`));
   prefs.leagues = prefs.leagues.filter((l) => l !== current);
+  const kind = LEAGUES_BY_ID[current]?.kind;
+  if (kind === 'event') prefs.favDrivers = [];
+  if (kind === 'card') prefs.favFighters = [];
   savePrefs(prefs);
+  if (kind === 'event') renderFavDriver();
+  if (kind === 'card') renderFavFighters();
   renderLeagues();
   renderTeams();
   renderThemeOptions();
