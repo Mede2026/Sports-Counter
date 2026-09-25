@@ -2,6 +2,7 @@
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
   '0.9.9': [
+    '🖼️ Nouvelle icône du tray, nette à toutes les échelles d’écran (100 % à 300 %).',
     '⚡ Plus léger : la fenêtre Match ne relit plus rien quand elle est réduite, les logos se décodent en arrière-plan, et le widget oublie les vieux matchs.',
     '🩹 Fenêtre Match : les blessés de chaque équipe ; au hockey, la carte des tirs sur la patinoire.',
     '📋 Réglages : la fiche de tes joueurs favoris (stats de la saison et 5 derniers matchs).',

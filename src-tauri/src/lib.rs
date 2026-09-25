@@ -1997,6 +1997,43 @@ fn spawn_settings(app: &AppHandle) {
     });
 }
 
+/// Icônes du tray, une par taille : Windows les affiche à 16 px à 100 %
+/// d'échelle, 20 px à 125 %, 24 px à 150 %, 32 px à 200 %… Pixels bruts
+/// (RGBA) produits par tools/make-tray.py à partir des PNG du même dossier.
+const TRAY_ICONS: [(u32, &[u8]); 6] = [
+    (16, include_bytes!("../icons/tray/tray-16.rgba")),
+    (20, include_bytes!("../icons/tray/tray-20.rgba")),
+    (24, include_bytes!("../icons/tray/tray-24.rgba")),
+    (32, include_bytes!("../icons/tray/tray-32.rgba")),
+    (40, include_bytes!("../icons/tray/tray-40.rgba")),
+    (48, include_bytes!("../icons/tray/tray-48.rgba")),
+];
+
+/// L'icône du tray dessinée pour l'échelle de l'écran principal : la plus
+/// petite qui couvre 16 px × l'échelle, sans être agrandie floue par Windows.
+fn tray_icon(app: &AppHandle) -> tauri::image::Image<'static> {
+    let scale = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| m.scale_factor())
+        .unwrap_or(1.0);
+    let want = (16.0 * scale).round() as u32;
+    let (size, rgba) = TRAY_ICONS
+        .iter()
+        .find(|(size, _)| *size >= want)
+        .copied()
+        .unwrap_or(TRAY_ICONS[TRAY_ICONS.len() - 1]);
+    tauri::image::Image::new(rgba, size, size)
+}
+
+/// Échelle de l'écran changée (autre écran, réglage de Windows) : l'icône suit.
+fn refresh_tray_icon(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("tray") {
+        let _ = tray.set_icon(Some(tray_icon(app)));
+    }
+}
+
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "Afficher / masquer", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Réglages…", true, None::<&str>)?;
@@ -2004,12 +2041,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quitter", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&toggle, &settings, &sep, &quit])?;
 
-    let icon = app.default_window_icon().cloned().ok_or_else(|| {
-        tauri::Error::InvalidIcon(std::io::Error::other("icône par défaut absente"))
-    })?;
-
     TrayIconBuilder::with_id("tray")
-        .icon(icon)
+        .icon(tray_icon(app))
         .tooltip("Sports Counter")
         .menu(&menu)
         // Le menu ne sort qu'au clic droit : le clic gauche ouvre les réglages.
@@ -2210,6 +2243,9 @@ pub fn run() {
                 }
                 // Après un déplacement à la souris ou un changement de hauteur,
                 // on recadre le widget une fois qu'il s'est immobilisé.
+                tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                    refresh_tray_icon(window.app_handle());
+                }
                 tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                     if let Some(win) = window.app_handle().get_webview_window(WIDGET) {
                         settle_later(win);
