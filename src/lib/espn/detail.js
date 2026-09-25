@@ -6,7 +6,7 @@ import { diskCache } from '../cache.js';
 import { autoFr } from '../translate.js';
 import { athletePhoto, corePath, getCore, getJson, getWeb, isScoring, playOf, safe, scoreText, scorerName, sportOfLeague, statOf } from './core.js';
 import { fetchAthlete, leaderSeasons } from './people.js';
-import { baseballSituation, fetchDay, hockeyStatus, liveClock, normalizeCompetitor, pickLink, seriesInfo } from './scoreboard.js';
+import { baseballSituation, broadcastsOf, fetchDay, hockeyStatus, liveClock, normalizeCompetitor, pickLink, seriesInfo } from './scoreboard.js';
 
 // Statistiques d'équipe, dans l'ordre d'affichage, avec leur nom en français.
 // Les noms absents de cette liste sont ignorés : la fenêtre reste lisible.
@@ -128,6 +128,9 @@ export async function fetchMatchDetail(leagueId, eventId) {
     injuries: safe(() => injuriesOf(data), []),
     shots: sportOfLeague(leagueId) === 'hockey' ? safe(() => shotMap(data), []) : [],
     videos: safe(() => highlights(data), []),
+    broadcasts: safe(() => broadcastsOf(comp?.broadcasts, data?.broadcasts), []),
+    h2h: safe(() => headToHead(data, home.id), null),
+    news: safe(() => newsOf(data?.news?.articles), []),
     box: safe(() => boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
     probables: safe(() => probablePitchers(competitors, leagueId), {}),
     situation: safe(() => baseballSituation(data?.situation ?? data?.header?.competitions?.[0]?.situation, leagueId), null),
@@ -596,6 +599,78 @@ export function highlights(data) {
     }))
     .filter((v) => v.title && /^https:\/\/(www\.)?espn\.(com|ca|co\.uk)\//.test(v.href))
     .slice(0, 4);
+}
+
+/** « MTL leads series 2-1 » -> « MTL mène la série 2-1 ». */
+export function seriesTextFr(raw) {
+  const t = String(raw ?? '').trim();
+  let m = /^(\S+) leads? (?:the |season )?series (\d+)-(\d+)(?:-(\d+))?/i.exec(t);
+  if (m) return `${m[1]} mène la série ${m[2]}-${m[3]}${m[4] ? `-${m[4]}` : ''}`;
+  m = /^(\S+) (?:wins?|won) (?:the |season )?series (\d+)-(\d+)(?:-(\d+))?/i.exec(t);
+  if (m) return `${m[1]} remporte la série ${m[2]}-${m[3]}${m[4] ? `-${m[4]}` : ''}`;
+  m = /^(?:season )?series (?:is )?tied (\d+)-(\d+)(?:-(\d+))?/i.exec(t);
+  if (m) return `Série égale ${m[1]}-${m[2]}${m[3] ? `-${m[3]}` : ''}`;
+  return autoFr(t);
+}
+
+/**
+ * Face-à-face de la saison, d'après le résumé d'ESPN : { text, games:
+ * [{ id, date, state, home, away, winnerId }] }, du plus ancien au plus
+ * récent. La série de saison régulière passe avant celle des séries.
+ */
+export function headToHead(data, homeId) {
+  const all = Array.isArray(data?.seasonseries) ? data.seasonseries : [];
+  const s = all.find((x) => !/playoff|post/i.test(`${x?.type ?? ''} ${x?.title ?? ''}`)) ?? all[0];
+  if (!s) return null;
+  const side = (c) => ({
+    id: String(c?.team?.id ?? c?.id ?? ''),
+    abbr: c?.team?.abbreviation ?? '',
+    logo: c?.team?.logo ?? c?.team?.logos?.[0]?.href ?? '',
+    score: String(c?.score?.displayValue ?? c?.score ?? ''),
+  });
+  const games = (s.events ?? []).map((e) => {
+    const cs = e?.competitors ?? [];
+    const h = cs.find((c) => c?.homeAway === 'home') ?? cs[0];
+    const a = cs.find((c) => c?.homeAway === 'away') ?? cs[1];
+    const state = e?.statusType?.state ?? (typeof e?.status === 'string' ? e.status : e?.status?.type?.state) ?? '';
+    return {
+      id: String(e?.id ?? ''),
+      date: e?.date ? new Date(e.date) : null,
+      state: ['pre', 'in', 'post'].includes(state) ? state : 'post',
+      home: side(h),
+      away: side(a),
+      winnerId: cs.find((c) => c?.winner === true)?.team?.id != null ? String(cs.find((c) => c?.winner === true).team.id) : null,
+    };
+  }).filter((g) => g.home.abbr && g.away.abbr)
+    .sort((x, y) => (x.date?.getTime() ?? 0) - (y.date?.getTime() ?? 0));
+  const text = seriesTextFr(s.summary || s.description || '');
+  if (!text && !games.length) return null;
+  return { text, games, homeId: String(homeId ?? '') };
+}
+
+/** Articles d'ESPN : [{ id, title, text, date, image, link }], 6 au plus. */
+export function newsOf(articles) {
+  return (Array.isArray(articles) ? articles : [])
+    .filter((a) => a?.headline && !/^media$/i.test(a?.type ?? ''))
+    .map((a) => ({
+      id: String(a?.id ?? a?.headline),
+      title: autoFr(a.headline),
+      text: autoFr(a?.description ?? ''),
+      date: a?.published ? new Date(a.published) : a?.lastModified ? new Date(a.lastModified) : null,
+      image: a?.images?.find?.((i) => i?.url)?.url ?? '',
+      link: a?.links?.web?.href ?? '',
+    }))
+    .filter((a) => /^https:\/\/(www\.)?espn\.(com|ca|co\.uk)\//.test(a.link))
+    .slice(0, 6);
+}
+
+/** Nouvelles d'une équipe (fil d'ESPN), les plus récentes d'abord. */
+export async function fetchTeamNews(leagueId, teamId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !teamId) return [];
+  const data = await getJson(`${league.path}/news`, `?team=${encodeURIComponent(teamId)}&limit=12`);
+  return newsOf(data?.articles)
+    .sort((a, b) => (b.date?.getTime() ?? 0) - (a.date?.getTime() ?? 0));
 }
 
 /** Matchs d'hier d'une ligue (résumé du matin). */

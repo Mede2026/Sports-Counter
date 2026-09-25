@@ -681,3 +681,57 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 
 /* Série de victoires (🔥) ou de défaites (❄️) à côté des derniers résultats. */
 .streak { font-size: 10px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+
+/* Où regarder le match. */
+.tv { margin-top: 6px; font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Bandeau défilant (haut ou bas de l'écran) ---------- */
+
+.widget--ticker {
+  width: 100vw !important;
+  height: 100vh !important;
+  border-radius: 0;
+  clip-path: none;
+  border-width: 0 0 1px;
+}
+.widget--ticker .bar, .widget--ticker .foot, .widget--ticker .grip { display: none !important; }
+.widget--ticker .games { padding: 0; height: 100%; }
+.tk { display: flex; align-items: center; height: 100%; }
+.tk__gear {
+  flex-shrink: 0;
+  width: 30px; height: 100%;
+  font-size: 14px;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+}
+.tk__gear:hover { color: var(--text); }
+.tk__view {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+.tk__track { display: flex; width: max-content; animation: tk-scroll var(--tk-dur, 30s) linear infinite; }
+.tk__view:hover .tk__track { animation-play-state: paused; }
+@keyframes tk-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.tk__run { display: flex; align-items: center; flex-shrink: 0; }
+.tk__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.tk__item:hover b { color: #4aa3ff; }
+.tk__chip { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
+.tk__team { display: inline-flex; align-items: center; gap: 4px; }
+.tk__team--out { opacity: 0.5; }
+.tk__team .crest { width: 18px; height: 18px; font-size: 6.5px; }
+.tk__team span.crest { border-radius: 4px; }
+.tk__score { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tk__at { font-style: normal; color: var(--text-faint); }
+.tk__top { color: var(--text-muted); }
+.tk__item small { font-size: 11px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 5px; }
+.tk__item small.tk__live { color: var(--live); }
+.tk__sep { padding: 0 14px; color: var(--text-faint); font-size: 10px; }
+@media (prefers-reduced-motion: reduce) {
+  .tk__track { animation-duration: calc(var(--tk-dur, 30s) * 2); }
+}

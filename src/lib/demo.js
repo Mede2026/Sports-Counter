@@ -73,7 +73,7 @@ export const DEMO_EVENTS = [
   },
   {
     id: 'demo-nba-1', leagueId: 'nba', kind: 'match', state: 'pre',
-    statusText: '19 h 30', clock: '', startsAt: Date.now() + (2 * 60 + 15) * 60000,
+    statusText: '19 h 30', clock: '', startsAt: Date.now() + (2 * 60 + 15) * 60000, broadcasts: ['TVA Sports', 'TSN'],
     home: { id: '13', abbr: 'LAL', name: 'Lakers', logo: LOGOS.LAL, color: '#552583', score: '–', winner: false },
     away: { id: '2', abbr: 'BOS', name: 'Celtics', logo: LOGOS.CEL, color: '#007a33', score: '–', winner: false },
   },

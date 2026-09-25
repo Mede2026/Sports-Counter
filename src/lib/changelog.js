@@ -1,6 +1,16 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.10.0': [
+    '📢 Klaxon de but : quand ton équipe ou un de tes joueurs marque, un son (klaxon au hockey et au football, sifflet au soccer, sirène au basket, orgue au baseball). Son et volume dans Réglages → Notifications, avec un bouton « Essayer ».',
+    '🌙 Heures silencieuses : aucune notification pendant les heures choisies (par exemple la nuit), puis un seul résumé de ce que tu as manqué.',
+    '📺 Où regarder : les chaînes (RDS, TVA Sports, Sportsnet, TSN…) dans le widget avant le match et dans la fenêtre Match.',
+    '🤝 Fenêtre Match : le face-à-face de la saison (« MTL mène la série 2-1 ») avec chaque rencontre.',
+    '📰 Fenêtre Match : les nouvelles d’ESPN sur le match, sinon sur ton équipe. Un clic ouvre l’article.',
+    '📜 Bandeau défilant : les scores défilent sur une mince bande en haut ou en bas de l’écran (Réglages → Widget).',
+    '🏀 WNBA : les équipes nationales des matchs préparatoires (Japon, Nigeria…) ne se mêlent plus à la liste des équipes.',
+    '✅ Avant chaque publication, GitHub vérifie que l’app lit toujours bien les vraies données d’ESPN et d’OpenF1.',
+  ],
   '0.9.9': [
     '🖼️ Nouvelle icône du tray, nette à toutes les échelles d’écran (100 % à 300 %).',
     '⚡ Plus léger : la fenêtre Match ne relit plus rien quand elle est réduite, les logos se décodent en arrière-plan, et le widget oublie les vieux matchs.',

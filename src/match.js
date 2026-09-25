@@ -3,7 +3,7 @@
 // buts, pénalités, classement ; onglets « Joueurs » (box score) et « Jeux »
 // (tous les jeux du match). F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
-import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras } from './lib/api.js';
+import { fetchMatchDetail, fetchTeamNews, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras } from './lib/api.js';
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -49,6 +49,7 @@ let f1Champ = null; // championnat de F1 chargé (ou Error)
 const tyreData = new Map(); // séance -> pneus d'OpenF1 (null : rien, 'wait' : en chargement)
 const extraData = new Map(); // séance -> le reste d'OpenF1 (arrêts, radio, météo…)
 const hockeyLines = new Map(); // idÉquipe -> trios (ou Error), chargés à la demande
+const teamNews = new Map(); // idÉquipe -> articles d'ESPN (null : en chargement)
 
 
 /* ---------- Morceaux communs ---------- */
@@ -92,7 +93,65 @@ function heroHtml(g) {
       ${side(g.away, done && g.home.winner)}
       <div class="hero__mid">${score}${statusHtml(g)}</div>
       ${side(g.home, done && g.away.winner)}
-    </div>${series}</section>`;
+    </div>${series}${channelsHtml(g)}</section>`;
+}
+
+/** Où regarder le match (avant et pendant). */
+function channelsHtml(g) {
+  if (g.state === 'post' || !g.broadcasts?.length) return '';
+  return `<div class="tv" title="Où regarder le match"><span aria-hidden="true">📺</span>${esc(g.broadcasts.join(' · '))}</div>`;
+}
+
+const H2H_DAY = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' });
+
+/** Face-à-face de la saison : bilan, puis chaque rencontre. */
+function h2hHtml(g) {
+  const h = g.h2h;
+  if (!h || (!h.games?.length && !h.text)) return '';
+  const rows = (h.games ?? []).map((m) => {
+    const cell = (t) => `<b class="${m.winnerId === t.id ? 'h2h__win' : ''}">${esc(t.abbr)} ${m.state === 'pre' ? '' : esc(t.score)}</b>`;
+    const now = m.id === String(g.id) ? ' h2h__row--now' : '';
+    return `<li class="h2h__row${now}">
+      <small>${m.date ? esc(H2H_DAY.format(m.date)) : ''}</small>
+      ${cell(m.away)}<span class="h2h__at">@</span>${cell(m.home)}
+      <em>${m.state === 'pre' ? 'à venir' : m.id === String(g.id) ? 'ce match' : ''}</em>
+    </li>`;
+  }).join('');
+  return `${h.text ? `<div class="h2h__text">${esc(fr(h.text))}</div>` : ''}${rows ? `<ul class="h2h">${rows}</ul>` : ''}`;
+}
+
+/** Articles d'ESPN sur le match, sinon sur ton équipe. */
+function newsList(g) {
+  if (g.news?.length) return g.news;
+  return teamNews.get(String(newsTeam(g)?.id)) ?? [];
+}
+
+/** Ton équipe dans ce match, sinon l'équipe locale. */
+const newsTeam = (g) => [g.home, g.away].find((t) => t && (prefs.favorites ?? []).includes(`${g.leagueId}:${t.id}`)) ?? g.home;
+
+function newsHtml(g) {
+  const list = newsList(g).slice(0, 4);
+  if (!list.length) return '';
+  return `<ul class="news">${list.map((a) => `
+    <li><button class="news__item" type="button" data-href="${esc(a.link)}">
+      ${a.image ? `<img src="${esc(a.image)}" alt="" loading="lazy" data-face />` : ''}
+      <span><b>${esc(fr(a.title))}</b>${a.text ? `<small>${esc(fr(a.text))}</small>` : ''}
+      ${isDate(a.date) ? `<em>${esc(dayText(a.date))}</em>` : ''}</span>
+    </button></li>`).join('')}</ul>`;
+}
+
+/** Pas d'article sur le match : ceux de l'équipe, chargés une fois. */
+async function loadTeamNews(g) {
+  if (g.news?.length || IS_DEMO) return;
+  const id = String(newsTeam(g)?.id ?? '');
+  if (!id || teamNews.has(id)) return;
+  teamNews.set(id, null);
+  try {
+    teamNews.set(id, await fetchTeamNews(g.leagueId, id));
+  } catch {
+    teamNews.set(id, []);
+  }
+  if (teamNews.get(id).length && shown?.g === g) repaint();
 }
 
 function periodsHtml(g) {
@@ -180,6 +239,8 @@ function textsOf(g) {
   if (tab === 'plays') return visiblePlays(g).map((p) => p.text).filter(Boolean);
   return [...(g?.goals ?? []), ...(g?.penalties ?? [])].map((p) => p.text)
     .concat((g?.videos ?? []).map((v) => v.title))
+    .concat(newsList(g ?? {}).flatMap((a) => [a.title, a.text]))
+    .concat(g?.h2h?.text ? [g.h2h.text] : [])
     .filter(Boolean);
 }
 
@@ -583,7 +644,9 @@ function matchHtml(g, table) {
     + section('Statistiques', statsHtml(g))
     + (g.leagueId === 'nhl' ? section('Pénalités', playsHtml(g, g.penalties, false)) : '')
     + section('Blessés', injuriesHtml(g))
+    + section('Face-à-face cette saison', h2hHtml(g))
     + section('Classement', standingsHtml(g, table))
+    + section('Nouvelles', newsHtml(g))
     + (g.venue ? `<div class="venue">${esc(g.venue)}</div>` : '');
 }
 
@@ -1056,6 +1119,7 @@ async function load() {
   link = g?.link ?? '';
   el.espn.hidden = !link;
   if (g?.kind !== 'event' && g?.home && !IS_DEMO) loadForms(g);
+  if (g?.kind === 'match' && g?.home && tab === 'summary') loadTeamNews(g);
   timer = setTimeout(load, g?.state === 'in' || !g ? REFRESH_LIVE_MS : REFRESH_IDLE_MS);
 }
 
@@ -1096,7 +1160,7 @@ function paint(html) {
   bindFaces(el.main);
   document.getElementById('btnRetry')?.addEventListener('click', load);
   // Vidéo des faits saillants : ouverte sur ESPN, dans le navigateur.
-  el.main.querySelectorAll('.video[data-href]').forEach((b) => b.addEventListener('click', async () => {
+  el.main.querySelectorAll('.video[data-href], .news__item[data-href]').forEach((b) => b.addEventListener('click', async () => {
     const url = b.dataset.href;
     if (!inTauri()) { window.open(url, '_blank', 'noopener'); return; }
     try { await window.__TAURI__.core.invoke('open_espn', { url }); } catch { /* refusé */ }
@@ -1140,6 +1204,20 @@ function demoDetail() {
       { label: 'Tirs bloqués', away: '9', home: '14' },
     ],
     venue: 'Centre Bell, Montréal',
+    broadcasts: ['RDS', 'Sportsnet'],
+    h2h: {
+      text: 'MTL mène la série 2-1',
+      games: [
+        { id: 'a', date: new Date(Date.now() - 40 * 864e5), state: 'post', home: { id: '10', abbr: 'MTL', score: '4' }, away: { id: '21', abbr: 'TOR', score: '2' }, winnerId: '10' },
+        { id: 'b', date: new Date(Date.now() - 20 * 864e5), state: 'post', home: { id: '21', abbr: 'TOR', score: '5' }, away: { id: '10', abbr: 'MTL', score: '3' }, winnerId: '21' },
+        { id: 'c', date: new Date(Date.now() - 6 * 864e5), state: 'post', home: { id: '10', abbr: 'MTL', score: '3' }, away: { id: '21', abbr: 'TOR', score: '2' }, winnerId: '10' },
+        { id: 'd', date: new Date(Date.now() + 30 * 864e5), state: 'pre', home: { id: '21', abbr: 'TOR', score: '' }, away: { id: '10', abbr: 'MTL', score: '' }, winnerId: null },
+      ],
+    },
+    news: [
+      { id: '1', title: 'Le Canadien rappelle un attaquant de Laval', text: 'Le club-école envoie du renfort avant le match contre Toronto.', date: new Date(Date.now() - 3600e3), image: '', link: 'https://www.espn.com/nhl/story/_/id/1' },
+      { id: '2', title: 'Caufield vise une 3e saison de 40 buts', text: '', date: new Date(Date.now() - 2 * 864e5), image: '', link: 'https://www.espn.com/nhl/story/_/id/2' },
+    ],
     winProb: { home: 64, away: 36, live: true },
     winTimeline: [50, 52, 48, 41, 38, 45, 55, 61, 58, 49, 44, 52, 60, 66, 63, 58, 62, 64],
     shots: [[70, 5, 'goal', '10'], [80, -8, 'shot', '10'], [-75, 12, 'shot', '10'], [60, 20, 'miss', '10'], [85, 2, 'goal', '10'], [-82, -4, 'shot', '21'],

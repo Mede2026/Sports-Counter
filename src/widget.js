@@ -12,6 +12,8 @@ import { diskCache, pruneStorage } from './lib/cache.js';
 import { TRANSLATED_EVENT } from './lib/translate.js';
 import { fetchRaceControl, driverNumbers, isSanction } from './lib/openf1.js';
 import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors } from './lib/wallpaper.js';
+import { soundFor } from './lib/sound.js';
+import { inQuietHours, holdToast, heldToasts, clearHeld, quietSummary } from './lib/quiet.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
@@ -354,6 +356,12 @@ function tennisCard(game, league, head) {
   </div>`;
 }
 
+/** Où regarder : les chaînes, moins de 24 h avant le match. */
+function tvLine(game) {
+  if (game.state !== 'pre' || !game.broadcasts?.length || !soon(game.startsAt)) return '';
+  return `<div class="tv" title="Où regarder le match">📺 ${attr(game.broadcasts.join(' · '))}</div>`;
+}
+
 /** Séries éliminatoires : « 1re ronde · Match 5 · MTL mène la série 3-2 ». */
 function seriesLine(series) {
   if (!series) return '';
@@ -387,7 +395,7 @@ function gameCard(game) {
   return `<div ${cardAttrs(game, '', 'Cliquer pour les détails du match')}>${head}
     ${teamRow(game, game.away, done && game.home.winner)}
     ${teamRow(game, game.home, done && game.away.winner)}
-    ${shotsLine(game)}${shootoutLine(game)}${pitcherLine(game)}
+    ${shotsLine(game)}${shootoutLine(game)}${pitcherLine(game)}${tvLine(game)}
     ${seriesLine(game.series)}
   </div>`;
 }
@@ -487,8 +495,28 @@ async function sendToast(e) {
     theme: resolvedTheme(),
     team: { abbr: e.team?.abbr ?? '', logo: e.team?.logo ?? '', color, round: !!e.team?.round },
   };
+  // Heures silencieuses : retenue, puis résumée à la fin.
+  if (inQuietHours(prefs)) {
+    holdToast(toast);
+    return;
+  }
+  // Ton équipe (ou un de tes joueurs) marque : le klaxon.
+  const mine = e.goal && (prefs.favorites.includes(`${e.goal.leagueId}:${e.goal.teamId}`) || star || helper);
+  if (mine && prefs.goalSound !== false) {
+    toast.sound = { kind: soundFor(e.goal.leagueId, prefs.goalSoundKind), volume: prefs.goalSoundVolume ?? 60 };
+  }
   await window.__TAURI__.core.invoke('notify', { toast }).catch(() => {});
 }
+
+/** Fin des heures silencieuses : un seul résumé de ce qui a été retenu. */
+function releaseQuiet() {
+  if (!window.__TAURI__ || inQuietHours(prefs)) return;
+  const summary = quietSummary(heldToasts());
+  if (!summary) return;
+  clearHeld();
+  window.__TAURI__.core.invoke('notify', { toast: summary }).catch(() => {});
+}
+setInterval(releaseQuiet, 60_000);
 
 /* ---------- Thème ---------- */
 
@@ -1165,7 +1193,8 @@ function applyLook() {
   applyShape();
   el.widget.classList.toggle('widget--compact', prefs.compact);
   el.widget.style.opacity = String(prefs.opacity ?? 1);
-  el.widget.style.zoom = String(SIZES[prefs.widgetSize] ?? 1);
+  el.widget.style.zoom = tickerOn() ? '1' : String(SIZES[prefs.widgetSize] ?? 1);
+  el.widget.classList.toggle('widget--ticker', tickerOn());
   const theme = resolvedTheme();
   el.widget.dataset.theme = theme;
   setLightCrests(theme === 'light');
@@ -1231,6 +1260,8 @@ async function checkUpdate() {
   updateTimer = setTimeout(() => show('', 'Rechercher une mise à jour'), 4000);
 }
 
+let tickerEdge = ''; // bandeau demandé à Rust ('' : aucun)
+
 /** Transmet à Rust les options qu'il applique lui-même : plein écran, premier plan, raccourcis. */
 async function syncFullscreenOption() {
   const keys = { ...DEFAULT_SHORTCUTS, ...prefs.shortcuts };
@@ -1243,6 +1274,15 @@ async function syncFullscreenOption() {
     await invoke('set_widget_on_top', { onTop: prefs.widgetMode !== 'desktop' });
     // « Widget + fond d'écran » : le widget s'efface quand tu vas sur le bureau.
     await invoke('set_hide_on_desktop', { enabled: prefs.widgetMode === 'both' });
+    // Bandeau défilant : Rust l'étale sur toute la largeur de l'écran.
+    const edge = tickerOn() ? prefs.ticker : '';
+    if (edge !== tickerEdge) {
+      tickerEdge = edge;
+      await invoke('set_ticker', { edge });
+      // Retour au widget : il reprend la taille de son contenu.
+      lastHtml = '';
+      if (lastRender) render(...lastRender);
+    }
   } catch { /* version sans cette commande : sans conséquence */ }
   // Raccourcis choisis dans les réglages (refusés : Rust garde les précédents).
   invoke('set_shortcuts', { toggle: keys.toggle, matchKey: keys.match }).catch(() => {});
@@ -1251,7 +1291,7 @@ async function syncFullscreenOption() {
 /** Remplace le contenu seulement s'il a changé : pas de clignotement ni de travail inutile. */
 function paint(html, footHtml) {
   applyLook();
-  const key = `${html}|${footHtml}|${prefs.compact}|${prefs.widgetSize}|${prefs.opacity}|${prefs.theme}|${resolvedTheme()}`;
+  const key = `${html}|${footHtml}|${prefs.compact}|${prefs.widgetSize}|${prefs.opacity}|${prefs.theme}|${resolvedTheme()}|${prefs.ticker}`;
   if (key === lastHtml) return;
   lastHtml = key;
   el.games.innerHTML = html;
@@ -1259,7 +1299,8 @@ function paint(html, footHtml) {
   el.foot.innerHTML = footHtml;
   bindCrests(el.games);
   bindCards();
-  fitWindow();
+  if (tickerOn()) tickerSpeed();
+  else fitWindow();
 }
 
 function renderError(err) {
@@ -1290,11 +1331,68 @@ function footHtml(error, offline) {
  */
 const widgetUnused = () => ['never', 'wallpaper'].includes(prefs.widgetMode ?? 'always');
 
+/* ---------- Bandeau défilant ---------- */
+
+/** Bandeau défilant en haut ou en bas de l'écran, au lieu du widget. */
+const tickerOn = () => ['top', 'bottom'].includes(prefs.ticker) && !widgetUnused();
+
+/** Statut court d'un évènement dans le bandeau. */
+function tickerStatus(g) {
+  if (g.state === 'in') return [sessionText(g), g.clock, g.statusText].filter(Boolean).join(' · ') || 'En direct';
+  if (g.state === 'pre' && isDate(g.startsAt)) {
+    const when = isDateOnly(g.startsAt) ? dayText(g.startsAt) : soon(g.startsAt) ? TIME_FMT.format(g.startsAt) : shortWhen(g.startsAt);
+    return [g.session, when, soon(g.startsAt) && g.broadcasts?.length ? `📺 ${g.broadcasts[0]}` : ''].filter(Boolean).join(' · ');
+  }
+  return [g.session, g.statusText].filter(Boolean).join(' · ');
+}
+
+function tickerItem(g) {
+  const league = LEAGUES_BY_ID[g.leagueId];
+  const chip = `<span class="tk__chip" style="color:${league?.accent ?? 'inherit'}">${attr(league?.label ?? '')}</span>`;
+  let body = '';
+  if (g.kind === 'match') {
+    const team = (t, lost) => `<span class="tk__team${lost ? ' tk__team--out' : ''}">${crestHtml(t)}<b>${attr(t.abbr)}</b></span>`;
+    const done = g.state === 'post';
+    const mid = g.state === 'pre' ? '<i class="tk__at">@</i>' : `<span class="tk__score">${attr(g.away.score)} – ${attr(g.home.score)}</span>`;
+    body = `${team(g.away, done && g.home.winner)}${mid}${team(g.home, done && g.away.winner)}`;
+  } else if (g.kind === 'event') {
+    const top = (g.top3 ?? []).map((d, i) => `${MEDALS[i + 1] ?? `${i + 1}.`} ${attr(d.short || d.name)}`).join('  ');
+    body = `<b>${attr(g.title)}</b>${top ? `<span class="tk__top">${top}</span>` : ''}`;
+  } else if (g.kind === 'tennis') {
+    body = `<b>${attr(g.a?.short || g.a?.name || '')} – ${attr(g.b?.short || g.b?.name || '')}</b>`;
+  } else {
+    body = `<b>${attr(g.title ?? '')}</b>`;
+  }
+  const live = g.state === 'in' ? '<span class="dot"></span>' : '';
+  return `<span class="tk__item game game--link" data-league="${g.leagueId}" data-event="${attr(g.id)}" title="Cliquer pour les détails">
+    ${chip}${body}<small class="${g.state === 'in' ? 'tk__live' : ''}">${live}${attr(tickerStatus(g))}</small></span>`;
+}
+
+/** Deux copies à la suite : quand la première est sortie, on recommence sans saut. */
+function tickerHtml(games) {
+  const items = games.length
+    ? games.map(tickerItem).join('<span class="tk__sep">•</span>')
+    : '<span class="tk__item">Aucun match suivi pour le moment</span>';
+  return `<div class="tk">
+    <button class="tk__gear" type="button" id="btnTickerSettings" title="Réglages">⚙</button>
+    <div class="tk__view"><div class="tk__track"><span class="tk__run">${items}<span class="tk__sep">•</span></span><span class="tk__run" aria-hidden="true">${items}<span class="tk__sep">•</span></span></div></div>
+  </div>`;
+}
+
+/** Vitesse constante (environ 50 px/s), quelle que soit la longueur du texte. */
+function tickerSpeed() {
+  document.getElementById('btnTickerSettings')?.addEventListener('click', openSettings);
+  const run = el.games.querySelector('.tk__run');
+  const track = el.games.querySelector('.tk__track');
+  if (!run || !track) return;
+  track.style.setProperty('--tk-dur', `${Math.max(12, run.scrollWidth / 50)}s`);
+}
+
 function render(games, error, offline = false) {
   lastRender = [games, error, offline];
   if (widgetUnused()) return; // redessiné dès qu'on change de mode (réglages)
   applyLook(); // le thème décide des logos, avant de construire les cartes
-  const html = games.length ? games.map(gameCard).join('') : emptyHtml();
+  const html = tickerOn() ? tickerHtml(games) : games.length ? games.map(gameCard).join('') : emptyHtml();
   games.forEach((g) => shownIds.add(g.id));
 
   const live = games.filter((g) => g.state === 'in').length;
@@ -1304,7 +1402,7 @@ function render(games, error, offline = false) {
 
 /** Ajuste la taille de la fenêtre au contenu réel (zoom compris). */
 async function fitWindow() {
-  if (!inTauri()) return;
+  if (!inTauri() || tickerOn()) return;
   const box = el.widget.getBoundingClientRect();
   const height = Math.ceil(box.height);
   const width = Math.ceil(box.width);

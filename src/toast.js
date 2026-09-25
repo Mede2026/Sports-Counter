@@ -1,6 +1,7 @@
 // Fenêtre de notification : reçoit les évènements du widget (via Rust),
 // les affiche l'un après l'autre, puis se cache.
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
+import { playSound } from './lib/sound.js';
 
 const DURATION_MS = 6000;
 // Une proposition de mise à jour reste plus longtemps ; sans réponse, elle
@@ -74,6 +75,8 @@ async function next() {
   render(t);
   // Rust l'affiche et la remet devant toutes les fenêtres.
   if (inTauri()) await window.__TAURI__.core.invoke('show_toast').catch(() => {});
+  // Ton équipe marque : klaxon (ou sifflet…), au volume choisi.
+  if (t.sound) playSound(t.sound.kind, t.sound.volume);
   // Relancer les animations : retirer puis remettre la classe.
   el.card.classList.remove('toast--in', 'toast--out');
   void el.card.offsetWidth;

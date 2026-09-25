@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -32,10 +32,11 @@ const WIKI_API: &str = "https://en.wikipedia.org/w/api.php";
 /// fenêtre dont les options diffèrent des autres. Doit rester égale à
 /// `additionalBrowserArgs` dans tauri.conf.json.
 ///
-/// Les trois dernières empêchent Chromium de ralentir les minuteries d'une
+/// Les trois options « background » empêchent Chromium de ralentir les minuteries d'une
 /// fenêtre cachée : le widget relève les scores même quand il n'est pas
-/// affiché (mode « notifications seulement », plein écran…).
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows";
+/// affiché (mode « notifications seulement », plein écran…). La dernière
+/// laisse la notification jouer le klaxon de but sans clic préalable.
+const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --autoplay-policy=no-user-gesture-required";
 const WIDGET: &str = "widget";
 const SETTINGS: &str = "settings";
 const TOAST: &str = "toast";
@@ -792,6 +793,60 @@ fn settle_later(win: WebviewWindow) {
     });
 }
 
+/// Bandeau défilant : 0 = non, 1 = en haut de l'écran, 2 = en bas.
+static TICKER: AtomicU8 = AtomicU8::new(0);
+
+/// Place et taille du widget avant le bandeau, pour l'y remettre ensuite.
+static BEFORE_TICKER: Mutex<Option<(i32, i32, u32, u32)>> = Mutex::new(None);
+
+/// Hauteur du bandeau, en pixels logiques.
+const TICKER_HEIGHT: f64 = 30.0;
+
+/// Étale le widget sur toute la largeur de la zone de travail, collé en haut
+/// ou en bas (juste au-dessus de la barre des tâches).
+fn place_ticker(win: &WebviewWindow) {
+    let edge = TICKER.load(Ordering::SeqCst);
+    if edge == 0 {
+        return;
+    }
+    let Some((left, top, right, bottom, scale)) = work_area(win) else {
+        return;
+    };
+    let h = (TICKER_HEIGHT * scale).round() as u32;
+    let _ = win.set_size(PhysicalSize::new((right - left).max(1) as u32, h));
+    let y = if edge == 1 { top } else { bottom - h as i32 };
+    let _ = win.set_position(PhysicalPosition::new(left, y));
+}
+
+/// Bandeau défilant : `edge` vaut "top", "bottom" ou "" (retour au widget).
+#[tauri::command]
+fn set_ticker(app: AppHandle, edge: String) {
+    let Some(win) = app.get_webview_window(WIDGET) else {
+        return;
+    };
+    let new = match edge.as_str() {
+        "top" => 1,
+        "bottom" => 2,
+        _ => 0,
+    };
+    let old = TICKER.swap(new, Ordering::SeqCst);
+    if old == 0 && new != 0 {
+        if let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) {
+            *BEFORE_TICKER.lock().unwrap() = Some((pos.x, pos.y, size.width, size.height));
+        }
+    }
+    if new != 0 {
+        place_ticker(&win);
+    } else if old != 0 {
+        // Retour à sa place d'avant ; le widget redonne ensuite sa taille.
+        if let Some((x, y, w, h)) = BEFORE_TICKER.lock().unwrap().take() {
+            let _ = win.set_size(PhysicalSize::new(w, h));
+            let _ = win.set_position(PhysicalPosition::new(x, y));
+        }
+        place_anchored(&win);
+    }
+}
+
 /// Ajuste la taille du widget à son contenu (le mode compact est plus étroit).
 ///
 /// Un widget posé dans la moitié basse de l'écran grandit et rétrécit par le
@@ -799,6 +854,10 @@ fn settle_later(win: WebviewWindow) {
 /// des tâches ou au bord de l'écran reste en place.
 #[tauri::command]
 fn fit_widget(app: AppHandle, height: f64, width: Option<f64>) {
+    // Le bandeau garde toute la largeur de l'écran.
+    if TICKER.load(Ordering::SeqCst) != 0 {
+        return;
+    }
     let Some(win) = app.get_webview_window(WIDGET) else {
         return;
     };
@@ -2138,7 +2197,8 @@ pub fn run() {
             wallpaper_photo,
             save_wallpaper_photo,
             set_wallpaper_spots,
-            set_hide_on_desktop
+            set_hide_on_desktop,
+            set_ticker
         ])
         .manage(PendingUpdate(Mutex::new(None)))
         .setup(move |app| {
@@ -2245,7 +2305,14 @@ pub fn run() {
                 // on recadre le widget une fois qu'il s'est immobilisé.
                 tauri::WindowEvent::ScaleFactorChanged { .. } => {
                     refresh_tray_icon(window.app_handle());
+                    if let Some(win) = window.app_handle().get_webview_window(WIDGET) {
+                        place_ticker(&win);
+                    }
                 }
+                // Le bandeau ne se recadre pas et ne change pas l'ancrage du
+                // widget : il reste collé en haut ou en bas.
+                tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
+                    if TICKER.load(Ordering::SeqCst) != 0 => {}
                 tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {
                     if let Some(win) = window.app_handle().get_webview_window(WIDGET) {
                         settle_later(win);

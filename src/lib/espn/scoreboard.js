@@ -71,6 +71,18 @@ export async function teamsFromSchedule(league) {
 }
 
 /** Liste des équipes d'une ligue, pour l'écran de réglages. */
+/**
+ * Équipe invitée d'un match amical (équipe nationale) : nom de pays tout en
+ * majuscules (« JAPAN », « NIGERIA ») ou drapeau d'un pays pour logo. Les
+ * clubs au nom en majuscules (« LAFC ») ne sont pas touchés.
+ */
+export function isGuestTeam(t) {
+  const name = String(t?.name ?? '').trim();
+  // 5 lettres ou plus, et pas un club (« LAFC ») : un pays écrit en majuscules.
+  const shouting = name.length >= 5 && name === name.toUpperCase() && /^[A-Z .'-]+$/.test(name) && !/FC\b/.test(name);
+  return shouting || /\/countries\//.test(String(t?.logo ?? ''));
+}
+
 export async function fetchTeams(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || league.kind !== 'team') return [];
@@ -78,7 +90,10 @@ export async function fetchTeams(leagueId) {
   if (BUNDLED_TEAMS[leagueId]) return [...BUNDLED_TEAMS[leagueId]].sort(byName);
 
   const cached = readTeamsCache(leagueId);
-  if (cached) return fillLogos(leagueId, cached);
+  if (cached) {
+    const clean = league.tournament || league.id === 'intl' ? cached : cached.filter((t) => !isGuestTeam(t));
+    return fillLogos(leagueId, clean);
+  }
 
   // Trois sources, dans l'ordre, jusqu'à avoir toute la ligue : une liste
   // partielle est complétée par la suivante au lieu d'être gardée telle quelle.
@@ -107,7 +122,10 @@ export async function fetchTeams(leagueId) {
   // 3. Les équipes vues au calendrier.
   if (byId.size < target) {
     try {
-      merge(await teamsFromSchedule(league));
+      // Au calendrier, il y a aussi les matchs amicaux contre des équipes
+      // nationales (la WNBA contre le Japon) : elles ne sont pas de la ligue.
+      const seen = await teamsFromSchedule(league);
+      merge(league.tournament || league.id === 'intl' ? seen : seen.filter((t) => !isGuestTeam(t)));
     } catch (err) {
       if (!byId.size) {
         throw new Error(
@@ -451,6 +469,45 @@ export function seriesInfo(comp, homeC, awayC) {
   return { text, round, game, done, leaderId: leader ? String(leader.id) : null };
 }
 
+// Sigles des chaînes d'ESPN -> leur nom d'ici.
+const CHANNEL_FR = [
+  [/^TVAS\s*2$/i, 'TVA Sports 2'], [/^TVAS$|^TVA Sports$/i, 'TVA Sports'],
+  [/^SN\s*1$/i, 'Sportsnet One'], [/^SN\s*360$/i, 'Sportsnet 360'], [/^SN[EOPW]?$|^Sportsnet( (East|West|Ontario|Pacific))?$/i, 'Sportsnet'],
+  [/^Prime Video$|^Amazon Prime/i, 'Prime Video'], [/^Apple TV\+?$|^MLS Season Pass$/i, 'Apple TV'],
+];
+/** Chaînes en français d'abord, puis canadiennes, puis le reste. */
+const channelRank = (name) => (/^(RDS|TVA)/i.test(name) ? 0
+  : /^(Sportsnet|TSN|CBC|Citytv|Prime Video|Apple TV|DAZN|Crave|OneSoccer)/i.test(name) ? 1 : 2);
+
+/**
+ * Où regarder le match : 3 chaînes au plus, RDS et TVA Sports en tête. Lit
+ * `broadcasts` (listes de noms) comme `geoBroadcasts` (objets « media »).
+ */
+export function broadcastsOf(...lists) {
+  const names = [];
+  for (const list of lists) {
+    for (const b of Array.isArray(list) ? list : []) {
+      if (typeof b === 'string') names.push(b);
+      else if (Array.isArray(b?.names)) names.push(...b.names);
+      else if (b?.media?.shortName || b?.media?.name) {
+        // Radio : on ne garde que la télé et la diffusion en ligne.
+        if (/radio/i.test(b?.type?.shortName ?? '')) continue;
+        names.push(b.media.shortName ?? b.media.name);
+      }
+    }
+  }
+  const seen = new Set();
+  return names
+    .map((n) => String(n ?? '').trim())
+    .filter(Boolean)
+    .map((n) => CHANNEL_FR.find(([re]) => re.test(n))?.[1] ?? n)
+    .filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()))
+    .map((n, i) => [n, channelRank(n), i])
+    .sort((a, b) => a[1] - b[1] || a[2] - b[2])
+    .slice(0, 3)
+    .map(([n]) => n);
+}
+
 /** Page ESPN du match (feuille de match, statistiques), si l'API la fournit. */
 export function pickLink(event) {
   const links = event?.links ?? [];
@@ -737,6 +794,7 @@ export function normalizeEvent(event, leagueId, logo = '') {
     away: normalizeCompetitor(away, base.state),
     scorers: lastScorers(comp),
     series: seriesInfo(comp, home, away),
+    broadcasts: safe(() => broadcastsOf(comp?.broadcasts, comp?.geoBroadcasts), []),
     situation: base.state === 'in' ? safe(() => baseballSituation(comp?.situation, leagueId), null) : null,
   };
 }

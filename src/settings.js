@@ -14,6 +14,7 @@ import { esc } from './lib/format.js';
 import { ofTeam } from './lib/events.js';
 import { clearCaches, storageSize } from './lib/cache.js';
 import { wallpaperOptions, renderWallpaper, readModel, buildModel } from './lib/wallpaper.js';
+import { SOUNDS, soundFor, playSound } from './lib/sound.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -635,6 +636,10 @@ function bindOptions() {
     savePrefs(prefs);
   });
 
+  const ticker = document.getElementById('optTicker');
+  ticker.value = prefs.ticker ?? '';
+  ticker.addEventListener('change', () => { prefs.ticker = ticker.value; savePrefs(prefs); });
+
   const size = document.getElementById('optSize');
   const paintSize = () => size.querySelectorAll('button').forEach((b) => {
     b.classList.toggle('seg--on', b.dataset.size === (prefs.widgetSize ?? 'm'));
@@ -651,6 +656,7 @@ function bindOptions() {
   const reminder = document.getElementById('optReminder');
   reminder.value = String(prefs.reminderMinutes ?? 15);
   reminder.addEventListener('change', () => { prefs.reminderMinutes = Number(reminder.value); savePrefs(prefs); });
+  initSoundAndQuiet();
 
   renderFavDriver();
   document.getElementById('btnPickDriver').addEventListener('click', () => showLeague('f1'));
@@ -770,6 +776,35 @@ function bindShortcuts() {
 }
 
 /** Interrupteur lié à une préférence vraie par défaut. */
+/** Klaxon de but (son, volume, essai) et heures silencieuses. */
+function initSoundAndQuiet() {
+  bindSwitch('optGoalSound', 'goalSound');
+  const kind = document.getElementById('optSoundKind');
+  kind.innerHTML = [['auto', 'Selon le sport'], ...Object.entries(SOUNDS)]
+    .map(([v, label]) => `<option value="${v}">${esc(label)}</option>`).join('');
+  kind.value = prefs.goalSoundKind ?? 'auto';
+  kind.addEventListener('change', () => { prefs.goalSoundKind = kind.value; savePrefs(prefs); trySound(); });
+  const vol = document.getElementById('optSoundVolume');
+  vol.value = String(prefs.goalSoundVolume ?? 60);
+  vol.addEventListener('change', () => { prefs.goalSoundVolume = Number(vol.value); savePrefs(prefs); trySound(); });
+  // « Essayer » : le son de ta première équipe (ou celui choisi).
+  function trySound() {
+    const league = (prefs.favorites[0] ?? 'nhl').split(':')[0];
+    playSound(soundFor(league, kind.value), Number(vol.value));
+  }
+  document.getElementById('btnTrySound').addEventListener('click', trySound);
+
+  bindSwitch('optQuiet', 'quietHours');
+  const quiet = document.getElementById('optQuiet');
+  for (const [id, key] of [['optQuietFrom', 'quietFrom'], ['optQuietTo', 'quietTo']]) {
+    const input = document.getElementById(id);
+    input.value = prefs[key];
+    input.disabled = !quiet.checked;
+    input.addEventListener('change', () => { if (input.value) { prefs[key] = input.value; savePrefs(prefs); } });
+    quiet.addEventListener('change', () => { input.disabled = !quiet.checked; });
+  }
+}
+
 function bindSwitch(id, key) {
   const box = document.getElementById(id);
   box.checked = prefs[key] !== false;

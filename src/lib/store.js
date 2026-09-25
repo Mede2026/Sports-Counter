@@ -57,6 +57,18 @@ const DEFAULTS = {
   notifyClose: true,
   // Fiche V-D dans le widget : non (elle est dans la fenêtre Match).
   widgetRecords: false,
+  // Klaxon de but quand ton équipe marque : son 'auto' (selon le sport),
+  // 'horn', 'whistle', 'buzzer', 'organ' ou 'chime' ; volume de 0 à 100.
+  goalSound: true,
+  goalSoundKind: 'auto',
+  goalSoundVolume: 60,
+  // Heures silencieuses : aucune notification entre ces heures (un résumé
+  // arrive à la fin).
+  quietHours: false,
+  quietFrom: '23:00',
+  quietTo: '07:00',
+  // Bandeau défilant : '' (non), 'top' (haut de l'écran) ou 'bottom' (bas).
+  ticker: '',
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).
   shortcuts: { ...DEFAULT_SHORTCUTS },
 };

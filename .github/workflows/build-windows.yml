@@ -29,6 +29,25 @@ permissions:
   contents: write
 
 jobs:
+  # L'app lit-elle toujours bien les vraies réponses d'ESPN, d'OpenF1… ?
+  # Même code que l'app (lib/api.js), lancé avec Node. Un problème grave
+  # (scores d'une grande ligue illisibles) bloque la publication.
+  donnees:
+    name: Données réelles (ESPN, OpenF1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Vérifier l'app avec les vraies données
+        run: node tests/donnees-reelles.mjs
+
   windows:
     name: Installateur Windows
     if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.publier }}
@@ -105,6 +124,8 @@ jobs:
   # installée consulte pour se mettre à jour toute seule.
   release:
     name: Publier une version signée
+    # Pas de publication si l'app ne lit plus les vraies données.
+    needs: donnees
     if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publier }}
     runs-on: windows-latest
 

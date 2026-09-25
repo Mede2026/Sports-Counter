@@ -140,6 +140,14 @@
           </select>
         </div>
         <div class="pref">
+          <span class="pref__txt"><b>Bandeau défilant</b><small>Les scores défilent sur une mince bande, sur toute la largeur de l'écran.</small></span>
+          <select id="optTicker">
+            <option value="">Non (carte)</option>
+            <option value="top">En haut de l'écran</option>
+            <option value="bottom">En bas de l'écran</option>
+          </select>
+        </div>
+        <div class="pref">
           <span class="pref__txt"><b>Thème</b><small>Pour le widget et les notifications.</small></span>
           <select id="optWidgetTheme">
             <option value="dark">Sombre</option>
@@ -307,6 +315,29 @@
             <option value="30">30 min avant</option>
             <option value="60">1 h avant</option>
           </select>
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="optGoalSound"><b>Klaxon de but</b><small>Un son quand ton équipe ou un de tes joueurs marque : klaxon au hockey, sifflet au soccer…</small></label>
+          <button class="ghost ghost--small" id="btnTrySound" type="button">Essayer</button>
+          <input type="checkbox" class="switch" id="optGoalSound" />
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Son</b></span>
+          <select id="optSoundKind"></select>
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>Volume</b></span>
+          <input type="range" id="optSoundVolume" min="0" max="100" step="5" />
+        </div>
+        <div class="pref">
+          <label class="pref__txt" for="optQuiet"><b>Heures silencieuses</b><small>Aucune notification pendant ces heures. Un résumé arrive à la fin.</small></label>
+          <input type="checkbox" class="switch" id="optQuiet" />
+        </div>
+        <div class="pref">
+          <span class="pref__txt"><b>De</b></span>
+          <input type="time" id="optQuietFrom" />
+          <span class="pref__txt pref__txt--mid"><b>à</b></span>
+          <input type="time" id="optQuietTo" />
         </div>
       </section>
 
