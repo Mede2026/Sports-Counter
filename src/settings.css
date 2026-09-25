@@ -674,3 +674,18 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
   border: 1px solid var(--border);
   background: #0a0e17;
 }
+
+/* Fiche de tes joueurs favoris : saison et derniers matchs. */
+.pcards { display: flex; flex-direction: column; gap: 10px; padding: 0 0 6px; }
+.pcard { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.pcard__head { display: flex; align-items: center; gap: 8px; }
+.pcard__head .face { width: 30px; height: 30px; }
+.pcard__head small { color: var(--text-faint); }
+.pcard__season { display: flex; flex-wrap: wrap; gap: 6px; }
+.pcard__season span { display: flex; flex-direction: column; align-items: center; min-width: 44px; padding: 4px 6px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); }
+.pcard__season b { font-size: 15px; }
+.pcard__season small { font-size: 10px; color: var(--text-faint); }
+.pcard__games td { padding: 3px 6px; font-size: 12px; }
+.pcard__games .win { color: #3ecf8e; font-weight: 700; }
+.pcard__games .loss { color: #ff6b6b; font-weight: 700; }
+.pcard__line { color: var(--text-muted); }

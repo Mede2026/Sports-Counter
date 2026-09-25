@@ -10,6 +10,7 @@ import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
 import { diskCache, pruneStorage } from './lib/cache.js';
 import { TRANSLATED_EVENT } from './lib/translate.js';
+import { fetchRaceControl, driverNumbers, isSanction } from './lib/openf1.js';
 import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors } from './lib/wallpaper.js';
 
 const REFRESH_LIVE_MS = 25_000;   // un match est en cours
@@ -684,6 +685,45 @@ async function checkPenalties(games) {
     const fresh = list.filter((x) => !seen.has(x.id));
     for (const pen of fresh) sendToast(penaltyToast(g, pen, list));
   }
+}
+
+/* ---------- F1 : direction de course (OpenF1) ---------- */
+
+const controlSeen = new Set(); // messages déjà vus (« tour|texte »)
+let controlReadAt = 0;
+let controlPrimed = false; // premier relevé : on retient sans notifier
+
+/** Pénalité ou enquête qui touche un de tes pilotes : une notification. */
+async function checkRaceControl(games) {
+  if (prefs.notifications === false || !inTauri() || !(prefs.favDrivers ?? []).length) return;
+  const g = games.find((x) => x.leagueId === 'f1' && x.state === 'in' && x.session);
+  if (!g || Date.now() - controlReadAt < 60 * 1000) return;
+  controlReadAt = Date.now();
+  const session = { label: g.session, startsAt: g.startsAt };
+  let messages;
+  let numbers;
+  try {
+    [messages, numbers] = await Promise.all([fetchRaceControl(session), driverNumbers(session)]);
+  } catch {
+    return;
+  }
+  const last = (d) => String(d.name ?? '').trim().split(/\s+/).pop().normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const mine = new Map((prefs.favDrivers ?? []).map((d) => [numbers.get(last(d)), d]).filter(([n]) => n));
+  for (const m of [...messages].reverse()) {
+    const key = `${m.lap}|${m.raw}`;
+    if (controlSeen.has(key)) continue;
+    controlSeen.add(key);
+    const fav = mine.get(m.number) ?? [...mine].find(([n]) => new RegExp(`\\bCAR ${n}\\b`).test(m.raw))?.[1];
+    if (!controlPrimed || !fav || !isSanction(m.raw)) continue;
+    sendToast({
+      title: `🏁 Direction de course : ${fav.short || fav.name}`,
+      body: m.text,
+      team: fav.photo ? { abbr: 'F1', logo: fav.photo, color: '#ff4d6d', round: true } : { abbr: 'F1', logo: g.logo || '', color: '#ff4d6d' },
+      link: g.link,
+      big: /penalt|disqualif/i.test(m.raw),
+    });
+  }
+  controlPrimed = true;
 }
 
 /* ---------- Fin de match serrée ---------- */
@@ -1470,6 +1510,7 @@ async function doRefresh(force) {
   checkPenalties(followed);
   checkShootouts(followed);
   checkCloseGames(followed);
+  checkRaceControl(followed);
 
   const visible = followed.slice(0, prefs.maxGames);
   render(visible, error, offline);

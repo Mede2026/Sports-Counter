@@ -3,7 +3,7 @@
 // buts, pénalités, classement ; onglets « Joueurs » (box score) et « Jeux »
 // (tous les jeux du match). F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
-import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES } from './lib/api.js';
+import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras } from './lib/api.js';
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -47,6 +47,7 @@ let shown = null; // { g, build } : le match affiché et de quoi le redessiner
 let f1Tab = null; // séance de F1 affichée (indice), 'champ' (championnat) ou null (en cours)
 let f1Champ = null; // championnat de F1 chargé (ou Error)
 const tyreData = new Map(); // séance -> pneus d'OpenF1 (null : rien, 'wait' : en chargement)
+const extraData = new Map(); // séance -> le reste d'OpenF1 (arrêts, radio, météo…)
 const hockeyLines = new Map(); // idÉquipe -> trios (ou Error), chargés à la demande
 
 
@@ -371,6 +372,54 @@ function recordTip(g) {
   return 'Victoires – défaites, cette saison';
 }
 
+/** Blessés des deux équipes : nom, position, statut, blessure, retour prévu. */
+function injuriesHtml(g) {
+  const list = g.injuries ?? [];
+  if (!list.length) return '';
+  const DAY = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' });
+  return [g.away, g.home].map((t) => {
+    const team = list.find((x) => x.teamId === String(t.id));
+    if (!team) return '';
+    const rows = team.players.map((p) => personLine(p, [p.pos, p.status, p.what, p.back ? `retour vers le ${DAY.format(p.back)}` : ''].filter(Boolean).join(' · '))).join('');
+    return `<div class="inj__team">${crestHtml(t, 'crest-xs')}<b>${esc(t.name)}</b></div><ul class="lu__list">${rows}</ul>`;
+  }).join('');
+}
+
+/**
+ * Hockey : chaque tir sur une patinoire vue de haut. Chaque équipe attaque
+ * toujours du même côté (visiteurs à gauche, locaux à droite), même si les
+ * équipes changent de côté à chaque période.
+ */
+function shotMapHtml(g) {
+  const shots = g.shots ?? [];
+  if (shots.length < 3) return '';
+  const [colorA, colorH] = distinctColors(g.away, g.home);
+  const home = String(g.home.id);
+  const mark = (s) => {
+    const isHome = s.teamId === home;
+    // Locaux : vers la droite (x > 0). Visiteurs : vers la gauche.
+    const x = 100 + (isHome ? Math.abs(s.x) : -Math.abs(s.x));
+    const y = 42.5 - s.y * (isHome === s.x > 0 ? 1 : -1);
+    const c = isHome ? colorH : colorA;
+    const tip = esc([s.who, s.kind === 'goal' ? 'But' : s.kind === 'shot' ? 'Tir au but' : s.kind === 'miss' ? 'Tir raté' : 'Tir bloqué', s.period ? `${s.period}e pér.` : ''].filter(Boolean).join(' · '));
+    if (s.kind === 'goal') return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${c}" stroke="#fff" stroke-width="0.8"><title>${tip}</title></circle>`;
+    if (s.kind === 'shot') return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.9" fill="none" stroke="${c}" stroke-width="0.9"><title>${tip}</title></circle>`;
+    return `<path d="M${(x - 1.4).toFixed(1)} ${(y - 1.4).toFixed(1)}l2.8 2.8m0 -2.8l-2.8 2.8" stroke="${c}" stroke-width="0.7" opacity="0.6"><title>${tip}</title></path>`;
+  };
+  const count = (id, kinds) => shots.filter((s) => s.teamId === String(id) && kinds.includes(s.kind)).length;
+  const rink = `<rect x="0.5" y="0.5" width="199" height="84" rx="28" class="rink__ice" />
+    <line x1="100" y1="0" x2="100" y2="85" class="rink__red" /><line x1="75" y1="0" x2="75" y2="85" class="rink__blue" /><line x1="125" y1="0" x2="125" y2="85" class="rink__blue" />
+    <line x1="11" y1="4" x2="11" y2="81" class="rink__red" /><line x1="189" y1="4" x2="189" y2="81" class="rink__red" />
+    <circle cx="100" cy="42.5" r="15" class="rink__line" />
+    <path d="M11 38.5 a4 4 0 0 1 0 8" class="rink__crease" /><path d="M189 38.5 a4 4 0 0 0 0 8" class="rink__crease" />`;
+  return `<svg class="rink" viewBox="0 0 200 85" aria-label="Carte des tirs">${rink}${shots.map(mark).join('')}</svg>
+    <div class="rink__legend">
+      <span><i style="background:${colorA}"></i>${esc(g.away.abbr)} ← ${count(g.away.id, ['goal'])} B · ${count(g.away.id, ['goal', 'shot'])} TB</span>
+      <span>${count(g.home.id, ['goal'])} B · ${count(g.home.id, ['goal', 'shot'])} TB → ${esc(g.home.abbr)}<i style="background:${colorH}"></i></span>
+    </div>
+    <div class="rink__key">● but · ○ tir au but · × raté ou bloqué — B : buts, TB : tirs au but</div>`;
+}
+
 /** Tirs de barrage : chaque tireur, dans l'ordre, ✅ ou ❌, et le compte. */
 function shootoutHtml(g) {
   const list = g.shootout ?? [];
@@ -530,8 +579,10 @@ function matchHtml(g, table) {
     + section(periodsTitle(g), periodsHtml(g))
     + section(goalsTitle, playsHtml(g, g.goals, true))
     + section('Tirs de barrage', shootoutHtml(g))
+    + section('Carte des tirs', shotMapHtml(g))
     + section('Statistiques', statsHtml(g))
     + (g.leagueId === 'nhl' ? section('Pénalités', playsHtml(g, g.penalties, false)) : '')
+    + section('Blessés', injuriesHtml(g))
     + section('Classement', standingsHtml(g, table))
     + (g.venue ? `<div class="venue">${esc(g.venue)}</div>` : '');
 }
@@ -622,8 +673,19 @@ function f1Html(g) {
   const empty = pick && pick.state === 'pre'
     ? `<div class="state">${esc(pick.label)} n'a pas encore eu lieu${isDate(pick.startsAt) ? ` : ${esc(whenText(pick.startsAt))}` : ''}.</div>`
     : '<div class="state">ESPN ne donne pas encore le classement de cette séance.</div>';
+  // Le reste d'OpenF1 : chargé à part, comme les pneus.
+  const extra = pick && pick.state !== 'pre' ? extraData.get(pick.label) : null;
+  if (pick && pick.state !== 'pre' && !extraData.has(pick.label)) loadExtras(pick);
+  const x = extra && extra !== 'wait' ? extra : null;
   return hero + favCard + tabs
+    + section('Télémétrie', x?.telemetry ? telemetryHtml(x.telemetry) : '')
+    + section('Carte du circuit', x?.track ? trackHtml(x.track) : '')
     + section(`Classement${pick ? ` · ${esc(pick.label)}${pick.qual && pick.state === 'in' && phase ? ` · Q${phase}` : ''}` : ''}`, board || empty)
+    + section('Météo', x?.weather ? weatherHtml(x.weather) : '')
+    + section('Direction de course', x?.control ? controlHtml(x.control) : '')
+    + section('Meilleurs tours', x?.best ? bestLapsHtml(x.best) : '')
+    + section('Arrêts aux stands', x?.pits ? pitsHtml(x.pits) : '')
+    + section('Radio des équipes', x?.radio ? radioHtml(x.radio) : '')
     + section('Programme du week-end', program ? `<ul class="sessions">${program}</ul>` : '');
 }
 
@@ -641,6 +703,104 @@ function f1ChampHtml() {
     <li><span class="pos">${MEDALS[t.rank] ?? t.rank}</span><span class="drv"><b>${esc(t.name)}</b></span><span class="gap">${esc(t.points)} pts</span></li>`).join('');
   return section('Championnat des pilotes', drivers ? `<ol class="grid">${drivers}</ol>` : '')
     + section('Championnat des constructeurs', teams ? `<ol class="grid">${teams}</ol>` : '');
+}
+
+/** Le reste d'une séance (OpenF1) : arrêts, radio, météo, tours, carte, télémétrie. */
+async function loadExtras(session) {
+  extraData.set(session.label, 'wait');
+  await Promise.resolve();
+  const favs = (prefs.favDrivers ?? []).map((d) => String(d.name ?? '').trim().split(/\s+/).pop().normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase());
+  let data = null;
+  try {
+    data = IS_DEMO ? demoExtras() : await fetchF1Extras(session, favs);
+  } catch { data = null; }
+  extraData.set(session.label, data);
+  // Séance en cours : on relit tout dans 30 s (carte et télémétrie bougent).
+  if (session.state === 'in') setTimeout(() => { extraData.delete(session.label); repaint(); }, 30 * 1000);
+  repaint();
+}
+
+const oneDecimal = (v) => (Number.isFinite(Number(v)) ? String(Math.round(Number(v) * 10) / 10).replace('.', ',') : '');
+const CLOCK = new Intl.DateTimeFormat('fr-CA', { hour: 'numeric', minute: '2-digit' });
+
+function weatherHtml(w) {
+  const parts = [
+    Number.isFinite(w.air) && `🌡️ Air ${oneDecimal(w.air)} °C`,
+    Number.isFinite(w.track) && `🛣️ Piste ${oneDecimal(w.track)} °C`,
+    Number.isFinite(w.humidity) && `💧 Humidité ${Math.round(w.humidity)} %`,
+    Number.isFinite(w.wind) && `💨 Vent ${oneDecimal(w.wind * 3.6)} km/h`,
+    w.rain ? '🌧️ Pluie' : '☀️ Sec',
+  ].filter(Boolean);
+  return `<div class="f1x__chips">${parts.map((p) => `<span>${esc(p)}</span>`).join('')}</div>`;
+}
+
+function controlHtml(list) {
+  return `<ul class="f1x__list">${list.slice(0, 12).map((m) => `<li${/penalt|investigation|pénalité|enquête/i.test(m.raw + m.text) ? ' class="warn"' : ''}>
+    <small>${m.lap ? `Tour ${m.lap}` : m.date ? CLOCK.format(m.date) : ''}</small><span>${esc(m.text)}</span></li>`).join('')}</ul>`;
+}
+
+function bestLapsHtml(best) {
+  const [first] = best.ranking;
+  const rows = best.ranking.map((d, i) => `<li><span class="pos">${i + 1}</span><i class="f1x__team" style="background:${esc(d.color)}"></i>
+    <span class="drv"><b>${esc(d.name)}</b><small>Tour ${d.lap ?? '?'}${d.speed ? ` · ${d.speed} km/h au radar` : ''}</small></span>
+    <span class="gap">${esc(d.time)}${i ? `<small>+${(d.seconds - first.seconds).toFixed(3)}</small>` : ''}</span></li>`).join('');
+  return `<div class="f1x__note">${best.laps ? `${best.laps} tours · ` : ''}Meilleur tour : <b>${esc(first.name)}</b> en ${esc(first.time)}</div><ol class="grid">${rows}</ol>`;
+}
+
+function pitsHtml(list) {
+  const fastest = list.filter((p) => Number.isFinite(p.stop)).sort((a, b) => a.stop - b.stop)[0];
+  const rows = list.slice(-20).reverse().map((p) => `<li><small>Tour ${p.lap ?? '?'}</small><i class="f1x__team" style="background:${esc(p.color)}"></i>
+    <span><b>${esc(p.acronym || p.name)}</b></span><span class="f1x__val">${Number.isFinite(p.stop) ? `${oneDecimal(p.stop)} s à l'arrêt` : ''}${Number.isFinite(p.lane) ? ` · ${oneDecimal(p.lane)} s dans les stands` : ''}</span></li>`).join('');
+  return `${fastest ? `<div class="f1x__note">Arrêt le plus rapide : <b>${esc(fastest.name)}</b> en ${oneDecimal(fastest.stop)} s</div>` : ''}<ul class="f1x__list">${rows}</ul>`;
+}
+
+function radioHtml(list) {
+  return `<ul class="f1x__list f1x__radio">${list.map((r) => `<li><i class="f1x__team" style="background:${esc(r.color)}"></i>
+    <span><b>${esc(r.acronym || r.name)}</b><small>${r.date ? CLOCK.format(r.date) : ''}</small></span>
+    <audio controls preload="none" src="${esc(r.url)}"></audio></li>`).join('')}</ul>`;
+}
+
+/** Tracé du circuit (le meilleur tour) et, en direct, la position de chaque voiture. */
+function trackHtml(track) {
+  const pts = track.outline;
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  const W = 300;
+  const k = W / Math.max(1, maxX - minX, (maxY - minY) * 1.2);
+  const H = Math.round((maxY - minY) * k) + 20;
+  const px = (x) => ((x - minX) * k + 10).toFixed(1);
+  const py = (y) => ((maxY - y) * k + 10).toFixed(1); // l'axe y d'OpenF1 monte
+  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${px(p[0])} ${py(p[1])}`).join(' ') + 'Z';
+  const cars = track.cars.map((c) => `<g><circle cx="${px(c.x)}" cy="${py(c.y)}" r="${c.fav ? 5 : 3.6}" fill="${esc(c.color)}" stroke="#fff" stroke-width="${c.fav ? 1.5 : 0.6}" />
+    ${c.fav ? `<text x="${px(c.x)}" y="${(Number(py(c.y)) - 8).toFixed(1)}" class="f1x__car">${esc(c.acronym)}</text>` : ''}<title>${esc(c.name)}</title></g>`).join('');
+  return `<svg class="f1x__track" viewBox="0 0 ${W + 20} ${H}"><path d="${path}" class="f1x__line" />${cars}</svg>
+    ${track.cars.length ? '' : '<div class="f1x__note">Position des voitures : en direct seulement (OpenF1 la réserve à ses abonnés).</div>'}`;
+}
+
+/** Télémétrie de tes pilotes : vitesse, rapport, accélérateur, frein, DRS (ou vitesse de pointe). */
+function telemetryHtml(list) {
+  return list.map((t) => {
+    if (!t.live) return `<div class="f1x__tel"><i class="f1x__team" style="background:${esc(t.color)}"></i><b>${esc(t.name)}</b><span>Vitesse de pointe : <b>${t.top} km/h</b></span></div>`;
+    const bar = (label, v, color) => `<div class="f1x__bar"><small>${label}</small><span><i style="width:${Math.max(0, Math.min(100, v))}%;background:${color}"></i></span></div>`;
+    return `<div class="f1x__tel"><i class="f1x__team" style="background:${esc(t.color)}"></i><b>${esc(t.name)}</b>
+      <span class="f1x__speed"><b>${t.speed}</b> km/h · rapport <b>${t.gear}</b>${t.drs ? ' · <b class="f1x__drs">DRS</b>' : ''}</span></div>
+      ${bar('Accélérateur', t.throttle, '#3ecf8e')}${bar('Frein', t.brake ? 100 : 0, '#ff6b6b')}`;
+  }).join('');
+}
+
+function demoExtras() {
+  const d = (name, acronym, color) => ({ name, acronym, color, number: 0 });
+  const circle = Array.from({ length: 80 }, (_, i) => [Math.cos((i / 80) * 6.283) * (900 + 300 * Math.sin((i / 80) * 12.56)), Math.sin((i / 80) * 6.283) * 600]);
+  return {
+    weather: { air: 24.3, track: 38.1, humidity: 55, rain: false, wind: 1.8 },
+    control: [{ lap: 34, text: 'Voiture 1 (VER) : pénalité de temps de 5 s pour avoir causé une collision', raw: 'PENALTY' }, { lap: 30, text: 'DRS autorisé', raw: '' }],
+    best: { laps: 34, ranking: [{ ...d('Andrea Kimi Antonelli', 'ANT', '#27f4d2'), time: '1:14.321', seconds: 74.321, lap: 28, speed: 318 }, { ...d('George Russell', 'RUS', '#27f4d2'), time: '1:14.502', seconds: 74.502, lap: 30 }] },
+    pits: [{ ...d('Lando Norris', 'NOR', '#ff8000'), lap: 15, stop: 2.4, lane: 21.9 }, { ...d('Andrea Kimi Antonelli', 'ANT', '#27f4d2'), lap: 22, stop: 2.1, lane: 21.3 }],
+    radio: [{ ...d('Andrea Kimi Antonelli', 'ANT', '#27f4d2'), date: new Date(), url: 'https://livetiming.formula1.com/static/demo.mp3' }],
+    track: { outline: circle, cars: [{ ...d('Andrea Kimi Antonelli', 'ANT', '#27f4d2'), x: circle[10][0], y: circle[10][1], fav: true }, { ...d('George Russell', 'RUS', '#27f4d2'), x: circle[14][0], y: circle[14][1] }] },
+    telemetry: [{ ...d('Andrea Kimi Antonelli', 'ANT', '#27f4d2'), live: true, speed: 312, gear: 8, throttle: 100, brake: 0, drs: true }],
+  };
 }
 
 /** Pneus d'une séance (OpenF1), puis on redessine. */
@@ -962,6 +1122,10 @@ function demoDetail() {
     venue: 'Centre Bell, Montréal',
     winProb: { home: 64, away: 36, live: true },
     winTimeline: [50, 52, 48, 41, 38, 45, 55, 61, 58, 49, 44, 52, 60, 66, 63, 58, 62, 64],
+    shots: [[70, 5, 'goal', '10'], [80, -8, 'shot', '10'], [-75, 12, 'shot', '10'], [60, 20, 'miss', '10'], [85, 2, 'goal', '10'], [-82, -4, 'shot', '21'],
+      [-70, 10, 'goal', '21'], [65, -15, 'shot', '21'], [-60, 25, 'block', '21'], [-88, 1, 'goal', '21'], [75, -3, 'shot', '10']]
+      .map(([x, y, kind, teamId]) => ({ x, y, kind, teamId, who: '', period: 2 })),
+    injuries: [{ teamId: '10', players: [{ name: 'Kirby Dach', pos: 'C', status: 'Absent', what: 'Genou', back: null, photo: '' }] }],
     stars: [
       { rank: 1, name: 'Cole Caufield', photo: '', teamId: '10', line: '2 buts' },
       { rank: 2, name: 'Nick Suzuki', photo: '', teamId: '10', line: '1 but, 2 passes' },

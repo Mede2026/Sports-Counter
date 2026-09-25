@@ -43,7 +43,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: https://a.espncdn.com https://*.espncdn.com https://www.thesportsdb.com https://r2.thesportsdb.com https://upload.wikimedia.org; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://site.api.espn.com https://sports.core.api.espn.com https://www.thesportsdb.com https://en.wikipedia.org https://api.openf1.org"
+      "csp": "default-src 'self'; img-src 'self' data: https://a.espncdn.com https://*.espncdn.com https://www.thesportsdb.com https://r2.thesportsdb.com https://upload.wikimedia.org; style-src 'self' 'unsafe-inline'; media-src https://livetiming.formula1.com; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://site.api.espn.com https://sports.core.api.espn.com https://www.thesportsdb.com https://en.wikipedia.org https://api.openf1.org https://site.web.api.espn.com"
     }
   },
   "bundle": {

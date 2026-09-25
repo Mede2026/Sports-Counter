@@ -594,3 +594,42 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 .tyre--wet { color: #0067ad; }
 .grid .tyre { margin-left: auto; }
 .grid .tyre + .gap { margin-left: 8px; min-width: 64px; }
+
+/* Blessés. */
+.inj__team { display: flex; align-items: center; gap: 8px; margin: 8px 0 4px; font-size: 13px; }
+.inj__team:first-child { margin-top: 0; }
+
+/* Carte des tirs : patinoire vue de haut. */
+.rink { display: block; width: 100%; height: auto; }
+.rink__ice { fill: rgba(255, 255, 255, 0.04); stroke: rgba(255, 255, 255, 0.25); stroke-width: 0.8; }
+.rink__red { stroke: rgba(255, 80, 80, 0.45); stroke-width: 0.8; }
+.rink__blue { stroke: rgba(90, 150, 255, 0.45); stroke-width: 1.2; }
+.rink__line { fill: none; stroke: rgba(90, 150, 255, 0.3); stroke-width: 0.6; }
+.rink__crease { fill: rgba(90, 150, 255, 0.2); stroke: rgba(255, 80, 80, 0.45); stroke-width: 0.5; }
+.rink__legend { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--text-faint); }
+.rink__legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 4px; }
+.rink__legend span { white-space: nowrap; }
+.rink__key { margin-top: 3px; font-size: 10.5px; color: var(--text-faint); text-align: center; }
+
+/* F1 : données d'OpenF1. */
+.f1x__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.f1x__chips span { padding: 4px 8px; border-radius: 8px; background: rgba(255, 255, 255, 0.05); font-size: 12px; }
+.f1x__list { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.f1x__list li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.f1x__list li small { color: var(--text-faint); min-width: 48px; font-size: 11px; }
+.f1x__list li.warn span { color: #ffa94d; }
+.f1x__val { margin-left: auto; color: var(--text-muted); font-size: 12px; }
+.f1x__team { display: inline-block; width: 4px; height: 16px; border-radius: 2px; flex-shrink: 0; }
+.f1x__note { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.f1x__radio li span { display: flex; flex-direction: column; min-width: 60px; }
+.f1x__radio audio { height: 28px; flex: 1; min-width: 0; }
+.f1x__track { display: block; width: 100%; height: auto; }
+.f1x__line { fill: none; stroke: rgba(255, 255, 255, 0.35); stroke-width: 5; stroke-linejoin: round; }
+.f1x__car { fill: #fff; font-size: 10px; font-weight: 800; text-anchor: middle; }
+.f1x__tel { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-top: 4px; }
+.f1x__speed { margin-left: auto; }
+.f1x__drs { color: #3ecf8e; }
+.f1x__bar { display: flex; align-items: center; gap: 8px; margin: 4px 0 0 12px; font-size: 11px; color: var(--text-faint); }
+.f1x__bar small { width: 80px; }
+.f1x__bar span { flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.f1x__bar i { display: block; height: 100%; }

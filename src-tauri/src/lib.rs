@@ -110,7 +110,7 @@ fn path_is_safe(path: &str) -> bool {
         && !path.contains("..")
         && path
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-?=&".contains(c))
+            .all(|c| c.is_ascii_alphanumeric() || "/._-?=&:<>".contains(c))
 }
 
 /// Relaie une requête vers l'API ESPN depuis Rust.
@@ -165,6 +165,9 @@ async fn relay_fetch(path: &str) -> Result<String, String> {
         format!("{ESPN_BASE_V2}/{rest}")
     } else if let Some(rest) = path.strip_prefix("core/") {
         format!("{ESPN_CORE}/{rest}")
+    } else if let Some(rest) = path.strip_prefix("web/") {
+        // Fiche d'un joueur (saison, derniers matchs).
+        format!("https://site.web.api.espn.com/apis/common/v3/sports/{rest}")
     } else if let Some(rest) = path.strip_prefix("openf1/") {
         // Pneus de F1 : ESPN ne les donne pas.
         format!("https://api.openf1.org/v1/{rest}")

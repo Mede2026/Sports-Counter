@@ -34,13 +34,13 @@ html, body {
   /* Couleur du texte résolue ici : le thème clair redéfinit --text sur le widget. */
   color: var(--text);
   background: var(--surface);
-  backdrop-filter: blur(28px) saturate(150%);
-  -webkit-backdrop-filter: blur(28px) saturate(150%);
+  /* Pas de flou d'arrière-plan : dans une fenêtre transparente, WebView2 ne
+     voit pas le bureau, et le flou peut se dessiner en rectangle aux coins.
+     Tout ce qui est dans le widget suit ses coins arrondis. */
+  clip-path: inset(0 round var(--radius));
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
   overflow: hidden;
   transition: opacity 160ms ease, --team 4s ease, --team2 4s ease;
@@ -67,9 +67,7 @@ html, body {
     var(--surface);
   box-shadow:
     inset 0 3px 0 var(--team),
-    inset 0 -3px 0 var(--team2),
-    0 18px 48px rgba(0, 0, 0, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+    inset 0 -3px 0 var(--team2);
 }
 .widget--team {
   /* Plus présente : forte en haut, et une teinte qui reste jusqu'en bas. */
@@ -81,9 +79,7 @@ html, body {
       color-mix(in srgb, var(--team) 14%, transparent)),
     var(--surface);
   box-shadow:
-    inset 0 3px 0 var(--team),
-    0 18px 48px rgba(0, 0, 0, 0.5),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+    inset 0 3px 0 var(--team);
 }
 /* Séparateurs, étiquettes de ligue et barre de défilement aux couleurs de l'équipe. */
 .widget--team .game,
@@ -590,16 +586,12 @@ span.crest {
   --text-muted: rgba(20, 22, 28, 0.62);
   --text-faint: rgba(20, 22, 28, 0.45);
   --live: #e0243a;
-  box-shadow:
-    0 16px 40px rgba(0, 0, 0, 0.22),
-    0 2px 8px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  /* Pas d'ombre extérieure : la fenêtre a la taille exacte du widget, une
+     ombre qui en déborde serait coupée en carré aux coins arrondis. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 .widget--team[data-theme="light"] {
-  box-shadow:
-    inset 0 3px 0 var(--team),
-    0 16px 40px rgba(0, 0, 0, 0.22),
-    0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: inset 0 3px 0 var(--team);
 }
 .widget[data-theme="light"] .game,
 .widget[data-theme="light"] .row { border-bottom-color: rgba(10, 14, 25, 0.07); }

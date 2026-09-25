@@ -1,6 +1,6 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchGolfers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchBracket, hasBracket, probeLeague, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchGolfers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchPlayerOverview, fetchBracket, hasBracket, probeLeague, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT, isDateOnly } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -10,6 +10,7 @@ import { visibleTeamColor, applyTeamAccent } from './lib/color.js';
 import { NHL_TEAMS } from './lib/teams-nhl.js';
 import { autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 import { faceHtml, bindFaces } from './lib/face.js';
+import { esc } from './lib/format.js';
 import { ofTeam } from './lib/events.js';
 import { clearCaches, storageSize } from './lib/cache.js';
 import { wallpaperOptions, renderWallpaper, readModel, buildModel } from './lib/wallpaper.js';
@@ -919,6 +920,55 @@ const PLAYER_LEAGUES = () => LEAGUES.filter((l) => l.kind === 'team' && l.id !==
 
 const isFavPlayer = (p) => (prefs.favPlayers ?? []).some((f) => (f.id && f.id === p.id) || sameDriver(f, p));
 
+/* ---------- Fiche de tes joueurs : saison et derniers matchs ---------- */
+
+const overviews = new Map(); // « ligue:joueur » -> fiche | null (en chargement) | Error
+const GAME_DAY = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' });
+
+function renderPlayerCards() {
+  const box = document.getElementById('favPlayerCards');
+  const list = (prefs.favPlayers ?? []).filter((p) => p.id);
+  if (!list.length) { box.innerHTML = ''; return; }
+  box.innerHTML = list.map((p) => {
+    const leagueId = p.leagueId ?? 'nhl';
+    const key = `${leagueId}:${p.id}`;
+    const o = overviews.get(key);
+    if (!overviews.has(key)) loadOverview(leagueId, p.id);
+    const head = `<div class="pcard__head">${faceHtml(p, 'face')}<b>${esc(p.name)}</b><small>${LEAGUES_BY_ID[leagueId]?.short ?? ''}</small></div>`;
+    if (!o) return `<div class="pcard">${head}<small class="st__muted">Chargement…</small></div>`;
+    if (o instanceof Error) return `<div class="pcard">${head}<small class="st__muted">Fiche indisponible.</small></div>`;
+    const season = o.season.length
+      ? `<div class="pcard__season">${o.season.map((x) => `<span><b>${esc(x.value)}</b><small>${esc(x.label)}</small></span>`).join('')}</div>` : '';
+    const games = o.games.length ? `<table class="st__table pcard__games"><tbody>${o.games.map((gm) => `<tr>
+        <td class="st__muted">${gm.date ? GAME_DAY.format(gm.date) : ''}</td><td>${esc(gm.opp)}</td>
+        <td class="${/^V/.test(gm.result) ? 'win' : /^D/.test(gm.result) ? 'loss' : ''}">${esc(gm.result)}</td>
+        <td class="pcard__line">${gm.stats.map((x) => `${esc(x.value)} ${esc(x.label)}`).join(' · ')}</td></tr>`).join('')}</tbody></table>` : '';
+    return `<div class="pcard">${head}${season ? `<small class="st__muted">${esc(/regular/i.test(o.seasonName) ? 'Saison régulière' : /post/i.test(o.seasonName) ? 'Séries' : autoFr(o.seasonName) || 'Saison')}</small>${season}` : ''}${games ? `<small class="st__muted">Derniers matchs</small>${games}` : ''}${!season && !games ? '<small class="st__muted">Pas encore de stats cette saison.</small>' : ''}</div>`;
+  }).join('');
+  bindFaces(box);
+}
+
+async function loadOverview(leagueId, id) {
+  const key = `${leagueId}:${id}`;
+  overviews.set(key, null);
+  await Promise.resolve();
+  try {
+    overviews.set(key, IS_DEMO ? demoOverview() : await fetchPlayerOverview(leagueId, id) ?? new Error('vide'));
+  } catch (err) {
+    overviews.set(key, err instanceof Error ? err : new Error(String(err)));
+  }
+  renderPlayerCards();
+}
+
+function demoOverview() {
+  return {
+    seasonName: 'Regular Season',
+    season: [['PJ', '12'], ['B', '7'], ['A', '6'], ['PTS', '13'], ['+/-', '+4'], ['TB', '41']].map(([label, value]) => ({ label, value })),
+    games: [['TOR', 'V 4-2', '1 B · 1 A'], ['@ BOS', 'D 2-3', '0 B · 1 A'], ['OTT', 'V 5-1', '2 B · 0 A']]
+      .map(([opp, result, line], i) => ({ date: new Date(Date.now() - (i + 1) * 2 * 864e5), opp, result, stats: [{ label: '', value: line }] })),
+  };
+}
+
 function renderPlayerChips() {
   const box = document.getElementById('favPlayersChips');
   const list = prefs.favPlayers ?? [];
@@ -927,6 +977,7 @@ function renderPlayerChips() {
         <button type="button" data-i="${i}" title="Retirer">×</button></span>`).join('')
     : '<small>Aucun</small>';
   bindFaces(box);
+  renderPlayerCards();
   box.querySelectorAll('button[data-i]').forEach((b) => b.addEventListener('click', (e) => {
     e.preventDefault();
     prefs.favPlayers.splice(Number(b.dataset.i), 1);

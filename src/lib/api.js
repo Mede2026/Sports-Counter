@@ -1197,67 +1197,9 @@ function normalizeEvent(event, leagueId, logo = '') {
   };
 }
 
-/* ---------- F1 : les pneus (OpenF1) ---------- */
+/* ---------- F1 : données d'OpenF1 (pneus, arrêts, direction de course…) ---------- */
 
-// ESPN ne donne pas les pneus : OpenF1, base gratuite de données de F1, les
-// donne relais par relais (gratuitement après la séance ; en direct, seulement
-// pour ses abonnés).
-const OPENF1 = 'https://api.openf1.org/v1';
-const OPENF1_NAMES = {
-  'Practice 1': 'Essais 1', 'Practice 2': 'Essais 2', 'Practice 3': 'Essais 3',
-  Qualifying: 'Qualifications', 'Sprint Qualifying': 'Qualifs sprint', 'Sprint Shootout': 'Qualifs sprint',
-  Sprint: 'Sprint', Race: 'Course',
-};
-// Composés d'OpenF1 -> lettre affichée.
-export const TYRES = { SOFT: 'T', MEDIUM: 'M', HARD: 'D', INTERMEDIATE: 'I', WET: 'P' };
-export const TYRE_NAMES = { SOFT: 'Tendres', MEDIUM: 'Médiums', HARD: 'Durs', INTERMEDIATE: 'Intermédiaires', WET: 'Pluie' };
-const tyreMemo = new Map(); // libellé de séance -> { at, promise }
-
-async function getOpenF1(query) {
-  try {
-    return await viaPage(`${OPENF1}/${query}`);
-  } catch (err) {
-    if (!inTauri()) throw err;
-    return viaRust(`openf1/${query}`);
-  }
-}
-
-/**
- * Relais de pneus de chaque pilote pour une séance du week-end en cours :
- * { nomTassé: [{ compound, from, to }] }, ou null si OpenF1 ne l'a pas.
- * Gardé 60 s.
- */
-export function fetchTyres(session) {
-  const key = `${session?.label}|${session?.startsAt}`;
-  const hit = tyreMemo.get(key);
-  if (hit && Date.now() - hit.at < 60 * 1000) return hit.promise;
-  const promise = (async () => {
-    const sessions = await getOpenF1('sessions?meeting_key=latest');
-    const start = new Date(session.startsAt).getTime();
-    const info = (Array.isArray(sessions) ? sessions : []).find((x) => OPENF1_NAMES[x?.session_name] === session.label
-      && Math.abs(new Date(x.date_start).getTime() - start) < 6 * 3600e3);
-    if (!info) return null;
-    const [stints, drivers] = await Promise.all([
-      getOpenF1(`stints?session_key=${info.session_key}`),
-      getOpenF1(`drivers?session_key=${info.session_key}`),
-    ]);
-    if (!Array.isArray(stints) || !stints.length) return null;
-    const byNumber = new Map((Array.isArray(drivers) ? drivers : []).map((d) => [d.driver_number, d]));
-    const out = {};
-    for (const st of [...stints].sort((a, b) => (a.stint_number ?? 0) - (b.stint_number ?? 0))) {
-      const d = byNumber.get(st.driver_number);
-      const name = squash(d?.last_name ?? String(d?.full_name ?? '').split(' ').pop());
-      if (!name || !TYRES[st.compound]) continue;
-      (out[name] ??= []).push({ compound: st.compound, from: st.lap_start ?? null, to: st.lap_end ?? null });
-    }
-    return Object.keys(out).length ? out : null;
-  })().catch(() => null);
-  tyreMemo.set(key, { at: Date.now(), promise });
-  return promise;
-}
-
-/** Relais de pneus d'un pilote d'ESPN (par son nom de famille), ou []. */
-export const tyresOf = (tyres, driver) => tyres?.[squash(String(driver?.name ?? '').trim().split(/\s+/).pop())] ?? [];
+export { fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras, fetchRaceControl, driverNumbers } from './openf1.js';
 
 /* ---------- Baseball : le lanceur et le frappeur en ce moment ---------- */
 
@@ -1506,6 +1448,8 @@ export async function fetchMatchDetail(leagueId, eventId) {
     leaders: safe(() => gameLeaders(data, home.id, away.id, leagueId), []),
     winProb: safe(() => winProbability(data, state), null),
     winTimeline: safe(() => winTimeline(data), []),
+    injuries: safe(() => injuriesOf(data), []),
+    shots: sportOfLeague(leagueId) === 'hockey' ? safe(() => shotMap(data), []) : [],
     videos: safe(() => highlights(data), []),
     box: safe(() => boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
     probables: safe(() => probablePitchers(competitors, leagueId), {}),
@@ -1890,6 +1834,117 @@ function winTimeline(data) {
   if (all.length <= 120) return all;
   const step = (all.length - 1) / 119;
   return Array.from({ length: 120 }, (_, i) => all[Math.round(i * step)]);
+}
+
+/* ---------- Blessés ---------- */
+
+// Statut d'ESPN -> québécois.
+const INJURY_FR = [
+  [/injured reserve|\bir\b/i, 'Liste des blessés'], [/out/i, 'Absent'], [/day[- ]to[- ]day/i, 'Au jour le jour'],
+  [/questionable/i, 'Incertain'], [/doubtful/i, 'Douteux'], [/probable/i, 'Probable'], [/suspen/i, 'Suspendu'],
+];
+
+/** Blessés de chaque équipe : [{ teamId, players: [{ name, pos, status, what, back }] }]. */
+function injuriesOf(data) {
+  return (data?.injuries ?? []).map((t) => ({
+    teamId: String(t?.team?.id ?? ''),
+    players: (t?.injuries ?? []).map((x) => {
+      const status = String(x?.status ?? x?.type?.description ?? '');
+      const d = x?.details ?? {};
+      return {
+        name: x?.athlete?.displayName ?? '',
+        pos: x?.athlete?.position?.abbreviation ?? '',
+        photo: athletePhoto(x?.athlete, ''),
+        status: INJURY_FR.find(([re]) => re.test(status))?.[1] ?? autoFr(status),
+        what: autoFr([d.type, d.location].filter(Boolean).join(' ') || d.detail || ''),
+        back: d.returnDate ? new Date(d.returnDate) : null,
+      };
+    }).filter((x) => x.name),
+  })).filter((t) => t.teamId && t.players.length);
+}
+
+/* ---------- Hockey : la carte des tirs ---------- */
+
+/**
+ * Chaque tir du match avec sa position sur la glace, d'après les jeux
+ * d'ESPN : [{ teamId, x, y, kind: 'goal' | 'shot' | 'miss' | 'block', who, period }].
+ * x va de -100 à 100 pieds (bandes), y de -42,5 à 42,5.
+ */
+function shotMap(data) {
+  return (data?.plays ?? [])
+    .map((p) => {
+      const c = p?.coordinate ?? p?.coordinates;
+      const x = Number(c?.x);
+      const y = Number(c?.y);
+      const type = String(p?.type?.text ?? '');
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !p?.team?.id) return null;
+      if (Math.abs(x) > 100 || Math.abs(y) > 43 || (x === 0 && y === 0)) return null;
+      const kind = isScoring(p) ? 'goal' : /block/i.test(type) ? 'block' : /miss|wide/i.test(type) ? 'miss' : /shot/i.test(type) ? 'shot' : null;
+      if (!kind) return null;
+      return { teamId: String(p.team.id), x, y, kind, who: scorerName(p), period: Number(p?.period?.number ?? p?.period) || null };
+    })
+    .filter(Boolean);
+}
+
+/* ---------- Fiche d'un joueur : saison et derniers matchs ---------- */
+
+const WEB_API = 'https://site.web.api.espn.com/apis/common/v3/sports';
+const overviewCache = diskCache('player-overview', 3 * 3600 * 1000);
+// Colonnes d'ESPN -> abréviations québécoises.
+const STAT_FR = {
+  GP: 'PJ', G: 'B', A: 'A', PTS: 'PTS', '+/-': '+/-', PIM: 'PUN', SOG: 'TB', PPG: 'BAN', GWG: 'BG', TOI: 'TG', 'TOI/G': 'TG/M',
+  W: 'V', L: 'D', OTL: 'DP', GAA: 'MBA', 'SV%': '%ARR', SO: 'BL', SV: 'ARR', GA: 'BA',
+  AVG: 'MOY', HR: 'CC', RBI: 'PP', R: 'P', H: 'CS', OBP: 'MBB', SLG: 'MPU', OPS: 'OPS', SB: 'BV', AB: 'VB',
+  ERA: 'MPM', K: 'RB', IP: 'ML', WHIP: 'WHIP', SV_BB: 'SV', BB: 'BB',
+  MIN: 'MIN', REB: 'REB', AST: 'PD', STL: 'INT', BLK: 'CT', 'FG%': '%TIRS', '3P%': '%3PTS', 'FT%': '%LF',
+  YDS: 'VG', TD: 'TC', INT: 'INT', REC: 'RÉC', CMP: 'RÉU', ATT: 'ESS', CAR: 'PORT', TGTS: 'CIB',
+};
+const statFr = (label) => STAT_FR[String(label).toUpperCase()] ?? STAT_FR[label] ?? label;
+
+async function getWeb(path) {
+  try {
+    return await viaPage(`${WEB_API}/${path}`);
+  } catch (err) {
+    if (!inTauri()) throw err;
+    return viaRust(`web/${path}`);
+  }
+}
+
+/**
+ * Fiche d'un joueur : { season: [{ label, value }], games: [{ date, opp,
+ * result, stats: [{ label, value }] }] } — la saison régulière et ses 5
+ * derniers matchs, d'après l'aperçu du joueur chez ESPN.
+ */
+export async function fetchPlayerOverview(leagueId, athleteId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !athleteId) return null;
+  const key = `${leagueId}:${athleteId}`;
+  const hit = overviewCache.get(key);
+  if (hit) return hit;
+  const data = await getWeb(`${league.path}/athletes/${encodeURIComponent(athleteId)}/overview`);
+
+  const st = data?.statistics ?? {};
+  const labels = st.labels ?? st.names ?? [];
+  const split = (st.splits ?? []).find((x) => /regular|saison/i.test(x?.displayName ?? '')) ?? st.splits?.[0];
+  const season = labels.map((l, i) => ({ label: statFr(l), value: String(split?.stats?.[i] ?? '') }))
+    .filter((x) => x.value !== '' && x.value !== '-').slice(0, 7);
+
+  const log = data?.gameLog ?? {};
+  const events = log.events ?? {};
+  const cat = (log.statistics ?? [])[0] ?? {};
+  const logLabels = cat.labels ?? cat.names ?? [];
+  const games = (cat.events ?? []).slice(0, 5).map((e) => {
+    const info = events[e?.eventId] ?? {};
+    return {
+      date: info.gameDate ? new Date(info.gameDate) : null,
+      opp: [info.atVs, info.opponent?.abbreviation].filter(Boolean).join(' '),
+      result: [info.gameResult === 'W' ? 'V' : info.gameResult === 'L' ? 'D' : info.gameResult ?? '', info.score].filter(Boolean).join(' '),
+      stats: logLabels.map((l, i) => ({ label: statFr(l), value: String(e?.stats?.[i] ?? '') })).slice(0, 6),
+    };
+  });
+  const out = { season, seasonName: split?.displayName ?? '', games };
+  if (season.length || games.length) overviewCache.set(key, out);
+  return out;
 }
 
 /** Faits saillants vidéo d'ESPN : [{ title, thumb, href }], 4 au plus. */

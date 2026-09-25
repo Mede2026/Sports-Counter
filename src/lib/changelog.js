@@ -2,6 +2,10 @@
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
   '0.9.9': [
+    '🩹 Fenêtre Match : les blessés de chaque équipe ; au hockey, la carte des tirs sur la patinoire.',
+    '📋 Réglages : la fiche de tes joueurs favoris (stats de la saison et 5 derniers matchs).',
+    '🏁 F1 (OpenF1) : carte du circuit, arrêts aux stands, direction de course (et notification si ton pilote est pénalisé), radio des équipes, météo, meilleurs tours, télémétrie de ton pilote.',
+    '⭕ Widget : des coins arrondis nets (plus de petit carré aux coins).',
     '⏱️ Alerte « fin de match serrée » quand un match de tes équipes se joue à 1 but (ou quelques points) dans les dernières minutes.',
     '🔥 Séries de victoires (🔥) et de défaites (❄️) à côté de tes équipes, et dans la notification de fin de match.',
     '📈 Fenêtre Match : la courbe des chances de victoire pendant tout le match.',
