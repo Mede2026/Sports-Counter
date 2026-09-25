@@ -25,26 +25,26 @@ export function crestHtml(team, cls = 'crest') {
 
   // Logo de la F1, intégré à l'app : en longueur, donc plus large qu'une
   // pastille carrée. Lisible sur fond clair comme sombre.
-  if (team.logo === F1_LOGO) return `<img class="${cls} ${cls}--wide" src="${team.logo}" alt="" />`;
+  if (team.logo === F1_LOGO) return `<img decoding="async" class="${cls} ${cls}--wide" src="${team.logo}" alt="" />`;
   // Autres logos intégrés (aperçu) : rien à essayer d'autre.
-  if (team.logo.startsWith('data:')) return `<img class="${cls}" src="${team.logo}" alt="" />`;
+  if (team.logo.startsWith('data:')) return `<img decoding="async" class="${cls}" src="${team.logo}" alt="" />`;
   // Drapeau (équipe nationale, pays d'un joueur) : tel quel, sans variante
   // sombre ni halo, rectangle aux coins arrondis.
   if (/\/countries\/|\/flags?\//i.test(team.logo)) {
-    return `<img class="${cls}" src="${team.logo}" alt="" data-flag data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
+    return `<img decoding="async" class="${cls}" src="${team.logo}" alt="" data-flag data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
   }
 
   if (lightCrests) {
-    return `<img class="${cls}" src="${team.logo}" alt="" data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
+    return `<img decoding="async" class="${cls}" src="${team.logo}" alt="" data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
   }
 
   const dark = darkLogo(team.logo);
   // Premier essai : logo sombre. En repli : logo normal, marqué --light pour
   // recevoir le halo qui le garde lisible sur le fond sombre du widget.
   return dark
-    ? `<img class="${cls}" src="${dark}" alt="" data-next="${team.logo}"
+    ? `<img decoding="async" class="${cls}" src="${dark}" alt="" data-next="${team.logo}"
         data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`
-    : `<img class="${cls} ${cls}--light" src="${team.logo}" alt=""
+    : `<img decoding="async" class="${cls} ${cls}--light" src="${team.logo}" alt=""
         data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
 }
 

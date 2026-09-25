@@ -726,6 +726,21 @@ async function checkRaceControl(games) {
   controlPrimed = true;
 }
 
+/* ---------- Mémoire des matchs ---------- */
+
+/**
+ * Oublie les pénalités, tirs de barrage et alertes des matchs qui ne sont
+ * plus suivis : ouvert des jours durant, le widget ne grossit pas.
+ */
+function forgetOldGames(games) {
+  const ids = new Set(games.map((g) => g.id));
+  for (const map of [penaltySeen, penaltyReadAt, shootouts, shootoutReadAt]) {
+    for (const id of map.keys()) if (!ids.has(id)) map.delete(id);
+  }
+  for (const id of closeSeen) if (!ids.has(id)) closeSeen.delete(id);
+  if (controlSeen.size > 500) controlSeen.clear();
+}
+
 /* ---------- Fin de match serrée ---------- */
 
 const closeSeen = new Set(); // une alerte par match
@@ -1505,6 +1520,7 @@ async function doRefresh(force) {
   const upcoming = await nextGamesForIdleFavorites(today);
 
   followed = nextOnly([...today, ...upcoming.filter((g) => !beyondHorizon(g))].sort(sortGames));
+  forgetOldGames(followed);
   notifyEvents(followed);
   checkEmptyNets(followed);
   checkPenalties(followed);

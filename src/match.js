@@ -716,7 +716,14 @@ async function loadExtras(session) {
   } catch { data = null; }
   extraData.set(session.label, data);
   // Séance en cours : on relit tout dans 30 s (carte et télémétrie bougent).
-  if (session.state === 'in') setTimeout(() => { extraData.delete(session.label); repaint(); }, 30 * 1000);
+  if (session.state === 'in') {
+    setTimeout(function again() {
+      // Réduite : on attend qu'elle revienne avant de relire.
+      if (document.hidden) { setTimeout(again, 30 * 1000); return; }
+      extraData.delete(session.label);
+      repaint();
+    }, 30 * 1000);
+  }
   repaint();
 }
 
@@ -958,8 +965,21 @@ async function fromScoreboard() {
   return games.find((x) => x.id === current.event) ?? null;
 }
 
+// Fenêtre réduite : on ne relit rien ; tout reprend dès qu'elle revient.
+let waitingVisible = false;
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && waitingVisible) {
+    waitingVisible = false;
+    load();
+  }
+});
+
 async function load() {
   clearTimeout(timer);
+  if (document.hidden && shown) {
+    waitingVisible = true;
+    return;
+  }
   prefs = loadPrefs();
   applyTeamAccent(prefs);
   const league = LEAGUES_BY_ID[current.league];

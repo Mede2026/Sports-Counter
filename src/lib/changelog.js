@@ -2,6 +2,7 @@
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
   '0.9.9': [
+    '⚡ Plus léger : la fenêtre Match ne relit plus rien quand elle est réduite, les logos se décodent en arrière-plan, et le widget oublie les vieux matchs.',
     '🩹 Fenêtre Match : les blessés de chaque équipe ; au hockey, la carte des tirs sur la patinoire.',
     '📋 Réglages : la fiche de tes joueurs favoris (stats de la saison et 5 derniers matchs).',
     '🏁 F1 (OpenF1) : carte du circuit, arrêts aux stands, direction de course (et notification si ton pilote est pénalisé), radio des équipes, météo, meilleurs tours, télémétrie de ton pilote.',

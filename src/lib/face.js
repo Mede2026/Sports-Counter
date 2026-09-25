@@ -19,7 +19,7 @@ export function faceHtml(person, cls = 'face') {
   const ini = esc(initials(person?.name ?? person?.short));
   const name = esc(person?.name ?? '');
   return person?.photo
-    ? `<img class="${cls}" src="${esc(person.photo)}" alt="" loading="lazy" data-face data-initials="${ini}" data-name="${name}" />`
+    ? `<img class="${cls}" src="${esc(person.photo)}" alt="" loading="lazy" decoding="async" data-face data-initials="${ini}" data-name="${name}" />`
     : `<span class="${cls} face--ini" aria-hidden="true" data-name="${name}">${ini}</span>`;
 }
 
