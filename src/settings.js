@@ -11,6 +11,7 @@ import { NHL_TEAMS } from './lib/teams-nhl.js';
 import { autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 import { faceHtml, bindFaces } from './lib/face.js';
 import { ofTeam } from './lib/events.js';
+import { clearCaches, storageSize } from './lib/cache.js';
 import { wallpaperOptions, renderWallpaper, readModel, buildModel } from './lib/wallpaper.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
@@ -671,6 +672,7 @@ function bindOptions() {
   bindSwitch('optTranslate', 'translate');
   bindSwitch('optDigest', 'morningDigest');
   bindSwitch('optPenalties', 'notifyPenalties');
+  bindSwitch('optClose', 'notifyClose');
   initWallpaper();
   bindSwitch('optGpMode', 'gpMode');
 
@@ -684,6 +686,18 @@ function bindOptions() {
   notify.addEventListener('change', () => { prefs.notifications = notify.checked; savePrefs(prefs); });
   document.getElementById('btnTryToast').addEventListener('click', tryToast);
   document.getElementById('btnDiag').addEventListener('click', runDiagnostic);
+  // Mémoire de l'app : sa taille, et un bouton pour la vider (réglages gardés).
+  const memMsg = document.getElementById('memMsg');
+  const showMem = () => {
+    const kb = Math.round((storageSize() * 2) / 1024); // 2 octets par caractère
+    memMsg.textContent = `${kb < 1024 ? `${kb} ko` : `${(kb / 1024).toFixed(1).replace('.', ',')} Mo`} gardés sur le disque (scores, équipes, logos, photos). Tes réglages ne sont pas touchés.`;
+  };
+  showMem();
+  document.getElementById('btnClearCache').addEventListener('click', () => {
+    clearCaches();
+    showMem();
+    memMsg.textContent = `Mémoire vidée. ${memMsg.textContent}`;
+  });
 
   bindAutostart();
 }

@@ -39,7 +39,27 @@ async function viaRust(suffix) {
  * `opts.v2` : API « v2 » d'ESPN (classements), à une autre adresse que celle
  * des scores. Le relais Rust la reconnaît au préfixe « v2/ ».
  */
-async function getJson(path, query = '', opts = {}) {
+// Réponses partagées : pendant un match, le widget cherche le buteur, les
+// pénalités et les tirs de barrage dans le même résumé ; une seule requête
+// sert tout le monde pendant 10 s. Seulement dans l'app : l'aperçu et les
+// tests veulent voir chaque réponse.
+const MEMO_MS = 10 * 1000;
+const memo = new Map(); // adresse -> { at, promise }
+
+function getJson(path, query = '', opts = {}) {
+  if (!inTauri()) return fetchJson(path, query, opts);
+  const key = `${opts.v2 ? 'v2/' : ''}${path}${query}`;
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < MEMO_MS) return hit.promise;
+  const promise = fetchJson(path, query, opts);
+  memo.set(key, { at: Date.now(), promise });
+  // Une erreur n'est pas gardée : on réessaie au prochain appel.
+  promise.catch(() => memo.delete(key));
+  if (memo.size > 200) for (const [k, v] of memo) if (Date.now() - v.at >= MEMO_MS) memo.delete(k);
+  return promise;
+}
+
+async function fetchJson(path, query = '', opts = {}) {
   const suffix = `${opts.v2 ? 'v2/' : ''}${path}${query}`;
   const url = opts.v2 ? `${BASE_V2}/${path}${query}` : `${BASE}/${suffix}`;
 
@@ -603,7 +623,64 @@ function toDriver(c, i) {
     gap: gapOf(c),
     // Arrêts aux puits, quand ESPN les compte (nom de statistique variable).
     pits: Number(statOf(c?.statistics, PIT_STATS)) || 0,
+    // Qualifications : meilleur temps en Q1, Q2 et Q3 (vide si non couru).
+    q: qualiTimes(c?.statistics),
   };
+}
+
+/** Temps de Q1, Q2 et Q3 d'un pilote, quel que soit le nom qu'ESPN leur donne. */
+function qualiTimes(stats) {
+  const out = ['', '', ''];
+  for (const x of stats ?? []) {
+    const m = /^(?:q|qual(?:ifying)?[ _-]?)([123])(?:[ _-]?time)?$/i.exec(String(x?.name ?? x?.abbreviation ?? ''));
+    const v = String(x?.displayValue ?? '').trim();
+    if (m && v && v !== '-' && v !== '0') out[Number(m[1]) - 1] = v;
+  }
+  return out.some(Boolean) ? out : [];
+}
+
+/** Séance de qualifications (ou de qualifs sprint) ? */
+const isQualSession = (comp) => /^(QUAL|SQ|SS)$/.test(String(comp?.type?.abbreviation ?? '').toUpperCase());
+
+/**
+ * Phase des qualifications en cours : 1, 2 ou 3 (Q1, Q2, Q3), d'après le
+ * statut d'ESPN ; 3 une fois finies ; null hors qualifications.
+ */
+function qualPhase(comp) {
+  if (!isQualSession(comp)) return null;
+  const st = comp?.status ?? {};
+  if (st.type?.state === 'post') return 3;
+  const text = `${st.type?.detail ?? ''} ${st.type?.shortDetail ?? ''}`;
+  const fromText = Number(/\b(?:S?Q)([123])\b/i.exec(text)?.[1]);
+  if (fromText) return fromText;
+  const p = Number(st.period);
+  return p >= 1 && p <= 3 ? p : 1;
+}
+
+/**
+ * Pilotes qualifiés pour la phase suivante : 10 en Q3 ; les autres
+ * partagés en deux (20 voitures : 15 passent en Q2 ; 22 voitures : 16).
+ */
+export const qualCuts = (n) => ({ q2: 10 + Math.floor(Math.max(0, n - 10) / 2), q3: 10 });
+
+/** « +1.234 », « 1:02.345 » -> secondes ; null pour « +1 tour » ou vide. */
+export function gapSeconds(gap) {
+  const t = String(gap ?? '').trim().replace(/^\+/, '');
+  if (!t || /lap|tour/i.test(t)) return null;
+  const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(t);
+  return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : null;
+}
+
+/**
+ * Écart avec le pilote juste devant (« +0.812 »), d'après les écarts avec le
+ * premier. '' si l'un des deux n'est pas un temps (tour de retard…).
+ */
+export function intervalText(results, i) {
+  if (i <= 0) return '';
+  const here = gapSeconds(results[i]?.gap);
+  const ahead = i === 1 ? 0 : gapSeconds(results[i - 1]?.gap);
+  if (here === null || ahead === null || here < ahead) return '';
+  return `+${(here - ahead).toFixed(3)}`;
 }
 
 const PIT_STATS = ['pitStops', 'pits', 'pitstops', 'numPitStops', 'stops'];
@@ -667,6 +744,8 @@ function weekendSessions(event) {
         label: sessionLabel(c),
         startsAt: new Date(c.date),
         state,
+        qual: isQualSession(c),
+        phase: qualPhase(c),
         // Classement de chaque séance (essais, qualifs, sprint, course).
         results: state === 'pre' ? [] : classification(c),
       };
@@ -1096,6 +1175,8 @@ function normalizeEvent(event, leagueId, logo = '') {
       // Tour en cours / total, quand ESPN le donne (course et sprint).
       laps: session.status?.period && session.laps ? `Tour ${session.status.period} / ${session.laps}` : '',
       session: sessionLabel(session),
+      qual: isQualSession(session),
+      phase: qualPhase(session),
       flag: flagOf(session.status),
       statusText: statusFr(session.status?.type?.shortDetail ?? '') || base.statusText,
       startsAt: session.date ? new Date(session.date) : base.startsAt,
@@ -1115,6 +1196,68 @@ function normalizeEvent(event, leagueId, logo = '') {
     situation: base.state === 'in' ? safe(() => baseballSituation(comp?.situation, leagueId), null) : null,
   };
 }
+
+/* ---------- F1 : les pneus (OpenF1) ---------- */
+
+// ESPN ne donne pas les pneus : OpenF1, base gratuite de données de F1, les
+// donne relais par relais (gratuitement après la séance ; en direct, seulement
+// pour ses abonnés).
+const OPENF1 = 'https://api.openf1.org/v1';
+const OPENF1_NAMES = {
+  'Practice 1': 'Essais 1', 'Practice 2': 'Essais 2', 'Practice 3': 'Essais 3',
+  Qualifying: 'Qualifications', 'Sprint Qualifying': 'Qualifs sprint', 'Sprint Shootout': 'Qualifs sprint',
+  Sprint: 'Sprint', Race: 'Course',
+};
+// Composés d'OpenF1 -> lettre affichée.
+export const TYRES = { SOFT: 'T', MEDIUM: 'M', HARD: 'D', INTERMEDIATE: 'I', WET: 'P' };
+export const TYRE_NAMES = { SOFT: 'Tendres', MEDIUM: 'Médiums', HARD: 'Durs', INTERMEDIATE: 'Intermédiaires', WET: 'Pluie' };
+const tyreMemo = new Map(); // libellé de séance -> { at, promise }
+
+async function getOpenF1(query) {
+  try {
+    return await viaPage(`${OPENF1}/${query}`);
+  } catch (err) {
+    if (!inTauri()) throw err;
+    return viaRust(`openf1/${query}`);
+  }
+}
+
+/**
+ * Relais de pneus de chaque pilote pour une séance du week-end en cours :
+ * { nomTassé: [{ compound, from, to }] }, ou null si OpenF1 ne l'a pas.
+ * Gardé 60 s.
+ */
+export function fetchTyres(session) {
+  const key = `${session?.label}|${session?.startsAt}`;
+  const hit = tyreMemo.get(key);
+  if (hit && Date.now() - hit.at < 60 * 1000) return hit.promise;
+  const promise = (async () => {
+    const sessions = await getOpenF1('sessions?meeting_key=latest');
+    const start = new Date(session.startsAt).getTime();
+    const info = (Array.isArray(sessions) ? sessions : []).find((x) => OPENF1_NAMES[x?.session_name] === session.label
+      && Math.abs(new Date(x.date_start).getTime() - start) < 6 * 3600e3);
+    if (!info) return null;
+    const [stints, drivers] = await Promise.all([
+      getOpenF1(`stints?session_key=${info.session_key}`),
+      getOpenF1(`drivers?session_key=${info.session_key}`),
+    ]);
+    if (!Array.isArray(stints) || !stints.length) return null;
+    const byNumber = new Map((Array.isArray(drivers) ? drivers : []).map((d) => [d.driver_number, d]));
+    const out = {};
+    for (const st of [...stints].sort((a, b) => (a.stint_number ?? 0) - (b.stint_number ?? 0))) {
+      const d = byNumber.get(st.driver_number);
+      const name = squash(d?.last_name ?? String(d?.full_name ?? '').split(' ').pop());
+      if (!name || !TYRES[st.compound]) continue;
+      (out[name] ??= []).push({ compound: st.compound, from: st.lap_start ?? null, to: st.lap_end ?? null });
+    }
+    return Object.keys(out).length ? out : null;
+  })().catch(() => null);
+  tyreMemo.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
+/** Relais de pneus d'un pilote d'ESPN (par son nom de famille), ou []. */
+export const tyresOf = (tyres, driver) => tyres?.[squash(String(driver?.name ?? '').trim().split(/\s+/).pop())] ?? [];
 
 /* ---------- Baseball : le lanceur et le frappeur en ce moment ---------- */
 
@@ -1362,6 +1505,7 @@ export async function fetchMatchDetail(leagueId, eventId) {
     stars: safe(() => threeStars(data, comp, leagueId), []),
     leaders: safe(() => gameLeaders(data, home.id, away.id, leagueId), []),
     winProb: safe(() => winProbability(data, state), null),
+    winTimeline: safe(() => winTimeline(data), []),
     videos: safe(() => highlights(data), []),
     box: safe(() => boxScore(data, LEAGUES_BY_ID[leagueId]?.path.split('/')[0]), []),
     probables: safe(() => probablePitchers(competitors, leagueId), {}),
@@ -1731,6 +1875,21 @@ function winProbability(data, state) {
     return { home, away: 100 - home, live: false };
   }
   return null;
+}
+
+/**
+ * Chances de victoire des locaux, jeu après jeu (0 à 100), pour le petit
+ * graphique de la fenêtre Match. 120 points au plus : un match de basket
+ * compte plus de 400 jeux.
+ */
+function winTimeline(data) {
+  const all = (data?.winprobability ?? [])
+    .map((x) => Number(x?.homeWinPercentage))
+    .filter((v) => Number.isFinite(v))
+    .map((v) => Math.round(v * 1000) / 10);
+  if (all.length <= 120) return all;
+  const step = (all.length - 1) / 119;
+  return Array.from({ length: 120 }, (_, i) => all[Math.round(i * step)]);
 }
 
 /** Faits saillants vidéo d'ESPN : [{ title, thumb, href }], 4 au plus. */

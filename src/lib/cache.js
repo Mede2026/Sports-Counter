@@ -13,7 +13,11 @@ const revive = (key, value) => (DATE_KEYS.has(key) && typeof value === 'string' 
  * Cache nommé : get(clé) rend la valeur si elle a moins de `ttl` ms, sinon
  * undefined ; set(clé, valeur) l'écrit aussitôt sur le disque.
  */
+// Caches de cette version : les autres (anciennes versions) sont effacés.
+const KNOWN = new Set();
+
 export function diskCache(name, ttl) {
+  KNOWN.add(name);
   const storageKey = PREFIX + name;
   let map = null;
 
@@ -54,4 +58,74 @@ export function diskCache(name, ttl) {
       save();
     },
   };
+}
+
+/* ---------- Nettoyage ---------- */
+
+const DAY = 24 * 3600 * 1000;
+const PRUNED_KEY = 'sports-counter.pruned';
+// Listes d'équipes d'anciennes versions (« …teams.nhl.v2 ») : remplacées.
+const OLD_TEAMS = /^sports-counter\.teams\..+\.v[12]$/;
+
+const storageKeys = () => {
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i += 1) keys.push(localStorage.key(i));
+  return keys.filter(Boolean);
+};
+
+/**
+ * Une fois par jour : efface les caches d'anciennes versions, les entrées de
+ * plus de 30 jours, et garde 400 entrées au plus par cache (les plus
+ * récentes). Renvoie le nombre de caractères libérés.
+ */
+export function pruneStorage({ force = false, maxAgeMs = 30 * DAY, maxEntries = 400 } = {}) {
+  const today = new Date().toDateString();
+  try {
+    if (!force && localStorage.getItem(PRUNED_KEY) === today) return 0;
+  } catch {
+    return 0;
+  }
+  let freed = 0;
+  for (const key of storageKeys()) {
+    const raw = localStorage.getItem(key) ?? '';
+    const stale = (key.startsWith(PREFIX) && !KNOWN.has(key.slice(PREFIX.length))) || OLD_TEAMS.test(key);
+    if (stale) {
+      localStorage.removeItem(key);
+      freed += raw.length;
+      continue;
+    }
+    if (!key.startsWith(PREFIX)) continue;
+    try {
+      const entries = JSON.parse(raw);
+      const kept = entries
+        .filter(([, e]) => e && Date.now() - e.at < maxAgeMs)
+        .sort((a, b) => b[1].at - a[1].at)
+        .slice(0, maxEntries);
+      if (kept.length !== entries.length) {
+        const text = JSON.stringify(kept);
+        localStorage.setItem(key, text);
+        freed += raw.length - text.length;
+      }
+    } catch {
+      localStorage.removeItem(key); // illisible : on repart de zéro
+      freed += raw.length;
+    }
+  }
+  try { localStorage.setItem(PRUNED_KEY, today); } catch { /* plein */ }
+  return freed;
+}
+
+/** Taille de la mémoire de l'app sur le disque (caractères). */
+export function storageSize() {
+  return storageKeys().filter((k) => k.startsWith('sports-counter.')).reduce((n, k) => n + k.length + (localStorage.getItem(k)?.length ?? 0), 0);
+}
+
+/**
+ * Vide toute la mémoire de l'app (scores, équipes, logos, photos…), sauf les
+ * réglages et les traductions. Tout se recharge d'ESPN au besoin.
+ */
+export function clearCaches() {
+  for (const key of storageKeys()) {
+    if (key.startsWith(PREFIX) || key.startsWith('sports-counter.teams.') || key.startsWith('sports-counter.drivers')) localStorage.removeItem(key);
+  }
 }

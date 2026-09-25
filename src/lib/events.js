@@ -63,7 +63,7 @@ export function snapshot(g, opts = {}) {
   }
   const favs = favList(opts);
   const pits = Object.fromEntries(favs.map((d) => [driverKey(d), (g.results ?? []).find((r) => sameDriver(r, d))?.pits ?? 0]));
-  return { state: g.state, session: g.session ?? '', favPos: favPositions(g, favs), flag: g.flag ?? '', pits };
+  return { state: g.state, session: g.session ?? '', favPos: favPositions(g, favs), flag: g.flag ?? '', pits, phase: g.phase ?? null };
 }
 
 // Nombre de périodes du temps réglementaire, par sport.
@@ -173,7 +173,12 @@ function matchEvents(g, before, opts = {}) {
         big = true;
       }
     }
-    const body = g.series ? `${scoreLine(g)} · ${g.series.text}` : scoreLine(g);
+    // Série en cours de ton équipe : « 🔥 4 victoires de suite ».
+    const fav = [winner, loser].find((t) => t && isFavTeam(g, t, opts));
+    const streak = fav ? streakAfter(opts.forms?.get(`${g.leagueId}:${fav.id}`), fav === winner ? 'V' : 'D', g) : null;
+    const streakText = streak && streak.n >= 3
+      ? (streak.res === 'V' ? `🔥 ${streak.n} victoires de suite` : `❄️ ${streak.n} défaites de suite`) : '';
+    const body = [g.series ? `${scoreLine(g)} · ${g.series.text}` : scoreLine(g), streakText].filter(Boolean).join(' · ');
     out.push({ title, body, team, link, big });
   }
   return out;
@@ -213,6 +218,26 @@ function sessionEvents(g, before, opts = {}) {
       const mine = finals.map(({ d, pos }) => `${nameOf(d)} ${place(pos)}`).join(', ');
       const parts = [first ? `1. ${first.short || first.name}` : '', mine, g.title];
       out.push({ title: `${ended} terminée`, body: parts.filter(Boolean).join(' · '), team, link });
+    }
+  }
+  // Qualifications : fin de Q1 ou de Q2. Ton pilote passe, ou il est éliminé.
+  if (g.qual && g.state === 'in' && before.state === 'in' && before.session === g.session
+    && before.phase && g.phase && g.phase > before.phase && before.phase <= 2) {
+    const n = (g.results ?? []).length;
+    const cut = before.phase === 1 ? 10 + Math.floor(Math.max(0, n - 10) / 2) : 10;
+    for (const d of favs) {
+      const pos = was[driverKey(d)] ?? now[driverKey(d)];
+      if (!pos) continue;
+      const eliminated = pos > cut;
+      out.push({
+        title: eliminated
+          ? `❌ ${nameOf(d)} éliminé en Q${before.phase} (${place(pos)})`
+          : `✅ ${nameOf(d)} passe en Q${before.phase + 1} (${place(pos)})`,
+        body: `${g.session} · ${g.title}`,
+        team: faceOf(d),
+        link,
+        big: eliminated,
+      });
     }
   }
   if (g.state === 'in' && (before.state !== 'in' || before.session !== g.session)) {
@@ -420,5 +445,71 @@ export function penaltyToast(g, pen, all = [pen]) {
     body: body || `${g.away.abbr} ${g.away.score} – ${g.home.score} ${g.home.abbr}`,
     team: team ?? g.home,
     link: g.link,
+  };
+}
+
+/* ---------- Séries de victoires ou de défaites ---------- */
+
+/** Série en cours d'après les derniers résultats (du plus ancien au plus récent) : { res, n }. */
+export function streakOf(list) {
+  const res = list?.[list.length - 1]?.res;
+  if (!res || res === 'N') return null;
+  let n = 0;
+  for (let i = list.length - 1; i >= 0 && list[i].res === res; i -= 1) n += 1;
+  return { res, n };
+}
+
+/**
+ * Série après le match qui vient de finir (`res` : 'V' ou 'D'). Les derniers
+ * résultats connus peuvent déjà contenir ce match : on ne le compte pas deux fois.
+ */
+export function streakAfter(list, res, g) {
+  const known = [...(list ?? [])];
+  const last = known[known.length - 1];
+  const sameGame = last?.date && g?.startsAt
+    && new Date(last.date).toDateString() === new Date(g.startsAt).toDateString();
+  if (!sameGame) known.push({ res });
+  return streakOf(known);
+}
+
+/* ---------- Fin de match serrée ---------- */
+
+const minutesLeft = (clock) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(clock ?? '').trim());
+  return m ? Number(m[1]) + Number(m[2]) / 60 : null;
+};
+
+/**
+ * Fin de match serrée ? Une alerte par match, pour ne pas rater la fin :
+ * hockey 5 dernières min de la 3e à 1 but ou moins ; basket 3 dernières min
+ * à 5 points ou moins ; football 5 dernières min à 8 points ou moins (un
+ * touché et sa transformation) ; baseball dès la 9e manche à 1 point ou
+ * moins ; soccer dès la 80e minute à 1 but ou moins. Sinon null.
+ */
+export function closeGameAlert(g) {
+  if (g?.kind !== 'match' || g.state !== 'in') return null;
+  const a = num(g.away.score);
+  const h = num(g.home.score);
+  if (a === null || h === null) return null;
+  const diff = Math.abs(a - h);
+  const p = Number(g.period) || 0;
+  const left = minutesLeft(g.clock);
+  const sport = sportOf(g.leagueId);
+  let when = '';
+  if (sport === 'hockey' && p === 3 && left !== null && left <= 5 && diff <= 1) when = `${g.clock} à jouer en 3e période`;
+  else if (sport === 'basketball' && p >= 4 && left !== null && left <= 3 && diff <= 5) when = `${g.clock} à jouer`;
+  else if (sport === 'football' && p === 4 && left !== null && left <= 5 && diff <= 8) when = `${g.clock} à jouer au 4e quart`;
+  else if (sport === 'baseball' && p >= 9 && diff <= 1) when = `${p}e manche`;
+  else if (sport === 'soccer') {
+    const minute = Number(/^(\d+)/.exec(String(g.clock ?? ''))?.[1]);
+    if (minute >= 80 && diff <= 1) when = `${g.clock}`;
+  }
+  if (!when) return null;
+  return {
+    title: diff === 0 ? '⏱️ Fin de match à égalité !' : '⏱️ Fin de match serrée !',
+    body: `${scoreLine(g)} · ${when}`,
+    team: a >= h ? g.away : g.home,
+    link: g.link ?? '',
+    big: true,
   };
 }

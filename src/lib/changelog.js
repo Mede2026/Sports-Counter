@@ -1,6 +1,15 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '0.9.9': [
+    '⏱️ Alerte « fin de match serrée » quand un match de tes équipes se joue à 1 but (ou quelques points) dans les dernières minutes.',
+    '🔥 Séries de victoires (🔥) et de défaites (❄️) à côté de tes équipes, et dans la notification de fin de match.',
+    '📈 Fenêtre Match : la courbe des chances de victoire pendant tout le match.',
+    '🏎️ F1 : Q1, Q2, Q3 en qualifications (temps, éliminés, zone d’élimination, notification si ton pilote passe ou tombe), l’écart avec le pilote devant, et les pneus (OpenF1).',
+    '⚡ Démarrage plus rapide et moins de requêtes à ESPN (réponses partagées entre les fenêtres).',
+    '🧹 La mémoire de l’app se nettoie seule ; bouton « Vider » dans Diagnostic.',
+    '🖼️ Fond d’écran : la fiche ne passe plus sous les pastilles de forme.',
+  ],
   '0.9.8': [
     '📐 Forme du widget : tire le coin en bas à droite pour choisir sa taille ; coins arrondis, très arrondis, légers ou carrés (Réglages → Widget). Le bouton ⤡ du widget remet la forme de base.',
     '🏈 LCF : les logos viennent maintenant de Wikipédia (Hamilton et Ottawa compris).',

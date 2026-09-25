@@ -287,6 +287,10 @@
           <input type="checkbox" class="switch" id="optNotify" />
         </div>
         <div class="pref">
+          <label class="pref__txt" for="optClose"><b>Fin de match serrée</b><small>Quand un match de tes équipes se joue à 1 but (ou quelques points) dans les dernières minutes.</small></label>
+          <input type="checkbox" class="switch" id="optClose" />
+        </div>
+        <div class="pref">
           <label class="pref__txt" for="optPenalties"><b>Pénalités</b><small>Au hockey : qui, pour quoi, combien de minutes, et qui a l'avantage numérique.</small></label>
           <input type="checkbox" class="switch" id="optPenalties" />
         </div>
@@ -342,6 +346,10 @@
           <button class="ghost ghost--small" id="btnDiag" type="button">Tester</button>
         </div>
         <div id="diag"></div>
+        <div class="pref">
+          <span class="pref__txt"><b>Mémoire de l'app</b><small id="memMsg">Scores, équipes, logos et photos gardés sur le disque. Les vider force l'app à tout recharger d'ESPN.</small></span>
+          <button class="ghost ghost--small" id="btnClearCache" type="button">Vider</button>
+        </div>
       </section>
 
       <section class="prefs__group">

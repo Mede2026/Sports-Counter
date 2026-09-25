@@ -54,6 +54,7 @@ const DEFAULTS = {
   // Résultats d'hier de tes équipes, en notification le matin.
   morningDigest: true,
   notifyPenalties: true,
+  notifyClose: true,
   // Fiche V-D dans le widget : non (elle est dans la fenêtre Match).
   widgetRecords: false,
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).

@@ -420,7 +420,7 @@ function drawHero(ctx, model, img, { x, y, w, h, u, color, compact }) {
       if (side.record) {
         ctx.fillStyle = MUTED;
         ctx.font = `500 ${Math.round(18 * u)}px ${FONT}`;
-        ctx.fillText(side.record, cx + dx, nameY + 28 * u);
+        ctx.fillText(String(side.record).split(',')[0].trim(), cx + dx, nameY + 28 * u);
       }
       if (side.form?.length) drawForm(ctx, side.form, cx + dx, nameY + 56 * u, u);
     }
@@ -470,18 +470,26 @@ function drawCards(ctx, model, img, o, { x, y, w, h, u, color }) {
   if (o.form && model.form?.length) {
     cards.push(['Forme · 5 derniers', (b) => {
       const rowH = Math.min(46 * u, b.h / model.form.length);
+      // Les pastilles à droite ; le sigle et la fiche dans la place qui reste,
+      // sur deux lignes : rien ne passe sous les pastilles.
+      const dotsW = 5 * 27 * u;
+      const textX = b.x + 40 * u;
+      const textW = Math.max(30 * u, b.w - 40 * u - dotsW - 10 * u);
       model.form.forEach((f, i) => {
         const ry = b.y + i * rowH;
-        drawLogo(ctx, img(f.logo), f.abbr, b.x, ry, 30 * u);
+        const mid = ry + Math.min(rowH, 46 * u) / 2 - 4 * u;
+        drawLogo(ctx, img(f.logo), f.abbr, b.x, mid - 15 * u, 30 * u);
         ctx.fillStyle = INK;
-        ctx.font = `600 ${Math.round(17 * u)}px ${FONT}`;
-        ctx.fillText(fitText(ctx, f.abbr || f.name, 70 * u), b.x + 40 * u, ry + 21 * u);
-        if (f.record) {
+        ctx.font = `600 ${Math.round(16 * u)}px ${FONT}`;
+        ctx.fillText(fitText(ctx, f.abbr || f.name, textW), textX, f.record ? mid - 1 * u : mid + 6 * u);
+        // « 3-0-0, 0 TS » : seule la fiche compte.
+        const record = String(f.record ?? '').split(',')[0].trim();
+        if (record) {
           ctx.fillStyle = MUTED;
-          ctx.font = `500 ${Math.round(14 * u)}px ${FONT}`;
-          ctx.fillText(f.record, b.x + 100 * u, ry + 21 * u);
+          ctx.font = `500 ${Math.round(13 * u)}px ${FONT}`;
+          ctx.fillText(fitText(ctx, record, textW), textX, mid + 16 * u);
         }
-        drawForm(ctx, f.results, b.x + b.w - f.results.length * 27 * u + 5 * u, ry + 15 * u, u, 'left');
+        drawForm(ctx, f.results, b.x + b.w - f.results.length * 27 * u + 5 * u, mid, u, 'left');
       });
     }]);
   }

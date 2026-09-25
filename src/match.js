@@ -3,7 +3,7 @@
 // buts, pénalités, classement ; onglets « Joueurs » (box score) et « Jeux »
 // (tous les jeux du match). F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
-import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver } from './lib/api.js';
+import { fetchMatchDetail, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES } from './lib/api.js';
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -46,6 +46,7 @@ let playsShown = PLAYS_STEP;
 let shown = null; // { g, build } : le match affiché et de quoi le redessiner
 let f1Tab = null; // séance de F1 affichée (indice), 'champ' (championnat) ou null (en cours)
 let f1Champ = null; // championnat de F1 chargé (ou Error)
+const tyreData = new Map(); // séance -> pneus d'OpenF1 (null : rien, 'wait' : en chargement)
 const hockeyLines = new Map(); // idÉquipe -> trios (ou Error), chargés à la demande
 
 
@@ -198,12 +199,45 @@ function standingsHtml(g, table) {
 /** Barre des chances de victoire, aux couleurs des deux équipes. */
 function winProbHtml(g) {
   const p = g.winProb;
-  if (!p) return '';
+  const graph = winGraphHtml(g);
+  if (!p) return graph;
   const [colorA, colorH] = distinctColors(g.away, g.home);
   const total = p.away + p.home || 1;
   return `<div class="prob">
     <div class="prob__vals"><b>${esc(g.away.abbr)} ${p.away} %</b><span>${p.live ? 'en direct' : 'avant le match'}</span><b>${p.home} % ${esc(g.home.abbr)}</b></div>
     <div class="stat__bar"><i style="width:${(p.away / total) * 100}%;background:${colorA}"></i><i style="width:${(p.home / total) * 100}%;background:${colorH}"></i></div>
+  </div>${graph}`;
+}
+
+/**
+ * Le match en une courbe : au-dessus du milieu, les locaux sont favoris ;
+ * en dessous, les visiteurs. Chaque moitié à la couleur de son équipe.
+ */
+function winGraphHtml(g) {
+  const pts = g.winTimeline ?? [];
+  if (pts.length < 3) return '';
+  const [colorA, colorH] = distinctColors(g.away, g.home);
+  const W = 300;
+  const H = 90;
+  const x = (i) => (i / (pts.length - 1)) * W;
+  const y = (v) => H - (v / 100) * H;
+  const line = pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const area = `${line} L${W} ${H / 2} L0 ${H / 2} Z`;
+  const id = `wg${String(g.id ?? '').replace(/\W/g, '')}`;
+  return `<div class="wg">
+    <div class="wg__labels"><span>${esc(g.home.abbr)}</span><span>${esc(g.away.abbr)}</span></div>
+    <svg class="wg__svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Chances de victoire pendant le match">
+      <defs>
+        <clipPath id="${id}t"><rect x="0" y="0" width="${W}" height="${H / 2}" /></clipPath>
+        <clipPath id="${id}b"><rect x="0" y="${H / 2}" width="${W}" height="${H / 2}" /></clipPath>
+      </defs>
+      <path d="${area}" fill="${colorH}" opacity="0.3" clip-path="url(#${id}t)" />
+      <path d="${area}" fill="${colorA}" opacity="0.3" clip-path="url(#${id}b)" />
+      <line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" class="wg__mid" />
+      <path d="${line}" fill="none" stroke="${colorH}" stroke-width="2" clip-path="url(#${id}t)" vector-effect="non-scaling-stroke" />
+      <path d="${line}" fill="none" stroke="${colorA}" stroke-width="2" clip-path="url(#${id}b)" vector-effect="non-scaling-stroke" />
+    </svg>
+    <div class="wg__foot"><span>Début</span><span>${g.state === 'post' ? 'Fin' : 'Maintenant'}</span></div>
   </div>`;
 }
 
@@ -538,13 +572,39 @@ function f1Html(g) {
     <button type="button" class="tab${f1Tab === 'champ' ? ' tab--on' : ''}" data-f1="champ">Championnat</button></nav>` : '';
   if (f1Tab === 'champ') return hero + favCard + tabs + f1ChampHtml();
 
-  const rows = results.map((d) => {
+  // Qualifications : qui est éliminé (ou menacé) en Q1 et en Q2.
+  const phase = pick?.qual ? (pick.label === g.session ? g.phase : pick.phase) ?? (pick.state === 'post' ? 3 : 1) : null;
+  const cuts = qualCuts(results.length);
+  const qualTag = (d) => {
+    if (!pick?.qual) return '';
+    const done = pick.state === 'post';
+    if (d.pos > cuts.q2 && (done || phase >= 2)) return '<span class="qtag qtag--out">Éliminé en Q1</span>';
+    if (d.pos > cuts.q3 && d.pos <= cuts.q2 && (done || phase >= 3)) return '<span class="qtag qtag--out">Éliminé en Q2</span>';
+    if (!done && ((phase === 1 && d.pos > cuts.q2) || (phase === 2 && d.pos > cuts.q3))) return '<span class="qtag qtag--risk">Zone d\'élimination</span>';
+    return '';
+  };
+  // Pneus (OpenF1) : chargés à part, la liste se redessine à leur arrivée.
+  const tyres = pick && pick.state !== 'pre' ? tyreData.get(pick.label) : null;
+  if (pick && pick.state !== 'pre' && !tyreData.has(pick.label)) loadTyres(pick);
+  const tyreHtml = (d) => {
+    const stints = tyres && tyres !== 'wait' ? tyresOf(tyres, d) : [];
+    if (!stints.length) return '';
+    const now = stints[stints.length - 1];
+    const tip = stints.map((x) => `${TYRE_NAMES[x.compound]}${x.from ? ` (tours ${x.from}–${x.to ?? '…'})` : ''}`).join(' → ');
+    return `<span class="tyre tyre--${now.compound.toLowerCase()}" title="${esc(tip)}">${TYRES[now.compound]}</span>`;
+  };
+  const rows = results.map((d, i) => {
     const isFav = favs.some((f) => sameDriver(d, f));
-    return `<li class="${isFav ? 'fav' : ''}">
+    const q = pick?.qual && d.q?.length ? d.q.map((t, k) => (t ? `Q${k + 1} ${t}` : '')).filter(Boolean).join(' · ') : '';
+    // Course et essais : écart avec le premier, et avec le pilote juste devant.
+    const gap = d.pos > 1 && d.gap ? esc(String(d.gap).startsWith('+') ? d.gap : `+${d.gap}`) : '';
+    const interval = !pick?.qual && i > 1 ? intervalText(results, i) : '';
+    const gaps = gap ? `<span class="gap">${gap}${interval ? `<small title="Écart avec le pilote devant">devant ${esc(interval)}</small>` : ''}</span>` : tyreHtml(d) ? '<span class="gap"></span>' : '';
+    return `<li class="${isFav ? 'fav' : ''}${qualTag(d).includes('--out') ? ' out' : ''}">
       <span class="pos">${MEDALS[d.pos] ?? d.pos}</span>
       ${faceHtml(d, 'face')}
-      <span class="drv"><b>${esc(d.name)}</b>${d.team ? `<small>${esc(d.team)}</small>` : ''}</span>
-      ${d.pos > 1 && d.gap ? `<span class="gap">${esc(String(d.gap).startsWith('+') ? d.gap : `+${d.gap}`)}</span>` : ''}
+      <span class="drv"><b>${esc(d.name)}</b>${d.team || q ? `<small>${esc([d.team, q].filter(Boolean).join(' · '))}</small>` : ''}${qualTag(d)}</span>
+      ${tyreHtml(d)}${gaps}
     </li>`;
   }).join('');
   const board = rows ? `<ol class="grid">${rows}</ol>` : '';
@@ -563,7 +623,7 @@ function f1Html(g) {
     ? `<div class="state">${esc(pick.label)} n'a pas encore eu lieu${isDate(pick.startsAt) ? ` : ${esc(whenText(pick.startsAt))}` : ''}.</div>`
     : '<div class="state">ESPN ne donne pas encore le classement de cette séance.</div>';
   return hero + favCard + tabs
-    + section(`Classement${pick ? ` · ${esc(pick.label)}` : ''}`, board || empty)
+    + section(`Classement${pick ? ` · ${esc(pick.label)}${pick.qual && pick.state === 'in' && phase ? ` · Q${phase}` : ''}` : ''}`, board || empty)
     + section('Programme du week-end', program ? `<ul class="sessions">${program}</ul>` : '');
 }
 
@@ -581,6 +641,22 @@ function f1ChampHtml() {
     <li><span class="pos">${MEDALS[t.rank] ?? t.rank}</span><span class="drv"><b>${esc(t.name)}</b></span><span class="gap">${esc(t.points)} pts</span></li>`).join('');
   return section('Championnat des pilotes', drivers ? `<ol class="grid">${drivers}</ol>` : '')
     + section('Championnat des constructeurs', teams ? `<ol class="grid">${teams}</ol>` : '');
+}
+
+/** Pneus d'une séance (OpenF1), puis on redessine. */
+async function loadTyres(session) {
+  tyreData.set(session.label, 'wait');
+  await Promise.resolve(); // pas pendant le dessin en cours
+  tyreData.set(session.label, IS_DEMO ? demoTyres() : await fetchTyres(session));
+  // Séance en cours : on relira les pneus dans une minute.
+  if (session.state === 'in') setTimeout(() => tyreData.delete(session.label), 60 * 1000);
+  repaint();
+}
+
+function demoTyres() {
+  return { antonelli: [{ compound: 'MEDIUM', from: 1, to: 22 }, { compound: 'HARD', from: 23, to: null }],
+    russell: [{ compound: 'MEDIUM', from: 1, to: 20 }, { compound: 'HARD', from: 21, to: null }],
+    verstappen: [{ compound: 'HARD', from: 1, to: null }], norris: [{ compound: 'SOFT', from: 1, to: 15 }, { compound: 'MEDIUM', from: 16, to: null }] };
 }
 
 async function loadF1Champ() {
@@ -885,6 +961,7 @@ function demoDetail() {
     ],
     venue: 'Centre Bell, Montréal',
     winProb: { home: 64, away: 36, live: true },
+    winTimeline: [50, 52, 48, 41, 38, 45, 55, 61, 58, 49, 44, 52, 60, 66, 63, 58, 62, 64],
     stars: [
       { rank: 1, name: 'Cole Caufield', photo: '', teamId: '10', line: '2 buts' },
       { rank: 2, name: 'Nick Suzuki', photo: '', teamId: '10', line: '1 but, 2 passes' },

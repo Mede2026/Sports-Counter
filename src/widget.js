@@ -1,14 +1,14 @@
-import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchShootout, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
+import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchShootout, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, qualCuts, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { visibleTeamColor, playingColors, alternating, LIVE_THEME } from './lib/color.js';
-import { detectEvents, remember, favFights, penaltyToast } from './lib/events.js';
+import { detectEvents, remember, favFights, penaltyToast, streakOf, closeGameAlert } from './lib/events.js';
 import { whenText, shortWhen, untilText, isDate, TIME_FMT, dayText, isDateOnly } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, shortcutLabel } from './lib/shortcut.js';
 import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
-import { diskCache } from './lib/cache.js';
+import { diskCache, pruneStorage } from './lib/cache.js';
 import { TRANSLATED_EVENT } from './lib/translate.js';
 import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors } from './lib/wallpaper.js';
 
@@ -61,9 +61,14 @@ function teamRow(game, team, dim) {
 /** Les 5 derniers résultats d'une équipe favorite : ✅ ❌ ➖. */
 function formHtml(leagueId, teamId) {
   if (prefs.showForm === false) return '';
-  const list = forms.get(`${leagueId}:${teamId}`);
-  if (!list?.length) return '';
-  return ` <span class="form" title="${attr(formTitle(list))}">${formIcons(list)}</span>`;
+  const all = forms.get(`${leagueId}:${teamId}`);
+  if (!all?.length) return '';
+  const list = all.slice(-5);
+  // Série de 3 ou plus (sur les 10 derniers matchs) : 🔥 victoires, ❄️ défaites.
+  const streak = streakOf(all);
+  const badge = streak && streak.n >= 3
+    ? ` <span class="streak" title="${streak.n} ${streak.res === 'V' ? 'victoires' : 'défaites'} de suite">${streak.res === 'V' ? '🔥' : '❄️'}${streak.n}</span>` : '';
+  return ` <span class="form" title="${attr(formTitle(list))}">${formIcons(list)}</span>${badge}`;
 }
 
 /** Compte à rebours, tenu à jour par la minuterie sans redemander les scores. */
@@ -77,7 +82,7 @@ const soon = (date) => isDate(date) && date.getTime() - Date.now() < DAY_MS;
 
 function statusBlock(game) {
   if (game.state === 'in') {
-    const text = [game.session, game.clock, game.statusText].filter(Boolean).join(' · ');
+    const text = [sessionText(game), game.clock, game.statusText].filter(Boolean).join(' · ');
     return `<span class="status status--live"><span class="dot"></span>${text || 'En direct'}</span>`;
   }
   if (game.state === 'pre' && isDate(game.startsAt) && (game.allDay || isDateOnly(game.startsAt))) {
@@ -91,9 +96,13 @@ function statusBlock(game) {
     const until = soon(game.startsAt) ? ` · ${untilSpan(game.startsAt)}` : '';
     return `<span class="status">${text}${until}</span>`;
   }
-  const text = [game.session, game.statusText].filter(Boolean).join(' · ');
+  const text = [sessionText(game), game.statusText].filter(Boolean).join(' · ');
   return `<span class="status">${text}</span>`;
 }
+
+/** « Qualifications · Q2 » pendant les qualifications ; sinon le nom de la séance. */
+const sessionText = (game) => (game.session && game.qual && game.state === 'in' && game.phase
+  ? `${game.session} · Q${game.phase}` : game.session);
 
 /** Photo ronde d'un pilote (repli : rien, la place reste vide). */
 const photo = (d) => (d?.photo ? `<img class="face" src="${attr(d.photo)}" alt="" data-face />` : '');
@@ -110,10 +119,13 @@ function podiumHtml(game) {
   const top = gp ? (game.results ?? top3).slice(0, 5) : top3;
   const favs = prefs.favDrivers ?? [];
   const favOf = (d) => favs.find((f) => sameDriver(d, f));
+  // Qualifications en cours : ton pilote sous la barre de la phase est menacé.
+  const cut = game.qual && game.state === 'in' ? (game.phase === 1 ? qualCuts((game.results ?? []).length).q2 : game.phase === 2 ? 10 : null) : null;
   const line = (d, extra = '') => {
     const fav = favOf(d);
     const medal = MEDALS[d.pos] ?? `<span class="podium__pos">${d.pos}</span>`;
-    const gap = gp && d.pos > 1 && d.gap ? `<span class="podium__gap">${gapText(d.gap)}</span>` : '';
+    const danger = fav && cut && d.pos > cut ? '<span class="podium__gap" title="Zone d\'élimination">⚠️ éliminé si ça finit ainsi</span>' : '';
+    const gap = danger || (gp && d.pos > 1 && d.gap ? `<span class="podium__gap">${gapText(d.gap)}</span>` : '');
     return `<li class="${fav ? 'podium__fav' : ''}${extra}">
       <span class="podium__medal">${medal}</span>${fav ? photo(fav) : ''}<span class="podium__name">${d.short || d.name}</span>${gap}</li>`;
   };
@@ -183,7 +195,7 @@ function cardAttrs(game, cls, tip) {
  */
 function compactCard(game) {
   const league = LEAGUES_BY_ID[game.leagueId];
-  const status = [game.session, game.clock, game.statusText, game.series?.text].filter(Boolean).join(' · ');
+  const status = [sessionText(game), game.clock, game.statusText, game.series?.text].filter(Boolean).join(' · ');
   const tip = `${status} — cliquer pour les détails`;
   const cls = `row${game.state === 'in' ? ' row--live' : ''}`;
   const pre = game.state === 'pre';
@@ -230,7 +242,7 @@ function compactCard(game) {
     const when = pre ? middleWhen : leader ? `🥇 ${leader.short || leader.name}` : game.statusText;
     // Deux lignes : la séance (Essais 1, Qualifications, Course…), puis
     // l'heure, le compte à rebours ou le meneur.
-    const label = game.session ? `<small class="row__label">${game.session}</small>` : '';
+    const label = game.session ? `<small class="row__label">${sessionText(game)}</small>` : '';
     return `<div ${cardAttrs(game, cls, tip)}>
       ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '?', color: league?.accent })}
       <span class="row__event row__event--two">${label}<span>${when}</span></span>
@@ -393,7 +405,7 @@ function emptyHtml() {
  * évènement (but, début, fin…). Le premier relevé sert seulement de référence.
  */
 function notifyEvents(games) {
-  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [], favTennis: prefs.favTennis ?? [], favGolfers: prefs.favGolfers ?? [] };
+  const opts = { favDrivers: prefs.favDrivers ?? [], favFighters: prefs.favFighters ?? [], favTeams: prefs.favorites ?? [], favTennis: prefs.favTennis ?? [], favGolfers: prefs.favGolfers ?? [], forms };
   const events = detectEvents(seen, games, opts);
   const ended = seen ? games.filter((g) => g.kind === 'match' && g.state === 'post' && seen.get(g.id)?.state === 'in') : [];
   seen = remember(seen, games, opts);
@@ -509,7 +521,7 @@ async function loadForms() {
   for (const key of stale) {
     const [leagueId, teamId] = key.split(':');
     try {
-      const list = await fetchTeamForm(leagueId, teamId);
+      const list = await fetchTeamForm(leagueId, teamId, 10);
       forms.set(key, list);
       changed ||= list.length > 0;
     } catch {
@@ -671,6 +683,25 @@ async function checkPenalties(games) {
     if (!seen) continue;
     const fresh = list.filter((x) => !seen.has(x.id));
     for (const pen of fresh) sendToast(penaltyToast(g, pen, list));
+  }
+}
+
+/* ---------- Fin de match serrée ---------- */
+
+const closeSeen = new Set(); // une alerte par match
+
+/** Un match de tes équipes se joue serré à la fin : une notification. */
+function checkCloseGames(games) {
+  if (prefs.notifications === false || prefs.notifyClose === false || !inTauri()) return;
+  const favs = new Set(prefs.favorites ?? []);
+  for (const g of games) {
+    if (closeSeen.has(g.id) || g.kind !== 'match') continue;
+    const mine = [g.home, g.away].some((t) => favs.has(`${g.leagueId}:${t.id}`));
+    if (!mine) continue;
+    const alert = closeGameAlert(g);
+    if (!alert) continue;
+    closeSeen.add(g.id);
+    sendToast(alert);
   }
 }
 
@@ -1372,6 +1403,10 @@ async function loadBoard(leagueId, force) {
 }
 
 let refreshing = null;
+// Démarrage : les tâches secondaires attendent que le widget soit affiché.
+const STARTUP_DELAY_MS = 4000;
+let booted = false;
+
 function refresh(force = false) {
   // Un relevé à la fois : un clic pendant un relevé ne le double pas.
   refreshing ??= doRefresh(force).finally(() => { refreshing = null; });
@@ -1424,21 +1459,33 @@ async function doRefresh(force) {
   }
 
   const today = games.filter(keepGame).filter((g) => !isStale(g) && !beyondHorizon(g));
+  // Premier relevé : les matchs du jour s'affichent tout de suite ; les
+  // prochains matchs (plusieurs jours à lire) suivent quand ils arrivent.
+  if (!booted && today.length) render(nextOnly([...today].sort(sortGames)).slice(0, prefs.maxGames), error, offline);
   const upcoming = await nextGamesForIdleFavorites(today);
 
   followed = nextOnly([...today, ...upcoming.filter((g) => !beyondHorizon(g))].sort(sortGames));
   notifyEvents(followed);
-  checkReminders();
   checkEmptyNets(followed);
   checkPenalties(followed);
   checkShootouts(followed);
-  updateWallpaper();
-  morningDigest();
+  checkCloseGames(followed);
 
   const visible = followed.slice(0, prefs.maxGames);
   render(visible, error, offline);
   if (!offline) snapshot.set('games', visible);
-  if (!offline) loadForms();
+  // Le reste attend quelques secondes au démarrage : le widget s'affiche
+  // d'abord, puis les rappels, la forme des équipes et le fond d'écran.
+  const extras = () => {
+    try { pruneStorage(); } catch { /* nettoyage : sans conséquence */ }
+    checkReminders();
+    updateWallpaper();
+    morningDigest();
+    if (!offline) loadForms();
+  };
+  if (booted) extras();
+  else setTimeout(extras, STARTUP_DELAY_MS);
+  booted = true;
   const hasLive = visible.some((g) => g.state === 'in');
   applyWidgetMode(hasLive);
   schedule(hasLive, followed, offline);

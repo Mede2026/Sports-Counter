@@ -565,3 +565,32 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 .so__n { width: 16px; color: var(--text-faint); font-size: 11px; text-align: right; }
 .so__who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .so__res { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+/* Courbe des chances de victoire pendant le match. */
+.wg { margin-top: 12px; }
+.wg__labels, .wg__foot { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-faint); }
+.wg__labels { flex-direction: column; float: left; height: 90px; justify-content: space-between; margin-right: 6px; font-weight: 700; }
+.wg__svg { display: block; width: calc(100% - 40px); height: 90px; margin-left: 40px; }
+.wg__mid { stroke: rgba(255, 255, 255, 0.18); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.wg__foot { clear: both; margin-left: 40px; padding-top: 3px; }
+
+/* F1 : écart avec le pilote devant, éliminés des qualifications, pneus. */
+.grid .gap { display: flex; flex-direction: column; align-items: flex-end; }
+.grid .gap small { font-size: 10px; color: var(--text-faint); }
+.grid li.out { opacity: 0.55; }
+.qtag { display: inline-block; margin-top: 2px; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 6px; width: fit-content; }
+.qtag--out { background: rgba(255, 255, 255, 0.08); color: var(--text-faint); }
+.qtag--risk { background: rgba(255, 138, 0, 0.18); color: #ffa94d; }
+.tyre {
+  display: inline-grid; place-items: center; flex-shrink: 0;
+  width: 20px; height: 20px; border-radius: 50%;
+  font-size: 10px; font-weight: 800; color: #fff;
+  border: 3px solid currentColor; background: #111;
+}
+.tyre--soft { color: #e8002d; }
+.tyre--medium { color: #ffd12e; }
+.tyre--hard { color: #f0f0f0; }
+.tyre--intermediate { color: #43b02a; }
+.tyre--wet { color: #0067ad; }
+.grid .tyre { margin-left: auto; }
+.grid .tyre + .gap { margin-left: 8px; min-width: 64px; }

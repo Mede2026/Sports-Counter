@@ -120,6 +120,40 @@ async fn espn_get(path: String) -> Result<String, String> {
     if !path_is_safe(&path) {
         return Err("chemin de requête invalide".into());
     }
+    // Même demande il y a moins de 10 s (une autre fenêtre de l'app, par
+    // exemple) : la même réponse, sans redemander à ESPN.
+    if let Some(body) = relay_cache_get(&path) {
+        return Ok(body);
+    }
+    let body = relay_fetch(&path).await?;
+    relay_cache_put(path, body.clone());
+    Ok(body)
+}
+
+/// Réponses récentes du relais : chemin -> (moment, contenu).
+static RELAY_CACHE: Mutex<Vec<(String, std::time::Instant, String)>> = Mutex::new(Vec::new());
+const RELAY_CACHE_TTL: Duration = Duration::from_secs(10);
+
+fn relay_cache_get(path: &str) -> Option<String> {
+    let cache = RELAY_CACHE.lock().unwrap();
+    cache
+        .iter()
+        .find(|(p, at, _)| p == path && at.elapsed() < RELAY_CACHE_TTL)
+        .map(|(_, _, body)| body.clone())
+}
+
+fn relay_cache_put(path: String, body: String) {
+    let mut cache = RELAY_CACHE.lock().unwrap();
+    cache.retain(|(p, at, _)| p != &path && at.elapsed() < RELAY_CACHE_TTL);
+    // Pas plus de 60 réponses gardées : la mémoire reste petite.
+    if cache.len() >= 60 {
+        cache.remove(0);
+    }
+    cache.push((path, std::time::Instant::now(), body));
+}
+
+async fn relay_fetch(path: &str) -> Result<String, String> {
+    let path = path.to_string();
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(12))
@@ -131,6 +165,9 @@ async fn espn_get(path: String) -> Result<String, String> {
         format!("{ESPN_BASE_V2}/{rest}")
     } else if let Some(rest) = path.strip_prefix("core/") {
         format!("{ESPN_CORE}/{rest}")
+    } else if let Some(rest) = path.strip_prefix("openf1/") {
+        // Pneus de F1 : ESPN ne les donne pas.
+        format!("https://api.openf1.org/v1/{rest}")
     } else if let Some(rest) = path.strip_prefix("wiki/") {
         // Logos de secours : l'image de l'article Wikipédia d'une équipe.
         format!("{WIKI_API}{rest}")

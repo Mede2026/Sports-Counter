@@ -686,3 +686,6 @@ span.crest {
 
 /* Drapeaux : rectangle entier, jamais rogné ni entouré d'un halo. */
 img[data-flag] { object-fit: contain; border-radius: 3px; background: transparent !important; box-shadow: none !important; filter: none !important; }
+
+/* Série de victoires (🔥) ou de défaites (❄️) à côté des derniers résultats. */
+.streak { font-size: 10px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
