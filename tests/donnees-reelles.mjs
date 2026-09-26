@@ -155,7 +155,9 @@ await check('Fiche joueur LNH', async () => {
   const roster = await api.fetchRoster('nhl', teams.find((t) => t.abbr === 'MTL')?.id ?? teams[0].id);
   const p = roster.find((x) => x.pos !== 'G') ?? roster[0];
   const o = await api.fetchPlayerOverview('nhl', p.id);
-  (o?.season?.length || o?.games?.length ? ok : warn)('Fiche joueur LNH', `${p.name} : ${o?.season?.length ?? 0} stats, ${o?.games?.length ?? 0} matchs`);
+  const bio = await api.fetchPlayerBio('nhl', p.id).catch(() => null);
+  const facts = ['age', 'born', 'height', 'weight', 'draft'].filter((k) => bio?.[k]).length;
+  (o?.season?.length || o?.games?.length ? ok : warn)('Fiche joueur LNH', `${p.name} : ${o?.season?.length ?? 0} stats, ${o?.games?.length ?? 0} matchs, bio ${facts}/5`);
 });
 
 // 6. Nouvelles d'une équipe.

@@ -404,6 +404,18 @@
     </div>
   </div>
 
+  <!-- Fiche d'une équipe ou d'un joueur, par-dessus la fenêtre. -->
+  <div class="sheet" id="sheet" hidden>
+    <div class="sheet__backdrop" data-close></div>
+    <div class="sheet__panel" role="dialog" aria-modal="true">
+      <div class="sheet__bar">
+        <button class="ghost ghost--small" type="button" id="sheetBack" hidden>← Retour</button>
+        <button class="sheet__close" type="button" data-close title="Fermer (Échap)">×</button>
+      </div>
+      <div class="sheet__body" id="sheetBody"></div>
+    </div>
+  </div>
+
   <script type="module" src="settings.js"></script>
 </body>
 </html>

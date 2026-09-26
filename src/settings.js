@@ -15,6 +15,7 @@ import { ofTeam } from './lib/events.js';
 import { clearCaches, storageSize } from './lib/cache.js';
 import { wallpaperOptions, renderWallpaper, readModel, buildModel } from './lib/wallpaper.js';
 import { SOUNDS, soundFor, playSound } from './lib/sound.js';
+import { initSheet, openTeamSheet, openPlayerSheet } from './sheet.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -132,8 +133,8 @@ function renderTeams() {
   el.teams.innerHTML = whole + list.map((t) => {
     const on = prefs.favorites.includes(`${current}:${t.id}`);
     const crest = crestHtml(t, 'crest-sm');
-    return `<div class="team-row${on ? ' team-row--on' : ''}" data-id="${t.id}">
-      <span class="check">${CHECK}</span>
+    return `<div class="team-row${on ? ' team-row--on' : ''}" data-id="${t.id}" title="Cliquer pour la fiche de l'équipe">
+      <span class="check" title="${on ? 'Ne plus suivre' : 'Suivre cette équipe'}">${CHECK}</span>
       ${crest}
       <span class="team-row__name">${t.name}</span>
       <span class="team-row__abbr">${t.abbr}</span>
@@ -141,8 +142,13 @@ function renderTeams() {
   }).join('');
 
   bindCrests(el.teams);
+  // Le crochet suit l'équipe ; le reste de la ligne ouvre sa fiche.
   el.teams.querySelectorAll('.team-row[data-id]').forEach((row) => {
-    row.addEventListener('click', () => toggleTeam(row.dataset.id));
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.check')) { toggleTeam(row.dataset.id); return; }
+      const t = teams.find((x) => x.id === row.dataset.id);
+      if (t) openTeamSheet(current, t);
+    });
   });
   document.getElementById('rowFollowWhole')?.addEventListener('click', toggleLeague);
 }
@@ -505,14 +511,18 @@ function forgetFavorite(key) {
 }
 
 function toggleTeam(id) {
-  const key = `${current}:${id}`;
+  toggleFavTeam(current, teams.find((x) => x.id === id) ?? { id });
+}
+
+/** Suit ou ne suit plus une équipe, de n'importe quelle ligue (fiche d'équipe comprise). */
+function toggleFavTeam(leagueId, t) {
+  const key = `${leagueId}:${t.id}`;
   const i = prefs.favorites.indexOf(key);
   if (i === -1) {
     prefs.favorites.push(key);
     // Nom et couleurs gardés maintenant : le widget en a besoin pour se
     // colorer, sans redemander la liste des équipes à ESPN.
-    const t = teams.find((x) => x.id === id);
-    if (t) prefs.favInfo[key] = { name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null, logo: t.logo ?? '' };
+    if (t.name) prefs.favInfo[key] = { name: t.name, abbr: t.abbr, color: t.color, alt: t.alt ?? null, logo: t.logo ?? '' };
   } else {
     prefs.favorites.splice(i, 1);
     forgetFavorite(key);
@@ -1172,13 +1182,20 @@ async function loadStandings() {
   if (standingsMode === 'bracket') { loadBracket(leagueId); return; }
   el.standings.innerHTML = '<div class="state">Chargement du classement…</div>';
   try {
+    const groups = leagueId === 'f1' ? null : IS_DEMO ? demoStandings() : await fetchStandingsTable(leagueId);
     const html = leagueId === 'f1'
       ? f1StandingsHtml(IS_DEMO ? demoF1Standings() : await fetchF1Standings(), standingsMode === 'players' ? 'drivers' : 'teams')
-      : teamStandingsHtml(leagueId, IS_DEMO ? demoStandings() : await fetchStandingsTable(leagueId));
+      : teamStandingsHtml(leagueId, groups);
     if (standingsLeague !== leagueId) return; // autre ligue choisie entre-temps
     el.standings.innerHTML = html || '<div class="state">ESPN ne donne pas encore de classement pour cette ligue.</div>';
     bindCrests(el.standings);
     bindFaces(el.standings);
+    // Un clic sur une équipe : sa fiche.
+    const rows = (groups ?? []).flatMap((g) => g.rows);
+    el.standings.querySelectorAll('tr[data-team]').forEach((tr) => tr.addEventListener('click', () => {
+      const r = rows.find((x) => String(x.id) === tr.dataset.team);
+      if (r) openTeamSheet(leagueId, { ...teamOf(leagueId, r.id), ...r, name: r.name || r.short });
+    }));
     el.standings.querySelector('.st__row--fav')?.scrollIntoView({ block: 'center' });
   } catch (err) {
     if (standingsLeague === leagueId) el.standings.innerHTML = errorBlock('Classement indisponible.', err);
@@ -1226,7 +1243,7 @@ async function renderLeaders() {
         const p = players[i];
         const t = teams.get(l.teamId);
         const fav = prefs.favorites.includes(`${leagueId}:${l.teamId}`) || (p?.name && isFavPlayer(p));
-        return `<tr class="${fav ? 'st__row--fav' : ''}">
+        return `<tr class="${fav ? 'st__row--fav' : ''}"${p?.id ? ` data-sheet data-i="${i}" title="Voir la fiche du joueur"` : ''}>
           <td class="st__rank">${({ 1: '🥇', 2: '🥈', 3: '🥉' })[l.rank] ?? l.rank}</td>
           <td class="st__team"><span class="st__cell">${faceHtml(p, 'face-sm')}
             <span>${p?.name ?? '…'}${p?.pos ? ` <small class="st__muted">${p.pos}</small>` : ''}</span></span></td>
@@ -1237,6 +1254,13 @@ async function renderLeaders() {
     bindCrests(el.standings);
     bindFaces(el.standings);
     el.standings.querySelectorAll('.cat-chip').forEach((b) => b.addEventListener('click', () => { leaderCat = b.dataset.cat; renderLeaders(); }));
+    // Un clic sur un joueur : sa fiche.
+    el.standings.querySelectorAll('tr[data-i]').forEach((tr) => tr.addEventListener('click', () => {
+      const l = cat.leaders[Number(tr.dataset.i)];
+      const p = players[Number(tr.dataset.i)];
+      const t = teams.get(l.teamId);
+      if (p?.id) openPlayerSheet(leagueId, { ...p, teamId: l.teamId, team: t ? { id: l.teamId, ...t } : null });
+    }));
   };
   // D'abord les valeurs, puis les noms et photos dès qu'ils arrivent.
   draw([]);
@@ -1247,7 +1271,7 @@ async function renderLeaders() {
 }
 
 function demoLeaders() {
-  const p = (name, pos, teamId, value, i) => ({ rank: i + 1, value, ref: `demo${i}`, teamId, demo: { name, pos, photo: '' } });
+  const p = (name, pos, teamId, value, i) => ({ rank: i + 1, value, ref: `demo${i}`, teamId, demo: { id: `demo${i}`, name, pos, photo: '' } });
   return [
     { name: 'points', label: 'Points', leaders: [['Nikita Kucherov', 'AD', '17', '21'], ['Nick Suzuki', 'C', '10', '18'], ['Auston Matthews', 'C', '21', '16'], ['Cole Caufield', 'AD', '10', '15']].map(([n, pos, t, v], i) => p(n, pos, t, v, i)) },
     { name: 'goals', label: 'Buts', leaders: [['Cole Caufield', 'AD', '10', '11'], ['Auston Matthews', 'C', '21', '9']].map(([n, pos, t, v], i) => p(n, pos, t, v, i)) },
@@ -1268,7 +1292,7 @@ function teamStandingsHtml(leagueId, groups) {
       <table class="st__table">
         <thead><tr><th class="st__rank">#</th><th class="st__team">Équipe</th>${cols.map(([, h]) => `<th>${h}</th>`).join('')}</tr></thead>
         <tbody>${g.rows.map((r) => `
-          <tr class="${fav(r.id) ? 'st__row--fav' : ''}">
+          <tr class="${fav(r.id) ? 'st__row--fav' : ''}" data-sheet data-team="${r.id}" title="Voir la fiche de l'équipe">
             <td class="st__rank">${g.preseason ? '–' : r.rank}</td>
             <td class="st__team"><span class="st__cell">${crestHtml({ logo: r.logo, abbr: r.abbr }, 'crest-sm')}<span>${r.short || r.name}</span></span></td>
             ${cols.map(([k]) => `<td>${r.stats[k] ?? '–'}</td>`).join('')}
@@ -1387,6 +1411,26 @@ function demoStandings() {
     row(2, '10', 'MTL', 'Canadiens', { gamesPlayed: '10', wins: '7', losses: '2', otLosses: '1', points: '15' }),
     row(3, '21', 'TOR', 'Maple Leafs', { gamesPlayed: '10', wins: '6', losses: '3', otLosses: '1', points: '13' }),
   ] }];
+}
+
+/** Couleurs de l'équipe (liste de la ligue ou favoris), pour sa fiche. */
+function teamOf(leagueId, id) {
+  const key = `${leagueId}:${id}`;
+  const fromList = leagueId === current ? teams.find((x) => x.id === String(id)) : null;
+  return fromList ?? prefs.favInfo?.[key] ?? {};
+}
+
+/** Aperçu : quelques matchs passés et à venir d'une équipe. */
+function demoTeamGames(team) {
+  const opp = [['21', 'TOR'], ['17', 'TBL'], ['6', 'BOS'], ['9', 'OTT'], ['3', 'NYR'], ['26', 'FLA'], ['7', 'CAR']];
+  return opp.map(([id, abbr], i) => {
+    const days = i - 4;
+    const post = days < 0;
+    const me = { id: String(team.id), abbr: team.abbr, logo: team.logo ?? '', score: post ? String(2 + (i % 3)) : '', winner: post && i % 2 === 0 };
+    const other = { id, abbr, logo: '', score: post ? String(1 + (i % 2) * 3) : '', winner: post && i % 2 === 1 };
+    const d = new Date(); d.setDate(d.getDate() + days * 2); d.setHours(19, 0, 0, 0);
+    return { id: `demo-${i}`, kind: 'match', state: post ? 'post' : 'pre', startsAt: d, home: i % 2 ? other : me, away: i % 2 ? me : other };
+  });
 }
 
 function demoF1Standings() {
@@ -1793,6 +1837,30 @@ document.getElementById('playerAdd').addEventListener('submit', (e) => {
   if (name.length < 3) return;
   if (!isFavPlayer({ name })) togglePlayer({ id: '', name, photo: '', teamId: '', leagueId: playerLeague });
   input.value = '';
+});
+
+initSheet({
+  prefs: () => prefs,
+  toggleTeam: toggleFavTeam,
+  togglePlayer,
+  isFavPlayer,
+  openMatch: async (league, event) => {
+    if (!inTauri()) { window.open(`match.html?league=${league}&event=${encodeURIComponent(event)}${IS_DEMO ? '&demo' : ''}`, '_blank'); return; }
+    try { await window.__TAURI__.core.invoke('open_match', { league, event }); } catch { /* indisponible */ }
+  },
+  openLink: async (url) => {
+    if (!url) return;
+    if (!inTauri()) { window.open(url, '_blank', 'noopener'); return; }
+    try { await window.__TAURI__.core.invoke('open_espn', { url }); } catch { /* refusé */ }
+  },
+  demo: IS_DEMO ? {
+    standings: demoStandings,
+    games: demoTeamGames,
+    roster: demoRoster,
+    news: () => [{ title: 'Le Canadien rappelle un attaquant de Laval', date: new Date(), link: 'https://www.espn.com/nhl/story/_/id/1' }],
+    bio: (p) => ({ ...p, pos: 'Centre', age: 26, born: '10 juin 1999', place: 'London, ON, CAN', height: '180 cm', weight: '86 kg', hand: 'Gauche', draft: '2017, 1re ronde, 13e choix (VGK)', experience: '8e saison', team: p.team ?? { id: '10', abbr: 'MTL', name: 'Canadiens', logo: '' } }),
+    overview: demoOverview,
+  } : null,
 });
 
 bindOptions();

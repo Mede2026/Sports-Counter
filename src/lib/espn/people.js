@@ -4,7 +4,7 @@ import { LEAGUES_BY_ID } from '../leagues.js';
 import { NHL_TEAMS } from '../teams-nhl.js';
 import { diskCache } from '../cache.js';
 import { autoFr } from '../translate.js';
-import { TEAMS_TTL, athletePhoto, boardQuery, corePath, getCore, getJson, ymd } from './core.js';
+import { TEAMS_TTL, athletePhoto, boardQuery, corePath, getCore, getJson, getWeb, ymd } from './core.js';
 import { LEADER_FR } from './detail.js';
 import { fetchTeams, fightOf, golferOf, normalizeTennis, toDriver } from './scoreboard.js';
 
@@ -145,6 +145,82 @@ export async function fetchAthlete(ref) {
   };
   if (athlete.name) athleteCache.set(ref, athlete);
   return athlete;
+}
+
+// Positions, en français.
+const POS_FR = [
+  [/^center$/i, 'Centre'], [/^left wing$/i, 'Ailier gauche'], [/^right wing$/i, 'Ailier droit'], [/^wing$/i, 'Ailier'],
+  [/^defen[cs]e(man)?$/i, 'Défenseur'], [/^goalie|goalkeeper|goaltender$/i, 'Gardien'], [/^forward$/i, 'Attaquant'],
+  [/^midfielder$/i, 'Milieu'], [/^guard$/i, 'Arrière'], [/^point guard$/i, 'Meneur'], [/^shooting guard$/i, 'Arrière'],
+  [/^small forward$/i, 'Ailier'], [/^power forward$/i, 'Ailier fort'], [/^quarterback$/i, 'Quart-arrière'],
+  [/^running back$/i, 'Porteur de ballon'], [/^wide receiver$/i, 'Receveur'], [/^tight end$/i, 'Ailier rapproché'],
+  [/^linebacker$/i, 'Secondeur'], [/^cornerback$/i, 'Demi de coin'], [/^safety$/i, 'Maraudeur'],
+  [/^starting pitcher$/i, 'Lanceur partant'], [/^relief pitcher$/i, 'Releveur'], [/^pitcher$/i, 'Lanceur'],
+  [/^catcher$/i, 'Receveur'], [/^first base(man)?$/i, 'Premier but'], [/^second base(man)?$/i, 'Deuxième but'],
+  [/^third base(man)?$/i, 'Troisième but'], [/^shortstop$/i, 'Arrêt-court'], [/^outfielder$/i, 'Voltigeur'],
+  [/^designated hitter$/i, 'Frappeur désigné'],
+];
+export const positionFr = (name) => POS_FR.find(([re]) => re.test(String(name ?? '').trim()))?.[1] ?? autoFr(name ?? '');
+
+const BIRTH_FMT = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** « 2019: Rd 1, Pk 15 (MTL) » -> « 2019, 1re ronde, 15e choix (MTL) ». */
+export function draftFr(raw) {
+  const m = /(\d{4})\D+(?:Rd|Round)\s*(\d+)\D+(?:Pk|Pick)\s*(\d+)(?:\s*\((\w+)\))?/i.exec(String(raw ?? ''));
+  if (!m) return raw ? autoFr(raw) : '';
+  const nth = (n) => `${n}${Number(n) === 1 ? 're' : 'e'}`;
+  return `${m[1]}, ${nth(m[2])} ronde, ${m[3]}${Number(m[3]) === 1 ? 'er' : 'e'} choix${m[4] ? ` (${m[4]})` : ''}`;
+}
+
+/**
+ * Fiche d'un joueur : poste, numéro, équipe, âge, date et lieu de naissance,
+ * taille et poids (en cm et kg), repêchage, main (hockey). null sans données.
+ */
+export async function fetchPlayerBio(leagueId, athleteId) {
+  const league = LEAGUES_BY_ID[leagueId];
+  if (!league || !athleteId) return null;
+  let a = null;
+  try {
+    a = (await getWeb(`${league.path}/athletes/${encodeURIComponent(athleteId)}`))?.athlete ?? null;
+  } catch { /* on essaie l'API « core » */ }
+  if (!a?.displayName) {
+    const [sport, code] = league.path.split('/');
+    a = await getCore(`/v2/sports/${sport}/leagues/${code}/athletes/${encodeURIComponent(athleteId)}?lang=en&region=us`);
+  }
+  if (!a?.displayName) return null;
+  const inches = Number(a.height);
+  const pounds = Number(a.weight);
+  const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(a.displayDOB ?? '');
+  const dob = a.dateOfBirth ? new Date(a.dateOfBirth) : dm ? new Date(Date.UTC(Number(dm[3]), Number(dm[1]) - 1, Number(dm[2]))) : null;
+  const bp = a.birthPlace ?? {};
+  const years = Number(a.experience?.years);
+  const nth = /(\d+)(?:st|nd|rd|th)\s+season/i.exec(a.displayExperience ?? '');
+  const experience = /rookie/i.test(a.displayExperience ?? '') ? 'Recrue'
+    : nth ? `${nth[1]}${nth[1] === '1' ? 're' : 'e'} saison`
+      : Number.isFinite(years) && years > 0 ? `${years} an${years > 1 ? 's' : ''} d'expérience` : '';
+  const team = a.team && typeof a.team === 'object' && a.team.id ? {
+    id: String(a.team.id), abbr: a.team.abbreviation ?? '', name: a.team.displayName ?? a.team.name ?? '',
+    logo: a.team.logos?.[0]?.href ?? a.team.logo ?? '', color: a.team.color ? `#${a.team.color}` : '',
+  } : null;
+  const hand = a.hand?.displayValue ?? a.shoots?.displayValue ?? '';
+  return {
+    id: String(a.id ?? athleteId),
+    name: a.displayName,
+    photo: a.headshot?.href ?? athletePhoto(a, leagueId),
+    pos: positionFr(a.position?.displayName ?? a.position?.name ?? ''),
+    posAbbr: a.position?.abbreviation ?? '',
+    jersey: a.jersey ?? a.displayJersey?.replace('#', '') ?? '',
+    team,
+    age: Number(a.age) || null,
+    born: dob && !Number.isNaN(dob.getTime()) ? BIRTH_FMT.format(dob) : '',
+    place: a.displayBirthPlace ?? [bp.city, bp.state, bp.country].filter(Boolean).join(', '),
+    height: inches > 0 ? `${Math.round(inches * 2.54)} cm` : '',
+    weight: pounds > 0 ? `${Math.round(pounds * 0.4536)} kg` : '',
+    draft: draftFr(a.displayDraft ?? a.draft?.displayText ?? ''),
+    experience,
+    hand: /^l/i.test(hand) ? 'Gauche' : /^r/i.test(hand) ? 'Droite' : '',
+    injured: (a.injuries ?? []).length > 0,
+  };
 }
 
 export const fightersCache = diskCache('fighters', 24 * 3600 * 1000);
