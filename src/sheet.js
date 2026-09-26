@@ -10,6 +10,12 @@ import { TIME_FMT } from './lib/time.js';
 import { autoFr, translated } from './lib/translate.js';
 import { errText } from './lib/err.js';
 
+// Même crochet que dans la liste des équipes : suivre = cocher.
+const CHECK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4"
+  stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5" /></svg>`;
+const followBtn = (on, attr, yes, no) => `<button class="ghost ghost--small sh__follow${on ? ' sh__follow--on' : ''}" type="button" ${attr}>
+  <span class="check">${CHECK}</span>${on ? yes : no}</button>`;
+
 const DAY = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' });
 const WEEKDAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'short', day: 'numeric', month: 'short' });
 
@@ -113,7 +119,7 @@ async function loadTeam({ leagueId, team }, t) {
       <div class="sh__title"><b>${esc(team.name)}</b>
         <small>${esc([league?.label, standing?.rank].filter(Boolean).join(' · '))}</small>
         ${standing?.record ? `<small>${esc(standing.record)}</small>` : ''}</div>
-      <button class="ghost ghost--small sh__fav${on ? ' sh__fav--on' : ''}" type="button" data-fav-team>${on ? '★ Suivie' : '☆ Suivre'}</button>
+      ${followBtn(on, 'data-fav-team', 'Suivie', 'Suivre')}
     </div>`;
   };
   const state = { standing: null, games: null, roster: null, news: null };
@@ -189,7 +195,7 @@ async function loadPlayer({ leagueId, player }, t) {
         ${faceHtml(p, 'face sh__face')}
         <div class="sh__title"><b>${esc(p.name)}${bio?.injured ? ' <span title="Blessé">🩹</span>' : ''}</b>
           <small>${team ? `${crestHtml(team, 'crest-sm sh__mini')} ` : ''}${esc(sub)}</small></div>
-        <button class="ghost ghost--small sh__fav${fav ? ' sh__fav--on' : ''}" type="button" data-fav-player>${fav ? '★ Favori' : '☆ Joueur favori'}</button>
+        ${followBtn(fav, 'data-fav-player', 'Joueur favori', 'Joueur favori')}
       </div>`
       + (state.bio === null ? loading('de la fiche') : facts.length ? `<dl class="sh__facts">${facts.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl>` : '')
       + (state.overview === null ? loading('des stats')

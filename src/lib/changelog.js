@@ -9,7 +9,7 @@ export const CHANGELOG = {
     '📰 Fenêtre Match : les nouvelles d’ESPN sur le match, sinon sur ton équipe. Un clic ouvre l’article.',
     '🏁 F1 dans le widget : une ligne au-dessus du podium dit ce qu’il montre (« Résultat de la course · sam. 26 », « Qualifs : grille de départ »…). Entre les qualifs et la course, la grille de départ reste affichée.',
     '📅 Calendrier : choisis « Toute la LNH » (ou n’importe quelle ligue) pour voir tous ses matchs, pas seulement ceux de tes équipes. Tes équipes restent surlignées.',
-    '👤 Classements : clique sur un joueur pour sa fiche (âge, taille, poids, repêchage, stats de la saison, derniers matchs) et l’ajouter à tes favoris.',
+    '👤 Classements : clique sur un joueur pour sa fiche (âge, taille en cm et en pieds, poids en kg et en livres, repêchage, stats de la saison, derniers matchs) et l’ajouter à tes favoris.',
     '🏒 Clique sur une équipe (classement ou liste des équipes) pour sa fiche : derniers et prochains matchs, nouvelles, alignement. Dans la liste, c’est maintenant le crochet ✓ qui suit l’équipe.',
     '📜 Bandeau défilant : les scores défilent sur une mince bande en haut ou en bas de l’écran (Réglages → Widget).',
     '🏀 WNBA : les équipes nationales des matchs préparatoires (Japon, Nigeria…) ne se mêlent plus à la liste des équipes.',

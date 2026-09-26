@@ -723,8 +723,10 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 .sh__title b { font-size: 17px; }
 .sh__title small { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
 .sh__title .sh__mini { width: 18px; height: 18px; }
-.sh__fav { flex-shrink: 0; }
-.sh__fav--on { color: #f2c55c; border-color: rgba(242, 197, 92, 0.5); }
+.sh__follow { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; }
+.sh__follow .check { width: 15px; height: 15px; }
+.sh__follow--on .check { background: var(--accent); border-color: var(--accent); }
+.sh__follow--on .check svg { opacity: 1; }
 .sh__wait { font-size: 12px; color: var(--text-faint); }
 .sh__sec h3 { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 6px; }
 

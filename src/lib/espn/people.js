@@ -214,8 +214,9 @@ export async function fetchPlayerBio(leagueId, athleteId) {
     age: Number(a.age) || null,
     born: dob && !Number.isNaN(dob.getTime()) ? BIRTH_FMT.format(dob) : '',
     place: a.displayBirthPlace ?? [bp.city, bp.state, bp.country].filter(Boolean).join(', '),
-    height: inches > 0 ? `${Math.round(inches * 2.54)} cm` : '',
-    weight: pounds > 0 ? `${Math.round(pounds * 0.4536)} kg` : '',
+    // Les deux systèmes : « 180 cm (5 pi 11 po) », « 86 kg (190 lb) ».
+    height: inches > 0 ? `${Math.round(inches * 2.54)} cm (${Math.floor(Math.round(inches) / 12)} pi ${Math.round(inches) % 12} po)` : '',
+    weight: pounds > 0 ? `${Math.round(pounds * 0.4536)} kg (${Math.round(pounds)} lb)` : '',
     draft: draftFr(a.displayDraft ?? a.draft?.displayText ?? ''),
     experience,
     hand: /^l/i.test(hand) ? 'Gauche' : /^r/i.test(hand) ? 'Droite' : '',

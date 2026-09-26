@@ -1926,7 +1926,7 @@ initSheet({
     games: demoTeamGames,
     roster: demoRoster,
     news: () => [{ title: 'Le Canadien rappelle un attaquant de Laval', date: new Date(), link: 'https://www.espn.com/nhl/story/_/id/1' }],
-    bio: (p) => ({ ...p, pos: 'Centre', age: 26, born: '10 juin 1999', place: 'London, ON, CAN', height: '180 cm', weight: '86 kg', hand: 'Gauche', draft: '2017, 1re ronde, 13e choix (VGK)', experience: '8e saison', team: p.team ?? { id: '10', abbr: 'MTL', name: 'Canadiens', logo: '' } }),
+    bio: (p) => ({ ...p, pos: 'Centre', age: 26, born: '10 juin 1999', place: 'London, ON, CAN', height: '180 cm (5 pi 11 po)', weight: '86 kg (190 lb)', hand: 'Gauche', draft: '2017, 1re ronde, 13e choix (VGK)', experience: '8e saison', team: p.team ?? { id: '10', abbr: 'MTL', name: 'Canadiens', logo: '' } }),
     overview: demoOverview,
   } : null,
 });
