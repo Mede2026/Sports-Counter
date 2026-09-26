@@ -1,6 +1,6 @@
 import { LEAGUES, LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
-import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchGolfers, fetchTeamGames, fetchLeagueCalendar, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchPlayerOverview, fetchBracket, hasBracket, probeLeague, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
+import { fetchTeams, fetchDrivers, fetchFighters, fetchRoster, fetchAllPlayers, fetchTennisPlayers, fetchGolfers, fetchTeamGames, fetchLeagueCalendar, fetchLeagueRange, fetchStandingsTable, fetchF1Standings, fetchLeagueLeaders, fetchAthlete, fetchPlayerOverview, fetchBracket, hasBracket, probeLeague, STANDING_COLS, demoEvents, sameDriver } from './lib/api.js';
 import { untilText, isDate, dayName, TIME_FMT, isDateOnly } from './lib/time.js';
 import { DEFAULT_SHORTCUTS, comboFromEvent, shortcutLabel } from './lib/shortcut.js';
 import { DEMO_TEAMS } from './lib/demo.js';
@@ -1455,7 +1455,36 @@ let calLoading = false;
 
 function showCalendar() {
   setView('calendar');
+  const select = document.getElementById('calLeague');
+  if (!select.options.length) {
+    // Tes ligues d'abord (★), puis toutes les autres.
+    const mine = new Set([...prefs.favorites.map((k) => k.split(':')[0]), ...prefs.leagues]);
+    if (prefs.favDrivers?.length) mine.add('f1');
+    const sorted = [...LEAGUES.filter((l) => mine.has(l.id)), ...LEAGUES.filter((l) => !mine.has(l.id))];
+    select.innerHTML = '<option value="">⭐ Mes équipes</option>'
+      + sorted.map((l) => `<option value="${l.id}">${mine.has(l.id) ? '★ ' : ''}Toute la ${esc(l.label)}</option>`).join('');
+    select.value = LEAGUES_BY_ID[prefs.calendarLeague] ? prefs.calendarLeague : '';
+    select.addEventListener('change', () => {
+      prefs.calendarLeague = select.value;
+      savePrefs(prefs);
+      calPast = CAL_PAST_STEP;
+      loadCalendar(true);
+    });
+  }
   loadCalendar(false);
+}
+
+// Ligue entière déjà chargée : « ligue:jours passés » -> { at, games }.
+const leagueCal = new Map();
+const LEAGUE_CAL_TTL = 5 * 60 * 1000;
+
+async function leagueCalendar(leagueId, back, force) {
+  const key = `${leagueId}:${back}`;
+  const hit = leagueCal.get(key);
+  if (!force && hit && Date.now() - hit.at < LEAGUE_CAL_TTL) return hit.games;
+  const games = await fetchLeagueRange(leagueId, -back, CAL_AHEAD);
+  leagueCal.set(key, { at: Date.now(), games });
+  return games;
 }
 
 /**
@@ -1473,6 +1502,26 @@ async function loadCalendar(force, keepDay = null) {
   const end = Date.now() + CAL_AHEAD * DAY_MS;
   document.getElementById('calRange').textContent = `du ${first.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })} au ${new Date(end).toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}`;
   if (force || !el.calendar.innerHTML) el.calendar.innerHTML = '<div class="state">Chargement du calendrier…</div>';
+
+  // « Toute la LNH », « Toute la NBA »… : tous les matchs d'une ligue.
+  const wholeId = LEAGUES_BY_ID[prefs.calendarLeague] ? prefs.calendarLeague : '';
+  if (wholeId) {
+    let games = [];
+    const errors = [];
+    try {
+      games = IS_DEMO ? demoLeagueCalendar(wholeId) : await leagueCalendar(wholeId, back, force);
+    } catch (err) {
+      calLoading = false;
+      if (prefs.calendarLeague === wholeId) el.calendar.innerHTML = errorBlock('Calendrier indisponible.', err);
+      return;
+    }
+    if (prefs.calendarLeague === wholeId) {
+      renderCalendar(games.filter((g) => isDate(g.startsAt) && g.startsAt >= first && g.startsAt.getTime() <= end)
+        .sort((a, b) => a.startsAt - b.startsAt), errors, keepDay);
+    }
+    calLoading = false;
+    return;
+  }
 
   const teamKeys = prefs.favorites.filter((k) => LEAGUES_BY_ID[k.split(':')[0]]?.kind === 'team');
   const wantF1 = prefs.leagues.includes('f1') || !!prefs.favDrivers?.length;
@@ -1579,7 +1628,8 @@ function calRow(g) {
       ${score}${res}`;
   }
   const until = state === 'pre' && g.startsAt.getTime() - Date.now() < 2 * DAY_MS ? untilText(g.startsAt) : '';
-  return `<div class="cal__row${state === 'post' ? ' cal__row--past' : ''}" data-league="${g.leagueId}" data-event="${g.id}">
+  const mine = g.kind === 'match' && [g.home, g.away].some((t) => prefs.favorites.includes(`${g.leagueId}:${t?.id}`));
+  return `<div class="cal__row${state === 'post' ? ' cal__row--past' : ''}${mine && prefs.calendarLeague ? ' cal__row--fav' : ''}" data-league="${g.leagueId}" data-event="${g.id}">
     <span class="cal__when">${when}</span>${chip}${body}
     ${until ? `<span class="cal__until">${until}</span>` : ''}
   </div>`;
@@ -1617,7 +1667,7 @@ function renderCalendar(games, errors, keepDay = null) {
     html += calRow(g);
   }
   if (!marked) html += todayMark;
-  if (errors.length) html += `<div class="state state--err">Certaines équipes n'ont pas pu être chargées.<br /><code class="state__code">${errors[0]}</code></div>`;
+  if (errors.length) html += `<div class="state state--err">Une partie du calendrier n'a pas pu être chargée.<br /><code class="state__code">${errors[0]}</code></div>`;
   el.calendar.innerHTML = html;
   bindCrests(el.calendar);
   document.getElementById('btnCalEarlier')?.addEventListener('click', calendarEarlier);
@@ -1634,6 +1684,24 @@ function renderCalendar(games, errors, keepDay = null) {
     if (!inTauri()) { window.open(`match.html?league=${league}&event=${encodeURIComponent(event)}`, '_blank'); return; }
     try { await window.__TAURI__.core.invoke('open_match', { league, event }); } catch { /* indisponible */ }
   }));
+}
+
+/** Aperçu : toute une ligue, 4 matchs par jour. */
+function demoLeagueCalendar(leagueId) {
+  const abbrs = ['MTL', 'TOR', 'BOS', 'TBL', 'OTT', 'FLA', 'NYR', 'CAR'];
+  const out = [];
+  for (let day = -5; day <= 10; day += 1) {
+    for (let k = 0; k < 4; k += 1) {
+      const d = new Date(); d.setDate(d.getDate() + day); d.setHours(19 + (k % 2), k * 15, 0, 0);
+      const post = day < 0;
+      const a = abbrs[(day + 20 + k * 2) % 8];
+      const h = abbrs[(day + 21 + k * 2) % 8];
+      const team = (abbr, win, score) => ({ id: String(abbrs.indexOf(abbr) + (abbr === 'MTL' ? 10 : 30)), abbr, name: abbr, logo: '', score: post ? score : '–', winner: post && win });
+      out.push({ id: `dl-${day}-${k}`, leagueId, kind: 'match', state: post ? 'post' : 'pre', startsAt: d,
+        away: team(a, k % 2 === 0, String(2 + k)), home: team(h, k % 2 === 1, String(1 + ((k + 1) % 4))) });
+    }
+  }
+  return out;
 }
 
 /** Aperçu navigateur : un mois factice autour d'aujourd'hui. */

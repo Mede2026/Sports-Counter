@@ -67,6 +67,8 @@ const DEFAULTS = {
   quietHours: false,
   quietFrom: '23:00',
   quietTo: '07:00',
+  // Calendrier : '' (mes équipes) ou l'identifiant d'une ligue (tous ses matchs).
+  calendarLeague: '',
   // Bandeau défilant : '' (non), 'top' (haut de l'écran) ou 'bottom' (bas).
   ticker: '',
   // Raccourcis clavier globaux (format « Ctrl+Alt+KeyS »).

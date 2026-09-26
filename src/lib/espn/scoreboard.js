@@ -1001,6 +1001,42 @@ export async function fetchLeagueCalendar(leagueId, fromOffset, toOffset) {
   });
 }
 
+// ESPN coupe une réponse vers 100 évènements : au-delà, la tranche est
+// redemandée jour par jour.
+const RANGE_CAP = 100;
+const RANGE_CHUNK = 3;
+
+/**
+ * Tous les matchs d'une ligue sur une période (calendrier « Toute la ligue ») :
+ * par tranches de 3 jours, 4 tranches à la fois. Une tranche illisible est
+ * sautée ; rien de lisible du tout lève l'erreur.
+ */
+export async function fetchLeagueRange(leagueId, fromOffset, toOffset) {
+  const chunks = [];
+  for (let d = fromOffset; d <= toOffset; d += RANGE_CHUNK) chunks.push([d, Math.min(toOffset, d + RANGE_CHUNK - 1)]);
+  const out = [];
+  let ok = 0;
+  let lastErr = null;
+  const one = async ([a, b]) => {
+    let list = await fetchLeagueCalendar(leagueId, a, b);
+    if (list.length >= RANGE_CAP && b > a) {
+      const days = await Promise.allSettled(Array.from({ length: b - a + 1 }, (_, i) => fetchDay(leagueId, a + i)));
+      const each = days.filter((r) => r.status === 'fulfilled').flatMap((r) => r.value);
+      if (each.length > list.length) list = each;
+    }
+    return list;
+  };
+  for (let i = 0; i < chunks.length; i += 4) {
+    const res = await Promise.allSettled(chunks.slice(i, i + 4).map(one));
+    for (const r of res) {
+      if (r.status === 'fulfilled') { ok += 1; out.push(...r.value); } else lastErr = r.reason;
+    }
+  }
+  if (!ok && lastErr) throw lastErr;
+  const seen = new Set();
+  return out.filter((g) => (seen.has(g.id) ? false : seen.add(g.id)));
+}
+
 /** Données factices : aperçu navigateur et première ouverture hors ligne. */
 export function demoEvents(extra = false) {
   return [...DEMO_EVENTS, ...(extra ? DEMO_EXTRA : [])].map((e) => ({ ...e, startsAt: e.startsAt ? new Date(e.startsAt) : null }));

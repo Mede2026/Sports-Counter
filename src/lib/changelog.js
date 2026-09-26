@@ -7,6 +7,7 @@ export const CHANGELOG = {
     '📺 Où regarder : les chaînes (RDS, TVA Sports, Sportsnet, TSN…) dans le widget avant le match et dans la fenêtre Match.',
     '🤝 Fenêtre Match : le face-à-face de la saison (« MTL mène la série 2-1 ») avec chaque rencontre.',
     '📰 Fenêtre Match : les nouvelles d’ESPN sur le match, sinon sur ton équipe. Un clic ouvre l’article.',
+    '📅 Calendrier : choisis « Toute la LNH » (ou n’importe quelle ligue) pour voir tous ses matchs, pas seulement ceux de tes équipes. Tes équipes restent surlignées.',
     '👤 Classements : clique sur un joueur pour sa fiche (âge, taille, poids, repêchage, stats de la saison, derniers matchs) et l’ajouter à tes favoris.',
     '🏒 Clique sur une équipe (classement ou liste des équipes) pour sa fiche : derniers et prochains matchs, nouvelles, alignement. Dans la liste, c’est maintenant le crochet ✓ qui suit l’équipe.',
     '📜 Bandeau défilant : les scores défilent sur une mince bande en haut ou en bas de l’écran (Réglages → Widget).',

@@ -468,6 +468,7 @@ kbd {
 }
 .cal__row:hover { background: rgba(255, 255, 255, 0.045); }
 .cal__row--past { opacity: 0.72; }
+.cal__row--fav { box-shadow: inset 3px 0 0 #f2c55c; background: rgba(242, 197, 92, 0.06); }
 
 .cal__when { width: 64px; flex-shrink: 0; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .cal__live { color: #ff4d5e; font-weight: 700; }
