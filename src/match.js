@@ -7,7 +7,7 @@ import { fetchMatchDetail, fetchTeamNews, fetchScoreboard, fetchStandings, fetch
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
-import { visibleTeamColor, applyTeamAccent, distinctColors } from './lib/color.js';
+import { applyTeamAccent, distinctColors } from './lib/color.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
 import { whenText, untilText, isDate, TIME_FMT, dayText, isDateOnly } from './lib/time.js';
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
@@ -48,7 +48,7 @@ let f1Tab = null; // séance de F1 affichée (indice), 'champ' (championnat) ou 
 let f1Champ = null; // championnat de F1 chargé (ou Error)
 const tyreData = new Map(); // séance -> pneus d'OpenF1 (null : rien, 'wait' : en chargement)
 const extraData = new Map(); // séance -> le reste d'OpenF1 (arrêts, radio, météo…)
-const hockeyLines = new Map(); // idÉquipe -> trios (ou Error), chargés à la demande
+const hockeyLines = new Map(); // « idÉquipe:idMatch » -> trios (ou Error), chargés à la demande
 const teamNews = new Map(); // idÉquipe -> articles d'ESPN (null : en chargement)
 
 
@@ -498,8 +498,11 @@ function lineupHtml(g) {
   const pick = sideTeam(g, [String(g.away.id), String(g.home.id)]);
   const id = String(pick.id);
   if (sportOf(g.leagueId) === 'hockey') {
-    const lines = hockeyLines.get(id);
-    if (!lines) { loadLines(id, g.state !== 'pre' ? g.id : ''); return teamSwitch(g, pick) + '<div class="state">Chargement des trios…</div>'; }
+    // Clé par équipe et par moment : ouverts avant le match, les trios sont
+    // relus une fois le match commencé (d'après ce match-ci).
+    const key = `${id}:${g.state === 'pre' ? '' : g.id}`;
+    const lines = hockeyLines.get(key);
+    if (!lines) { loadLines(key, id, g.state !== 'pre' ? g.id : ''); return teamSwitch(g, pick) + '<div class="state">Chargement des trios…</div>'; }
     if (lines instanceof Error || (!lines.forwards.length && !lines.defense.length)) {
       return teamSwitch(g, pick) + '<div class="state">ESPN ne donne pas les trios de cette équipe pour le moment.</div>';
     }
@@ -551,15 +554,15 @@ function goalieLabel(lines, p, i) {
   return i ? 'Auxiliaire' : 'Partant probable';
 }
 
-async function loadLines(teamId, eventId = '') {
-  if (hockeyLines.has(teamId)) return;
-  hockeyLines.set(teamId, null);
+async function loadLines(key, teamId, eventId = '') {
+  if (hockeyLines.has(key)) return;
+  hockeyLines.set(key, null);
   // Appelée pendant un dessin : on laisse d'abord ce dessin se terminer.
   await Promise.resolve();
   try {
-    hockeyLines.set(teamId, IS_DEMO ? demoLines() : await fetchHockeyLines(teamId, { eventId }));
+    hockeyLines.set(key, IS_DEMO ? demoLines() : await fetchHockeyLines(teamId, { eventId }));
   } catch (err) {
-    hockeyLines.set(teamId, err instanceof Error ? err : new Error(String(err)));
+    hockeyLines.set(key, err instanceof Error ? err : new Error(String(err)));
   }
   repaint();
 }

@@ -19,13 +19,16 @@ let lightCrests = false;
 export function setLightCrests(on) { lightCrests = !!on; }
 
 export function crestHtml(team, cls = 'crest') {
+  // Variantes (« --wide », « --light ») : sur la première classe seulement,
+  // si on en passe plusieurs (« crest-sm sh__crest »).
+  const base = String(cls).split(/\s+/)[0];
   const color = team.color || '#3b4150';
   const abbr = team.abbr || '?';
   if (!team.logo) return `<span class="${cls}" style="background:${color}">${abbr}</span>`;
 
   // Logo de la F1, intégré à l'app : en longueur, donc plus large qu'une
   // pastille carrée. Lisible sur fond clair comme sombre.
-  if (team.logo === F1_LOGO) return `<img decoding="async" class="${cls} ${cls}--wide" src="${team.logo}" alt="" />`;
+  if (team.logo === F1_LOGO) return `<img decoding="async" class="${cls} ${base}--wide" src="${team.logo}" alt="" />`;
   // Autres logos intégrés (aperçu) : rien à essayer d'autre.
   if (team.logo.startsWith('data:')) return `<img decoding="async" class="${cls}" src="${team.logo}" alt="" />`;
   // Drapeau (équipe nationale, pays d'un joueur) : tel quel, sans variante
@@ -44,7 +47,7 @@ export function crestHtml(team, cls = 'crest') {
   return dark
     ? `<img decoding="async" class="${cls}" src="${dark}" alt="" data-next="${team.logo}"
         data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`
-    : `<img decoding="async" class="${cls} ${cls}--light" src="${team.logo}" alt=""
+    : `<img decoding="async" class="${cls} ${base}--light" src="${team.logo}" alt=""
         data-abbr="${abbr}" data-color="${color}" data-cls="${cls}" />`;
 }
 
@@ -55,7 +58,7 @@ export function bindCrests(root) {
       const next = img.dataset.next;
       if (next) {
         delete img.dataset.next;
-        img.classList.add(`${img.dataset.cls || 'crest'}--light`);
+        img.classList.add(`${(img.dataset.cls || 'crest').split(/\s+/)[0]}--light`);
         img.src = next;
         return; // l'écouteur reste branché pour l'étape suivante
       }

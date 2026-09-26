@@ -14,6 +14,7 @@ export const CHANGELOG = {
     '🏒 Clique sur une équipe (classement ou liste des équipes) pour sa fiche : derniers et prochains matchs, nouvelles, alignement. Dans la liste, c’est maintenant le crochet ✓ qui suit l’équipe.',
     '📜 Bandeau défilant : les scores défilent sur une mince bande en haut ou en bas de l’écran (Réglages → Widget).',
     '🏀 WNBA : les équipes nationales des matchs préparatoires (Japon, Nigeria…) ne se mêlent plus à la liste des équipes.',
+    '🐛 Chasse aux bugs : le Calendrier ne reste plus bloqué sur « Chargement » quand on change vite de ligue ; notifications F1 mieux écrites (« Qualifications terminées », « Pole position pour… ») ; la fiche d’équipe s’affiche même quand ESPN ne donne pas le classement ; logos de secours réparés dans les fiches ; bandeau lisible en cas d’erreur ; liens d’articles espn.ca acceptés.',
     '✅ Avant chaque publication, GitHub vérifie que l’app lit toujours bien les vraies données d’ESPN et d’OpenF1.',
   ],
   '0.9.9': [

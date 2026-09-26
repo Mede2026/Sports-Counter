@@ -1333,6 +1333,13 @@ function paint(html, footHtml) {
 
 function renderError(err) {
   el.title.textContent = 'Sports Counter';
+  // Bandeau : une seule ligne, sans bouton (l'app réessaie toute seule).
+  if (tickerOn()) {
+    const text = isOffline(err) ? `📡 ${OFFLINE_TITLE}` : `Scores indisponibles : ${errText(err).split('\n')[0]}`;
+    paint(`<div class="tk"><button class="tk__gear" type="button" id="btnTickerSettings" title="Réglages">⚙</button>
+      <div class="tk__view"><span class="tk__item tk__msg">${attr(text)}</span></div></div>`, '');
+    return;
+  }
   const body = isOffline(err)
     ? `<div class="empty__icon">📡</div>
       <strong>${OFFLINE_TITLE}</strong><br />

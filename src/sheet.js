@@ -142,7 +142,7 @@ async function loadTeam({ leagueId, team }, t) {
   draw();
   const demo = hooks.demo;
   const jobs = [
-    [() => (demo ? demo.standings() : fetchStandingsTable(leagueId)), (v) => { state.standing = standingOf(leagueId, team.id, v); }],
+    [() => (demo ? demo.standings() : fetchStandingsTable(leagueId)), (v) => { state.standing = Array.isArray(v) ? standingOf(leagueId, team.id, v) : null; }],
     [() => (demo ? demo.games(team) : fetchTeamGames(leagueId, team.id, { back: 30, ahead: 30 })), (v) => { state.games = v; }],
     [() => (demo ? demo.roster(team.id) : fetchRoster(leagueId, team.id)), (v) => { state.roster = v; }],
     [() => (demo ? demo.news() : fetchTeamNews(leagueId, team.id)), (v) => { state.news = v; }],

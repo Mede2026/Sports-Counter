@@ -100,7 +100,9 @@ export function playSound(kind, volume = 60) {
   const recipe = RECIPES[kind];
   if (!a || !recipe) return false;
   const master = a.createGain();
-  master.gain.value = Math.max(0, Math.min(1, Number(volume) / 100)) * 0.8;
+  // Volume illisible (réglage abîmé) : 60 %, plutôt qu'une erreur de Web Audio.
+  const v = Number(volume);
+  master.gain.value = Math.max(0, Math.min(1, (Number.isFinite(v) ? v : 60) / 100)) * 0.8;
   master.connect(a.destination);
   recipe(a, master, a.currentTime + 0.03);
   return true;

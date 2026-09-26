@@ -184,6 +184,15 @@ function matchEvents(g, before, opts = {}) {
   return out;
 }
 
+/** « Course terminée », « Qualifications terminées », « Essais 1 terminés », « Sprint terminé ». */
+export function doneWord(session) {
+  const s = String(session ?? '');
+  if (/^(la )?course|^la séance/i.test(s)) return 'terminée';
+  if (/qualif/i.test(s)) return 'terminées';
+  if (/essais/i.test(s)) return 'terminés';
+  return 'terminé';
+}
+
 function sessionEvents(g, before, opts = {}) {
   const out = [];
   const link = g.link ?? '';
@@ -206,9 +215,12 @@ function sessionEvents(g, before, opts = {}) {
       .filter((x) => x.pos)
       .sort((x, y) => x.pos - y.pos);
     const podium = finals.filter((x) => x.pos <= 3);
+    const qual = /qualif/i.test(ended);
     for (const { d, pos } of podium) {
       out.push({
-        title: pos === 1 && race ? `${MEDALS[1]} Victoire de ${nameOf(d)} !` : `${MEDALS[pos]} ${nameOf(d)} termine ${place(pos)}`,
+        title: pos === 1 && race ? `${MEDALS[1]} Victoire de ${nameOf(d)} !`
+          : pos === 1 && qual ? `⏱️ Pole position pour ${nameOf(d)} !`
+            : `${MEDALS[pos]} ${nameOf(d)} termine ${place(pos)}`,
         body: `${ended} · ${g.title}`,
         team: faceOf(d),
         link,
@@ -217,7 +229,7 @@ function sessionEvents(g, before, opts = {}) {
     if (!podium.length) {
       const mine = finals.map(({ d, pos }) => `${nameOf(d)} ${place(pos)}`).join(', ');
       const parts = [first ? `1. ${first.short || first.name}` : '', mine, g.title];
-      out.push({ title: `${ended} terminée`, body: parts.filter(Boolean).join(' · '), team, link });
+      out.push({ title: `${ended} ${doneWord(ended)}`, body: parts.filter(Boolean).join(' · '), team, link });
     }
   }
   // Qualifications : fin de Q1 ou de Q2. Ton pilote passe, ou il est éliminé.

@@ -719,7 +719,8 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 .tk__view:hover .tk__track { animation-play-state: paused; }
 @keyframes tk-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .tk__run { display: flex; align-items: center; flex-shrink: 0; }
-.tk__item { display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.tk__msg { height: 100%; color: var(--text-muted); cursor: default; }
+.tk__item { border: 0; display: inline-flex; align-items: center; gap: 6px; padding: 0 4px; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 .tk__item:hover b { color: #4aa3ff; }
 .tk__chip { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; }
 .tk__team { display: inline-flex; align-items: center; gap: 4px; }

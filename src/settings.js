@@ -1451,7 +1451,7 @@ const CAL_AHEAD = 30;
 const CAL_PAST_STEP = 14;
 const CAL_PAST_MAX = 126;
 let calPast = CAL_PAST_STEP;
-let calLoading = false;
+let calGen = 0; // chargement en cours : seul le plus récent s'affiche
 
 function showCalendar() {
   setView('calendar');
@@ -1462,7 +1462,7 @@ function showCalendar() {
     if (prefs.favDrivers?.length) mine.add('f1');
     const sorted = [...LEAGUES.filter((l) => mine.has(l.id)), ...LEAGUES.filter((l) => !mine.has(l.id))];
     select.innerHTML = '<option value="">⭐ Mes équipes</option>'
-      + sorted.map((l) => `<option value="${l.id}">${mine.has(l.id) ? '★ ' : ''}Toute la ${esc(l.label)}</option>`).join('');
+      + sorted.map((l) => `<option value="${l.id}">${mine.has(l.id) ? '★ ' : ''}${esc(l.label)} : tout le calendrier</option>`).join('');
     select.value = LEAGUES_BY_ID[prefs.calendarLeague] ? prefs.calendarLeague : '';
     select.addEventListener('change', () => {
       prefs.calendarLeague = select.value;
@@ -1494,8 +1494,10 @@ async function leagueCalendar(leagueId, back, force) {
  * `keepDay` : jour à garder en haut de l'écran (après « Voir plus tôt »).
  */
 async function loadCalendar(force, keepDay = null) {
-  if (calLoading) return;
-  calLoading = true;
+  // Un nouveau chargement (autre ligue, « Actualiser »…) remplace l'ancien :
+  // la réponse de l'ancien, arrivée plus tard, est ignorée.
+  const gen = ++calGen;
+  const stale = () => gen !== calGen;
   const first = new Date(); first.setHours(0, 0, 0, 0);
   first.setDate(first.getDate() - calPast);
   const back = calPast + 1;
@@ -1511,15 +1513,13 @@ async function loadCalendar(force, keepDay = null) {
     try {
       games = IS_DEMO ? demoLeagueCalendar(wholeId) : await leagueCalendar(wholeId, back, force);
     } catch (err) {
-      calLoading = false;
-      if (prefs.calendarLeague === wholeId) el.calendar.innerHTML = errorBlock('Calendrier indisponible.', err);
+      if (!stale()) el.calendar.innerHTML = errorBlock('Calendrier indisponible.', err);
       return;
     }
-    if (prefs.calendarLeague === wholeId) {
+    if (!stale()) {
       renderCalendar(games.filter((g) => isDate(g.startsAt) && g.startsAt >= first && g.startsAt.getTime() <= end)
         .sort((a, b) => a.startsAt - b.startsAt), errors, keepDay);
     }
-    calLoading = false;
     return;
   }
 
@@ -1530,8 +1530,7 @@ async function loadCalendar(force, keepDay = null) {
   const wholeLeagues = prefs.leagues.filter((id) => ['golf', 'team'].includes(LEAGUES_BY_ID[id]?.kind));
   const tennisLeagues = [...new Set((prefs.favTennis ?? []).map((p) => p.leagueId))].filter((id) => LEAGUES_BY_ID[id]);
   if (!IS_DEMO && !teamKeys.length && !wantF1 && !wantUfc && !wholeLeagues.length && !tennisLeagues.length) {
-    el.calendar.innerHTML = '<div class="state">Choisis des équipes (ou la F1) pour remplir ton calendrier.</div>';
-    calLoading = false;
+    el.calendar.innerHTML = '<div class="state">Choisis des équipes (ou la F1) pour remplir ton calendrier, ou une ligue entière dans le menu.</div>';
     return;
   }
 
@@ -1562,12 +1561,12 @@ async function loadCalendar(force, keepDay = null) {
     .filter((g) => isDate(g.startsAt) && g.startsAt >= first && g.startsAt.getTime() <= end)
     .filter((g) => (seen.has(g.id) ? false : seen.add(g.id)))
     .sort((a, b) => a.startsAt - b.startsAt);
+  if (stale()) return;
   if (!games.length && lastErr && isOffline(lastErr)) {
     el.calendar.innerHTML = errorBlock('', lastErr);
   } else {
     renderCalendar(games, errors, keepDay);
   }
-  calLoading = false;
 }
 
 /** Charge 14 jours de plus dans le passé, sans perdre sa place. */

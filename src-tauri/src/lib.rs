@@ -101,7 +101,14 @@ const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(20);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 
 /// Sites où un clic sur un match a le droit d'emmener.
-const ESPN_HOSTS: [&str; 4] = ["www.espn.com", "espn.com", "www.espn.ca", "www.espn.co.uk"];
+const ESPN_HOSTS: [&str; 6] = [
+    "www.espn.com",
+    "espn.com",
+    "www.espn.ca",
+    "espn.ca",
+    "www.espn.co.uk",
+    "espn.co.uk",
+];
 
 /// Seuls ces caractères peuvent composer le chemin demandé par l'interface.
 /// L'hôte, lui, est codé en dur : le frontend ne peut pas rediriger l'appel ailleurs.
