@@ -5,8 +5,8 @@ import { statusFr } from '../status-fr.js';
 import { diskCache } from '../cache.js';
 import { autoFr } from '../translate.js';
 import { athletePhoto, corePath, getCore, getJson, getWeb, isScoring, playOf, safe, scoreText, scorerName, sportOfLeague, statOf } from './core.js';
-import { fetchAthlete, leaderSeasons } from './people.js';
-import { baseballSituation, broadcastsOf, fetchDay, hockeyStatus, liveClock, normalizeCompetitor, pickLink, seriesInfo } from './scoreboard.js';
+import { fetchAthlete, fetchRoster, leaderSeasons } from './people.js';
+import { baseballSituation, broadcastsOf, fetchDay, fetchTeamGames, hockeyStatus, liveClock, normalizeCompetitor, pickLink, seriesInfo } from './scoreboard.js';
 
 // Statistiques d'équipe, dans l'ordre d'affichage, avec leur nom en français.
 // Les noms absents de cette liste sont ignorés : la fenêtre reste lisible.
@@ -170,40 +170,105 @@ export function probablePitchers(competitors, leagueId) {
   return out;
 }
 
-export const linesCache = diskCache('lines', 12 * 3600 * 1000);
+// v2 : la v1 gardait la grille de profondeur d'ESPN telle quelle, parfois
+// vieille de 20 ans (Koivu, Kovalev… chez le Canadien).
+export const linesCache = diskCache('lines.v2', 12 * 3600 * 1000);
+
+const athleteIdOf = (ref) => /\/athletes\/(\d+)/.exec(String(ref ?? ''))?.[1] ?? '';
+const toiSeconds = (toi) => {
+  const m = /^(\d+):(\d{2})$/.exec(String(toi ?? '').trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+};
 
 /**
- * Trios, paires de défense et gardiens d'une équipe de la LNH, d'après la
- * grille de profondeur d'ESPN (le rang de chaque joueur à sa position) :
- * { forwards: [[AG, C, AD]…], defense: [[D, D]…], goalies: [G…] }. C'est
- * l'alignement d'ESPN, pas forcément celui du dernier match.
+ * Trios estimés d'après le temps de glace d'un match (box score d'ESPN) :
+ * le centre, l'ailier gauche et l'ailier droit les plus utilisés forment le
+ * 1er trio, et ainsi de suite ; les défenseurs, par paires dans le même ordre.
+ * null si l'équipe n'est pas dans le box score.
  */
-export async function fetchHockeyLines(teamId) {
-  const hit = linesCache.get(teamId);
-  if (hit) return hit;
-  const league = LEAGUES_BY_ID.nhl;
-  let data = null;
-  for (const year of await leaderSeasons(league)) {
-    try {
-      data = await getCore(`/v2/sports/hockey/leagues/nhl/seasons/${year}/teams/${encodeURIComponent(teamId)}/depthcharts?lang=en&region=us`);
-      if ((data?.items ?? []).length) break;
-    } catch { data = null; }
+export function linesFromBox(data, teamId) {
+  const team = (data?.boxscore?.players ?? []).find((t) => String(t?.team?.id) === String(teamId));
+  if (!team) return null;
+  const players = [];
+  for (const grp of team.statistics ?? []) {
+    const keys = (grp?.keys ?? grp?.names ?? []).map(String);
+    const labels = (grp?.labels ?? []).map(String);
+    let ti = keys.findIndex((k) => /timeOnIce/i.test(k));
+    if (ti < 0) ti = labels.findIndex((l) => /^TOI$/i.test(l));
+    for (const x of grp?.athletes ?? []) {
+      if (!x?.athlete || x.didNotPlay === true) continue;
+      players.push({
+        ...boxPlayer(x),
+        photo: athletePhoto(x.athlete, 'nhl'),
+        toi: ti >= 0 ? toiSeconds(x.stats?.[ti]) : 0,
+        group: `${grp?.name ?? ''} ${grp?.type ?? ''}`,
+      });
+    }
   }
+  if (!players.length) return null;
+  const byToi = (a, b) => b.toi - a.toi;
+  const isG = (p) => /^G$/i.test(p.pos) || /goal/i.test(p.group);
+  const isD = (p) => !isG(p) && (/^D$/i.test(p.pos) || /defen/i.test(p.group));
+  const pool = players.filter((p) => !isG(p) && !isD(p)).sort(byToi);
+  // Le plus utilisé à la position voulue, sinon le plus utilisé tout court.
+  const take = (re) => {
+    const i = pool.findIndex((p) => re.test(p.pos));
+    return (i >= 0 ? pool.splice(i, 1)[0] : pool.shift()) ?? null;
+  };
+  const forwards = [];
+  for (let i = 0; i < 4 && pool.length; i++) {
+    const c = take(/^C$/i);
+    const lw = take(/^L(W)?$/i);
+    const rw = take(/^R(W)?$/i);
+    forwards.push([lw, c, rw]);
+  }
+  const dmen = players.filter(isD).sort(byToi);
+  const defense = [];
+  for (let i = 0; i < Math.min(6, dmen.length); i += 2) defense.push([dmen[i], dmen[i + 1] ?? null]);
+  const goalies = players.filter(isG).sort(byToi).map((p) => ({ ...p, played: p.toi > 0 }));
+  return { forwards, defense, goalies };
+}
+
+/** Grille de profondeur d'ESPN, gardée seulement si elle ressemble à l'effectif actuel. */
+async function depthChartLines(teamId) {
+  const league = LEAGUES_BY_ID.nhl;
+  const [roster, data] = await Promise.all([
+    fetchRoster('nhl', teamId).catch(() => []),
+    (async () => {
+      for (const year of await leaderSeasons(league)) {
+        try {
+          const d = await getCore(`/v2/sports/hockey/leagues/nhl/seasons/${year}/teams/${encodeURIComponent(teamId)}/depthcharts?lang=en&region=us`);
+          if ((d?.items ?? []).length) return d;
+        } catch { /* saison suivante */ }
+      }
+      return null;
+    })(),
+  ]);
+  // Sans effectif pour comparer, on ne peut pas savoir si la grille est à jour.
+  const current = new Set(roster.map((p) => String(p.id)));
+  if (!data || !current.size) return null;
   const positions = data?.items?.[0]?.positions ?? {};
-  // Joueurs d'une position, du 1er au dernier rang.
+  const all = [];
   const at = (...keys) => {
     for (const k of keys) {
       const p = positions[k] ?? positions[k.toUpperCase()];
-      if (p?.athletes?.length) return [...p.athletes].sort((x, y) => (x?.rank ?? 99) - (y?.rank ?? 99)).map((x) => corePath(x?.athlete?.$ref)).filter(Boolean);
+      if (!p?.athletes?.length) continue;
+      const refs = [...p.athletes].sort((x, y) => (x?.rank ?? 99) - (y?.rank ?? 99)).map((x) => corePath(x?.athlete?.$ref)).filter(Boolean);
+      all.push(...refs);
+      // Un joueur échangé depuis ne reste pas dans les trios.
+      return refs.filter((r) => current.has(athleteIdOf(r)));
     }
     return [];
   };
   const refs = { lw: at('lw', 'l'), c: at('c'), rw: at('rw', 'r'), ld: at('ld'), rd: at('rd'), d: at('d'), g: at('g') };
-  const all = [...new Set(Object.values(refs).flat())];
-  const people = new Map();
-  await Promise.allSettled(all.map(async (ref) => people.set(ref, await fetchAthlete(ref))));
-  const who = (ref) => people.get(ref) ?? null;
+  // Moins de 60 % des joueurs de la grille encore dans l'équipe : grille périmée.
+  const unique = [...new Set(all)];
+  const still = unique.filter((r) => current.has(athleteIdOf(r))).length;
+  if (!unique.length || still / unique.length < 0.6) return null;
 
+  const people = new Map();
+  await Promise.allSettled([...new Set(Object.values(refs).flat())].map(async (ref) => people.set(ref, await fetchAthlete(ref))));
+  const who = (ref) => people.get(ref) ?? null;
   const forwards = [];
   for (let i = 0; i < 4; i++) {
     const line = [refs.lw[i], refs.c[i], refs.rw[i]].map(who);
@@ -218,8 +283,43 @@ export async function fetchHockeyLines(teamId) {
   } else {
     for (let i = 0; i < Math.min(6, refs.d.length); i += 2) defense.push([who(refs.d[i]), who(refs.d[i + 1])]);
   }
-  const lines = { forwards, defense, goalies: refs.g.map(who).filter(Boolean).slice(0, 3) };
-  if (forwards.length || defense.length) linesCache.set(teamId, lines);
+  return { forwards, defense, goalies: refs.g.map(who).filter(Boolean).slice(0, 3), source: 'depth' };
+}
+
+/**
+ * Trios, paires de défense et gardiens d'une équipe de la LNH :
+ * { forwards: [[AG, C, AD]…], defense: [[D, D]…], goalies: [G…], source }.
+ *  1. Match en cours ou fini (`eventId`) : d'après le temps de glace de ce match ;
+ *  2. sinon la grille de profondeur d'ESPN, si elle correspond à l'effectif actuel ;
+ *  3. sinon d'après le temps de glace du dernier match de l'équipe.
+ * `source` : 'game' (avec `date` et `opp` pour le dernier match) ou 'depth'.
+ */
+export async function fetchHockeyLines(teamId, { eventId = '' } = {}) {
+  const league = LEAGUES_BY_ID.nhl;
+  const fromGame = async (id) => {
+    const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(id)}`);
+    const lines = linesFromBox(data, teamId);
+    return lines?.forwards.length >= 2 ? lines : null;
+  };
+  if (eventId) {
+    const lines = await fromGame(eventId).catch(() => null);
+    if (lines) return { ...lines, source: 'game', current: true };
+  }
+  const hit = linesCache.get(teamId);
+  if (hit) return hit;
+
+  let lines = await depthChartLines(teamId).catch(() => null);
+  if (!lines) {
+    const games = await fetchTeamGames('nhl', teamId, { back: 45, ahead: 0 }).catch(() => []);
+    const last = games.filter((g) => g.state === 'post').at(-1);
+    const found = last ? await fromGame(last.id).catch(() => null) : null;
+    if (found) {
+      const opp = last.home.id === String(teamId) ? last.away : last.home;
+      lines = { ...found, source: 'game', date: last.startsAt ? last.startsAt.toISOString() : '', opp: opp.abbr ?? '' };
+    }
+  }
+  lines ??= { forwards: [], defense: [], goalies: [], source: '' };
+  if (lines.forwards.length || lines.defense.length) linesCache.set(teamId, lines);
   return lines;
 }
 

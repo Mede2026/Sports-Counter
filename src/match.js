@@ -499,7 +499,7 @@ function lineupHtml(g) {
   const id = String(pick.id);
   if (sportOf(g.leagueId) === 'hockey') {
     const lines = hockeyLines.get(id);
-    if (!lines) { loadLines(id); return teamSwitch(g, pick) + '<div class="state">Chargement des trios…</div>'; }
+    if (!lines) { loadLines(id, g.state !== 'pre' ? g.id : ''); return teamSwitch(g, pick) + '<div class="state">Chargement des trios…</div>'; }
     if (lines instanceof Error || (!lines.forwards.length && !lines.defense.length)) {
       return teamSwitch(g, pick) + '<div class="state">ESPN ne donne pas les trios de cette équipe pour le moment.</div>';
     }
@@ -510,8 +510,8 @@ function lineupHtml(g) {
     return teamSwitch(g, pick)
       + section('Trios', block((i) => `${i + 1}${i ? 'e' : 'er'}`, lines.forwards, ['AG', 'C', 'AD']))
       + section('Paires de défense', block((i) => `${i + 1}re`.replace('2re', '2e').replace('3re', '3e'), lines.defense, ['D', 'D']))
-      + section('Gardiens', lines.goalies.length ? `<ul class="lu__list">${lines.goalies.map((p, i) => personLine(p, i ? 'Auxiliaire' : 'Partant probable')).join('')}</ul>` : '')
-      + '<p class="hint">Selon la grille de profondeur d\'ESPN : l\'entraîneur peut changer ses trios pendant le match.</p>';
+      + section('Gardiens', lines.goalies.length ? `<ul class="lu__list">${lines.goalies.map((p, i) => personLine(p, goalieLabel(lines, p, i))).join('')}</ul>` : '')
+      + `<p class="hint">${linesSource(lines)}</p>`;
   }
   // Baseball : ordre des frappeurs et lanceurs.
   const team = (g.box ?? []).find((t) => t.teamId === id);
@@ -536,13 +536,28 @@ function lineupHtml(g) {
   return html;
 }
 
-async function loadLines(teamId) {
+/** D'où viennent les trios affichés. */
+function linesSource(lines) {
+  if (lines.source === 'game' && lines.current) return 'Trios de ce match, d\'après le temps de glace de chaque joueur.';
+  if (lines.source === 'game') {
+    const when = lines.date ? new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'long' }).format(new Date(lines.date)) : '';
+    return `Trios estimés d'après le temps de glace du dernier match${when ? ` (${when}${lines.opp ? ` contre ${esc(lines.opp)}` : ''})` : ''}. L'entraîneur peut les changer.`;
+  }
+  return 'Selon la grille de profondeur d\'ESPN, vérifiée avec l\'effectif actuel. L\'entraîneur peut changer ses trios pendant le match.';
+}
+
+function goalieLabel(lines, p, i) {
+  if (lines.source === 'game') return p.played ? (lines.current ? 'Devant le filet ce match' : 'A joué le dernier match') : 'Auxiliaire';
+  return i ? 'Auxiliaire' : 'Partant probable';
+}
+
+async function loadLines(teamId, eventId = '') {
   if (hockeyLines.has(teamId)) return;
   hockeyLines.set(teamId, null);
   // Appelée pendant un dessin : on laisse d'abord ce dessin se terminer.
   await Promise.resolve();
   try {
-    hockeyLines.set(teamId, IS_DEMO ? demoLines() : await fetchHockeyLines(teamId));
+    hockeyLines.set(teamId, IS_DEMO ? demoLines() : await fetchHockeyLines(teamId, { eventId }));
   } catch (err) {
     hockeyLines.set(teamId, err instanceof Error ? err : new Error(String(err)));
   }
@@ -1292,6 +1307,7 @@ if (inTauri()) {
     boxTeam = null;
     playsShown = PLAYS_STEP;
     f1Tab = null;
+    hockeyLines.clear(); // trios « de ce match » : pas ceux du match d'avant
     el.main.innerHTML = '<div class="state">Chargement…</div>';
     load();
   });
