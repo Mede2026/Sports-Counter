@@ -114,7 +114,32 @@ const photo = (d) => (d?.photo ? `<img class="face" src="${attr(d.photo)}" alt="
  * Top 3 d'une séance, médailles à l'appui. Le pilote favori est mis en
  * évidence ; s'il n'est pas sur le podium, sa position s'ajoute dessous.
  */
+const CAP_DAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'short', day: 'numeric' });
+
+/** Ce que montre le podium : « 🏁 Résultat de la course · sam. 26 sept. »… */
+function sessionCaption(g) {
+  const s = g.session ?? '';
+  const day = g.state === 'post' && isDate(g.startsAt) ? ` · ${CAP_DAY.format(g.startsAt)}` : '';
+  if (g.state === 'in') return `🔴 ${s || 'Séance'} : ${g.qual ? 'classement en direct' : 'positions en direct'}`;
+  if (g.qual) return `⏱️ ${/sprint/i.test(s) ? 'Qualifs sprint : grille du sprint' : 'Qualifs : grille de départ'}${day}`;
+  if (/^course$/i.test(s)) return `🏁 Résultat de la course${day}`;
+  if (/sprint/i.test(s)) return `🏁 Résultat du sprint${day}`;
+  return `🔧 ${s || 'Séance'} : meilleurs temps${day}`;
+}
+
+/**
+ * Entre deux séances (qualifs finies, course demain) : le résultat de la
+ * dernière séance terminée, pendant que l'en-tête annonce la suivante.
+ */
+function lastDoneSession(game) {
+  if (game.state !== 'pre' || game.top3?.length) return null;
+  const s = (game.sessions ?? []).filter((x) => x.state === 'post' && x.results?.length).at(-1);
+  if (!s) return null;
+  return { ...game, state: 'post', session: s.label, qual: s.qual, phase: s.phase, startsAt: s.startsAt, results: s.results, top3: s.results.slice(0, 3) };
+}
+
 function podiumHtml(game) {
+  game = lastDoneSession(game) ?? game;
   const top3 = game.top3 ?? [];
   if (!top3.length) return '';
   // Mode Grand Prix : pendant une course ou un sprint, top 5 avec les écarts.
@@ -137,7 +162,8 @@ function podiumHtml(game) {
   const mine = (game.results ?? [])
     .filter((d) => favOf(d) && !top.some((t) => sameDriver(t, d)));
   mine.forEach((d, i) => { html += line(d, i === 0 ? ' podium__extra' : ''); });
-  return `<ol class="podium${gp ? ' podium--gp' : ''}">${html}</ol>`;
+  const cap = game.kind === 'event' ? `<div class="podium__cap">${sessionCaption(game)}</div>` : '';
+  return `${cap}<ol class="podium${gp ? ' podium--gp' : ''}">${html}</ol>`;
 }
 
 /** Écart affiché : « +2.345 », « +1 tour ». */
@@ -242,7 +268,9 @@ function compactCard(game) {
 
   if (game.kind === 'event') {
     const leader = game.state !== 'pre' ? game.top3?.[0] : null;
-    const when = pre ? middleWhen : leader ? `🥇 ${leader.short || leader.name}` : game.statusText;
+    // Séance finie : la pole (qualifs) ou le vainqueur (course, sprint), dit clairement.
+    const lead = leader && (game.state === 'post' ? (game.qual ? '⏱️ Pole : ' : /course|sprint/i.test(game.session ?? '') ? '🏆 ' : '🥇 ') : '🥇 ');
+    const when = pre ? middleWhen : leader ? `${lead}${leader.short || leader.name}` : game.statusText;
     // Deux lignes : la séance (Essais 1, Qualifications, Course…), puis
     // l'heure, le compte à rebours ou le meneur.
     const label = game.session ? `<small class="row__label">${sessionText(game)}</small>` : '';

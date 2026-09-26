@@ -735,3 +735,6 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 @media (prefers-reduced-motion: reduce) {
   .tk__track { animation-duration: calc(var(--tk-dur, 30s) * 2); }
 }
+
+/* F1 : quelle séance le podium montre (course, qualifs, essais). */
+.podium__cap { margin: 8px 0 -2px 12px; font-size: 11px; font-weight: 650; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
