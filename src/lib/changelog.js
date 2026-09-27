@@ -1,7 +1,8 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
-  '0.10.0': [
+  '1.0.0': [
+    '🎉 Version 1.0 de Sports Counter !',
     '📢 Klaxon de but : quand ton équipe ou un de tes joueurs marque, un son (klaxon au hockey et au football, sifflet au soccer, sirène au basket, orgue au baseball). Son et volume dans Réglages → Notifications, avec un bouton « Essayer ».',
     '🌙 Heures silencieuses : aucune notification pendant les heures choisies (par exemple la nuit), puis un seul résumé de ce que tu as manqué.',
     '📺 Où regarder : les chaînes (RDS, TVA Sports, Sportsnet, TSN…) dans le widget avant le match et dans la fenêtre Match.',
