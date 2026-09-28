@@ -94,7 +94,27 @@ for (const league of LEAGUES.filter((l) => l.kind === 'team')) {
     const text = `${teams.length}${want ? `/${want}` : ''} équipes${bare ? `, ${bare} sans logo` : ''}`;
     if (!teams.length || (want && teams.length < want * 0.8) || bare) warn(`Équipes ${league.label}`, text);
     else ok(`Équipes ${league.label}`, text);
+    // Liste incomplète : ce que donne chaque source, pour trouver les absentes.
+    if (want && teams.length < want) await explainTeams(league, teams);
   });
+}
+
+/** Détail d'une liste d'équipes incomplète : chaque source d'ESPN, et le filtre. */
+async function explainTeams(league, teams) {
+  const kept = new Set(teams.map((t) => t.id));
+  const lines = [];
+  for (const [name, get] of [['liste', () => api.teamsFromDirectory(league)], ['core', () => api.teamsFromCore(league)], ['calendrier', () => api.teamsFromSchedule(league)]]) {
+    try {
+      const list = await get();
+      const extra = list.filter((t) => !kept.has(t.id));
+      const guests = list.filter((t) => api.isGuestTeam(t));
+      lines.push(`${name} : ${list.length}${extra.length ? `, absentes de l'app : ${extra.map((t) => `${t.name} (${t.id})`).join(', ')}` : ''}${guests.length ? `, vues comme invitées : ${guests.map((t) => t.name).join(', ')}` : ''}`);
+    } catch (err) {
+      lines.push(`${name} : erreur ${errText(err)}`);
+    }
+  }
+  warn(`Équipes ${league.label} (détail)`, lines.join(' · '));
+  console.log(`\n[${league.label}] ${teams.length} équipes :\n  ${teams.map((t) => `${t.name} (${t.id})`).join('\n  ')}\n  ${lines.join('\n  ')}`);
 }
 
 // 3. Fenêtre Match : un match récent (ou en cours) de quelques ligues.
