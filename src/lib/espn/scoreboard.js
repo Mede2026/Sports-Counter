@@ -89,31 +89,45 @@ export async function fetchTeams(leagueId) {
 
   if (BUNDLED_TEAMS[leagueId]) return [...BUNDLED_TEAMS[leagueId]].sort(byName);
 
+  // Équipes nationales invitées (la WNBA contre le Japon) : jamais au soccer
+  // de clubs, où des noms en majuscules sont de vrais clubs.
+  const guestsPossible = !league.tournament && league.id !== 'intl' && sportOfLeague(leagueId) !== 'soccer';
+  const target = league.teams || 1;
   const cached = readTeamsCache(leagueId);
   if (cached) {
-    const clean = league.tournament || league.id === 'intl' ? cached : cached.filter((t) => !isGuestTeam(t));
-    return fillLogos(leagueId, clean);
+    const clean = guestsPossible ? cached.filter((t) => !isGuestTeam(t)) : cached;
+    // Liste gardée devenue incomplète, ou bien trop longue (toutes les
+    // divisions universitaires) : on la redemande à ESPN.
+    if (clean.length >= target && (!league.teams || clean.length <= league.teams * 2)) return fillLogos(leagueId, clean);
   }
 
   // Trois sources, dans l'ordre, jusqu'à avoir toute la ligue : une liste
   // partielle est complétée par la suivante au lieu d'être gardée telle quelle.
-  const target = league.teams || 1;
   const byId = new Map();
   const merge = (list) => list.forEach((t) => {
     const had = byId.get(t.id);
     // Même équipe vue deux fois : on garde le logo et les couleurs trouvés.
     byId.set(t.id, had ? { ...t, ...Object.fromEntries(Object.entries(had).filter(([, v]) => v)) } : t);
   });
+  // Football universitaire : la liste d'ESPN ignore « 1re division » et donne
+  // plus de 700 équipes ; l'API « core » sait ne garder que ce groupe.
+  if (league.coreTeams) {
+    try {
+      merge(await teamsFromCore(league));
+    } catch { /* on passe à la liste */ }
+  }
   let directoryErr = null;
-  try {
-    merge(await teamsFromDirectory(league));
-  } catch (err) {
-    directoryErr = err;
+  if (byId.size < target) {
+    try {
+      merge(await teamsFromDirectory(league));
+    } catch (err) {
+      directoryErr = err;
+    }
   }
 
   // 2. Liste refusée ou incomplète (la LNH et la LCF, par exemple) : l'API
   //    « core » d'ESPN, qui donne aussi les équipes, une adresse par équipe.
-  if (byId.size < target) {
+  if (byId.size < target && !league.coreTeams) {
     try {
       merge(await teamsFromCore(league));
     } catch { /* on passe au calendrier */ }
@@ -125,7 +139,7 @@ export async function fetchTeams(leagueId) {
       // Au calendrier, il y a aussi les matchs amicaux contre des équipes
       // nationales (la WNBA contre le Japon) : elles ne sont pas de la ligue.
       const seen = await teamsFromSchedule(league);
-      merge(league.tournament || league.id === 'intl' ? seen : seen.filter((t) => !isGuestTeam(t)));
+      merge(guestsPossible ? seen.filter((t) => !isGuestTeam(t)) : seen);
     } catch (err) {
       if (!byId.size) {
         throw new Error(

@@ -177,6 +177,14 @@ await check('Fiche joueur LNH', async () => {
   const o = await api.fetchPlayerOverview('nhl', p.id);
   const bio = await api.fetchPlayerBio('nhl', p.id).catch(() => null);
   const facts = ['age', 'born', 'height', 'weight', 'draft'].filter((k) => bio?.[k]).length;
+  if (facts < 5) {
+    // Fiche incomplète : ce qu'ESPN renvoie vraiment, pour ajuster la lecture.
+    const pick = (a) => Object.fromEntries(Object.entries(a ?? {}).filter(([, v]) => v == null || typeof v !== 'object' || Array.isArray(v) === false).map(([k, v]) => [k, typeof v === 'object' && v ? Object.keys(v).slice(0, 6).join('/') : v]).slice(0, 40));
+    try {
+      const web = await (await fetch(`https://site.web.api.espn.com/apis/common/v3/sports/hockey/nhl/athletes/${p.id}`)).json();
+      console.log(`\n[FICHE ${p.name}] lue : ${JSON.stringify(bio)}\nweb.athlete : ${JSON.stringify(pick(web?.athlete))}`);
+    } catch (err) { console.log(`[FICHE] web : ${errText(err)}`); }
+  }
   (o?.season?.length || o?.games?.length ? ok : warn)('Fiche joueur LNH', `${p.name} : ${o?.season?.length ?? 0} stats, ${o?.games?.length ?? 0} matchs, bio ${facts}/5`);
 });
 
@@ -197,6 +205,47 @@ await check('OpenF1', async () => {
   const parts = Object.entries(x).filter(([, v]) => v).map(([k]) => k);
   ok('OpenF1', `${session.label} : ${parts.join(', ') || 'rien'}`);
 });
+
+// 8. Sonde : ligues de volleyball connues d'ESPN (pour les ajouter à l'app).
+if (process.env.SONDE_VOLLEY !== '0') {
+  const raw = async (url) => {
+    try {
+      const r = await fetch(url);
+      const text = await r.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch { /* pas du JSON */ }
+      return { status: r.status, data };
+    } catch (err) {
+      return { status: 0, data: null, err: errText(err) };
+    }
+  };
+  const out = [];
+  const leagues = await raw('https://sports.core.api.espn.com/v2/sports/volleyball/leagues?limit=100&lang=en&region=us');
+  out.push(`core leagues : HTTP ${leagues.status}, ${leagues.data?.count ?? '?'} ligues`);
+  for (const item of (leagues.data?.items ?? []).slice(0, 40)) {
+    const l = await raw(`${item.$ref}`.replace('http://', 'https://'));
+    out.push(`  ligue : ${l.data?.slug ?? '?'} | ${l.data?.name ?? '?'} | ${l.data?.abbreviation ?? ''} | id ${l.data?.id ?? '?'}`);
+  }
+  const SITE = 'https://site.api.espn.com/apis/site/v2/sports/volleyball';
+  const slugs = [...new Set(['womens-college-volleyball', 'mens-college-volleyball',
+    ...(await Promise.all((leagues.data?.items ?? []).slice(0, 40).map(async (i) => (await raw(`${i.$ref}`.replace('http://', 'https://'))).data?.slug))).filter(Boolean)])];
+  for (const slug of slugs) {
+    for (const q of ['', '?dates=20260920-20261010', '?groups=50', '?dates=20260920-20261010&groups=50&limit=300']) {
+      const b = await raw(`${SITE}/${slug}/scoreboard${q}`);
+      const ev = b.data?.events ?? [];
+      const e = ev[0];
+      const c = e?.competitions?.[0];
+      out.push(`${slug} scoreboard${q} : HTTP ${b.status}, ${ev.length} matchs${e ? ` · ex. ${e.shortName} · statut « ${c?.status?.type?.shortDetail ?? ''} » période ${c?.status?.period ?? ''} · score ${c?.competitors?.map((x) => `${x.team?.abbreviation} ${x.score} [${(x.linescores ?? []).map((l) => l.value).join('-')}]`).join(' / ')}` : ''}`);
+    }
+    for (const q of ['', '?limit=1000', '?groups=50&limit=1000']) {
+      const t = await raw(`${SITE}/${slug}/teams${q}`);
+      out.push(`${slug} teams${q} : HTTP ${t.status}, ${(t.data?.sports?.[0]?.leagues?.[0]?.teams ?? []).length} équipes`);
+    }
+    const st = await raw(`https://site.api.espn.com/apis/v2/sports/volleyball/${slug}/standings`);
+    out.push(`${slug} standings : HTTP ${st.status}, ${(st.data?.children ?? []).length} groupes`);
+  }
+  console.log(`\n[SONDE VOLLEYBALL]\n${out.join('\n')}`);
+}
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
