@@ -126,8 +126,13 @@ export async function teamsFromCore(league) {
   const [sport, code] = league.path.split('/');
   // Football universitaire : la première division seulement (groupe 80),
   // pas les 700 équipes de toutes les divisions.
-  const path = league.coreTeams ?? 'teams';
-  const list = await getCore(`/v2/sports/${sport}/leagues/${code}/${path}?limit=200&lang=en&region=us`);
+  // `{season}` : l'année de la saison (le football universitaire de janvier
+  // appartient encore à la saison de l'automne précédent).
+  const now = new Date();
+  const season = now.getMonth() < 2 ? now.getFullYear() - 1 : now.getFullYear();
+  const at = (y) => `/v2/sports/${sport}/leagues/${code}/${(league.coreTeams ?? 'teams').replace('{season}', y)}?limit=200&lang=en&region=us`;
+  let list = await getCore(at(season)).catch((err) => (league.coreTeams?.includes('{season}') ? null : Promise.reject(err)));
+  if (!(list?.items ?? []).length && league.coreTeams?.includes('{season}')) list = await getCore(at(season - 1));
   const refs = (list?.items ?? []).map((x) => corePath(x?.$ref)).filter(Boolean);
   const teams = [];
   for (let i = 0; i < refs.length; i += 10) {

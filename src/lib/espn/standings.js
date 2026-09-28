@@ -42,6 +42,7 @@ export function rankEntries(entries) {
 // Colonnes du tableau de classement, par sport : [nom ESPN, en-tête].
 export const STANDING_COLS = {
   hockey: [['gamesPlayed', 'PJ'], ['wins', 'V'], ['losses', 'D'], ['otLosses', 'DP'], ['points', 'PTS']],
+  volleyball: [['wins', 'V'], ['losses', 'D'], ['winPercent', '%']],
   basketball: [['wins', 'V'], ['losses', 'D'], ['winPercent', '%'], ['gamesBehind', 'Écart']],
   football: [['wins', 'V'], ['losses', 'D'], ['ties', 'N'], ['winPercent', '%']],
   baseball: [['wins', 'V'], ['losses', 'D'], ['winPercent', '%'], ['gamesBehind', 'Écart']],

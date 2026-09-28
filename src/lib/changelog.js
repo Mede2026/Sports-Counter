@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.1.0': [
+    '🏐 Volleyball : le volleyball universitaire américain (NCAA féminin et masculin), avec les points du set en cours, une notification à chaque set gagné, le pointage par set et le classement. (ESPN n’a pas de ligue professionnelle de volleyball.)',
+    '⚽ Ligue Europa : les 36 équipes (deux clubs étaient écartés à tort).',
+    '🏈 Football universitaire : seulement les ~130 équipes de 1re division, au lieu de plus de 700.',
+    '👤 Fiche joueur : bonne date de naissance (ESPN l’écrit jour/mois), taille et poids enfin affichés.',
+  ],
   '1.0.0': [
     '🎉 Version 1.0 de Sports Counter !',
     '📢 Klaxon de but : quand ton équipe ou un de tes joueurs marque, un son (klaxon au hockey et au football, sifflet au soccer, sirène au basket, orgue au baseball). Son et volume dans Réglages → Notifications, avec un bouton « Essayer ».',

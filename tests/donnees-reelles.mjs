@@ -206,55 +206,6 @@ await check('OpenF1', async () => {
   ok('OpenF1', `${session.label} : ${parts.join(', ') || 'rien'}`);
 });
 
-// 8. Sonde (temporaire) : adresses à confirmer avant de s'en servir dans l'app.
-if (process.env.SONDE !== '0') {
-  const raw = async (url) => {
-    try {
-      const r = await fetch(url);
-      let data = null;
-      try { data = JSON.parse(await r.text()); } catch { /* pas du JSON */ }
-      return { status: r.status, data };
-    } catch (err) {
-      return { status: 0, data: null };
-    }
-  };
-  const out = [];
-  const CORE = 'https://sports.core.api.espn.com/v2/sports';
-  const SITE = 'https://site.api.espn.com/apis/site/v2/sports';
-  // NCAA football : les équipes de la 1re division (FBS, groupe 80).
-  for (const u of [`${CORE}/football/leagues/college-football/groups/80/teams?limit=200`,
-    `${CORE}/football/leagues/college-football/seasons/2026/types/2/groups/80/teams?limit=200`,
-    `${CORE}/football/leagues/college-football/seasons/2026/groups/80/teams?limit=200`]) {
-    const r = await raw(u);
-    out.push(`${u.replace(CORE, '')} : HTTP ${r.status}, ${r.data?.count ?? '?'} (${(r.data?.items ?? []).length} items)`);
-  }
-  const fbs = await raw('https://site.api.espn.com/apis/v2/sports/football/college-football/standings?group=80');
-  const fbsTeams = (fbs.data?.children ?? []).flatMap((c) => c?.standings?.entries ?? []).length;
-  out.push(`standings?group=80 : HTTP ${fbs.status}, ${(fbs.data?.children ?? []).length} conférences, ${fbsTeams} équipes`);
-  // Volleyball : groupes (divisions) et tableau des scores complet.
-  for (const slug of ['womens-college-volleyball', 'mens-college-volleyball']) {
-    const g = await raw(`${CORE}/volleyball/leagues/${slug}/groups?limit=50`);
-    out.push(`${slug} groups : HTTP ${g.status}, ${g.data?.count ?? '?'}`);
-    for (const item of (g.data?.items ?? []).slice(0, 12)) {
-      const x = await raw(String(item.$ref).replace('http://', 'https://'));
-      out.push(`  groupe ${x.data?.id} | ${x.data?.name} | ${x.data?.abbreviation ?? ''} | parent ${x.data?.parent?.$ref ? 'oui' : 'non'}`);
-    }
-    for (const q of ['?dates=20260926', '?dates=20260926&limit=500', '?dates=20260926&groups=100&limit=500', '?dates=20260926&groups=90&limit=500', '?dates=20260926&groups=50&limit=500', '?dates=20260926&groups=0&limit=500']) {
-      const b = await raw(`${SITE}/volleyball/${slug}/scoreboard${q}`);
-      out.push(`${slug} scoreboard${q} : HTTP ${b.status}, ${(b.data?.events ?? []).length} matchs`);
-    }
-    const w = await raw(`${SITE}/volleyball/${slug}/scoreboard?dates=20260926`);
-    const e = (w.data?.events ?? []).find((x) => x?.competitions?.[0]?.status?.type?.state === 'post');
-    if (e) {
-      const c = e.competitions[0];
-      out.push(`  ex. fini : ${e.shortName} · ${c.status?.type?.shortDetail} · ${c.competitors.map((x) => `${x.team?.abbreviation} ${x.score} winner=${x.winner} [${(x.linescores ?? []).map((l) => l.value).join('-')}] logo=${x.team?.logo ? 'oui' : 'non'} rank=${x.curatedRank?.current ?? ''}`).join(' / ')}`);
-    }
-    const sum = e ? await raw(`${SITE}/volleyball/${slug}/summary?event=${e.id}`) : null;
-    if (sum) out.push(`  summary : HTTP ${sum.status}, clés ${Object.keys(sum.data ?? {}).join(',')}`);
-  }
-  console.log(`\n[SONDE]\n${out.join('\n')}`);
-}
-
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
 const scoresOk = rows.some(([st, area]) => st === '✅' && area.startsWith('Scores'));

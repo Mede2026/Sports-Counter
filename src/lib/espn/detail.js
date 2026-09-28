@@ -335,6 +335,10 @@ export const BOX_GROUPS = [
 // Colonnes du box score : abréviation française (le détail est en infobulle).
 // Les colonnes sans intérêt pour suivre un match sont cachées (null).
 export const BOX_LABELS = {
+  volleyball: {
+    K: 'ATT', E: 'ERR', TA: 'TENT', PCT: '%ATT', 'HIT%': '%ATT', A: 'PAS', SA: 'AS', SE: 'ERRS', RE: 'ERRR',
+    DIG: 'DÉF', DIGS: 'DÉF', BS: 'CTRS', BA: 'CTRA', BE: 'ERRC', BHE: null, PTS: 'PTS', SP: 'SETS',
+  },
   hockey: {
     G: 'B', A: 'A', PTS: 'PTS', '+/-': '+/-', SOG: 'TB', S: 'T', SM: 'TR', TOI: 'TG', HT: 'MÉ', BS: 'TBL',
     PIM: 'PUN', FW: 'MJG', FL: 'MJP', 'FO%': '%MJ', GV: 'REV', TK: 'RP', PN: 'PÉN', SHFT: 'PRÉS',

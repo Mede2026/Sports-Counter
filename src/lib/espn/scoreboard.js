@@ -801,8 +801,17 @@ export function normalizeEvent(event, leagueId, logo = '') {
 
   const home = competitors.find((c) => c.homeAway === 'home') ?? competitors[0];
   const away = competitors.find((c) => c.homeAway === 'away') ?? competitors[1];
+  // Volleyball en direct : les points du set en cours (visiteurs-locaux).
+  const setPoints = sportOfLeague(leagueId) === 'volleyball' && base.state === 'in'
+    ? safe(() => {
+      const last = (c) => (c?.linescores ?? []).at(-1)?.value;
+      const [a, h] = [last(away), last(home)];
+      return a != null && h != null ? `${a}-${h}` : '';
+    }, '')
+    : '';
   return {
     ...base,
+    clock: setPoints || base.clock,
     kind: 'match',
     home: normalizeCompetitor(home, base.state),
     away: normalizeCompetitor(away, base.state),

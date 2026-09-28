@@ -68,4 +68,6 @@ export const LEAGUE_ICONS = {
   gold: trophy('#1f2a44'),
   intl: globe('#2d6a8f'),
   ncaaf: football('#1c5d4d'),
+  vbw: volleyball('#8a5a12'),
+  vbm: volleyball('#1f3f7a'),
 };

@@ -9,7 +9,7 @@ import { LEAGUES_BY_ID, sportOf } from './leagues.js';
 // Ligues où chaque point mérite une notification. Au basket, le score change
 // toutes les vingt secondes : on s'en tient au début et à la fin du match.
 // Par sport : hockey et soccer (toutes les ligues), football et baseball.
-const SCORE_ALERTS_BY_SPORT = { hockey: 'goal', soccer: 'goal', football: 'points', baseball: 'points' };
+const SCORE_ALERTS_BY_SPORT = { hockey: 'goal', soccer: 'goal', football: 'points', baseball: 'points', volleyball: 'set' };
 const scoreAlert = (leagueId) => SCORE_ALERTS_BY_SPORT[sportOf(leagueId)];
 
 // Au-delà, une série d'évènements (retour de veille, par exemple) deviendrait
@@ -133,7 +133,8 @@ function matchEvents(g, before, opts = {}) {
       const team = g[side];
       const isGoal = scoreAlert(g.leagueId) === 'goal';
       const scorer = isGoal ? g.scorers?.[team.id] ?? '' : '';
-      const title = !isGoal ? `${team.name} marque (+${now - was})`
+      const title = scoreAlert(g.leagueId) === 'set' ? `🏐 Set pour ${team.name} !`
+        : !isGoal ? `${team.name} marque (+${now - was})`
         : scorer ? `But de ${scorer} !` : `But ${ofTeam(g.leagueId, team.name)} !`;
       const when = [g.clock, g.statusText].filter(Boolean).join(' · ');
       out.push({
