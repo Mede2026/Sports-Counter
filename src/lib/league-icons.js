@@ -41,6 +41,13 @@ const football = (bg) => svg(`
   <ellipse cx="32" cy="32" rx="20" ry="12" transform="rotate(-35 32 32)" fill="#9b5a2e"/>
   <path d="M25 39l14-14M28 30l3 3M31 27l3 3M34 24l3 3" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>`);
 
+/** Ballon de volleyball. */
+const volleyball = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <circle cx="32" cy="32" r="19" fill="#fff"/>
+  <path d="M32 13c-3 9-1 17 6 23M51 32c-9-2-17 1-22 8M20 47c4-8 3-16-3-23" fill="none" stroke="#f2c55c" stroke-width="3.2" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="19" fill="none" stroke="#1b2a4a" stroke-width="2"/>`);
+
 /** Octogone de combat, pour l'UFC. */
 const octagon = (bg) => svg(`
   <rect width="64" height="64" rx="16" fill="${bg}"/>

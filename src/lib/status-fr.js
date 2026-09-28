@@ -69,6 +69,9 @@ export function statusFr(text) {
   // Hockey hors LNH, formes génériques : « End of 2nd Period », « 2nd Period ».
   if ((m = /^end of (\d)(?:st|nd|rd|th)\s*period$/i.exec(raw))) return `Fin de la ${ord(m[1])} période`;
   if ((m = /^(\d)(?:st|nd|rd|th)\s*period$/i.exec(raw))) return `${ord(m[1])} période`;
+  // Volleyball : « 2nd Set », « End of 2nd Set », « Set 3 ».
+  if ((m = /^end of (?:the )?(\d)(?:st|nd|rd|th)\s*set$/i.exec(raw))) return `Fin du ${ordM(m[1])} set`;
+  if ((m = /^(\d)(?:st|nd|rd|th)\s*set$/i.exec(raw)) || (m = /^set\s*(\d)$/i.exec(raw))) return `${ordM(m[1])} set`;
   // F1 : « Lap 23 », « Lap 23 of 57 ».
   if ((m = /^lap\s+(\d+)(?:\s*(?:of|\/)\s*(\d+))?$/i.exec(raw))) return `Tour ${m[1]}${m[2] ? ` / ${m[2]}` : ''}`;
   // UFC : « End of Round 2 », « Round 2 ».

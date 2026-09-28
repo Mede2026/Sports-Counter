@@ -188,6 +188,7 @@ function periodLabel(g, p) {
   if (sport === 'baseball') return `${ordinal(p)} manche`;
   if (sport === 'basketball' || sport === 'football') return p <= 4 ? `${rankText(p)} quart` : 'Prol.';
   if (sport === 'soccer') return p <= 2 ? `${ordinal(p)} demie` : 'Prol.';
+  if (sport === 'volleyball') return `${rankText(p)} set`;
   if (g.leagueId !== 'nhl' || p <= 3) return `${ordinal(p)} pér.`;
   return g.playoffs ? `${ordinal(p - 3)} prol.` : p === 4 ? 'Prol.' : 'TB';
 }
@@ -195,7 +196,7 @@ function periodLabel(g, p) {
 /** « Pointage par manche / quart / demie / période ». */
 function periodsTitle(g) {
   return { baseball: 'Pointage par manche', basketball: 'Pointage par quart', football: 'Pointage par quart',
-    soccer: 'Pointage par demie' }[sportOf(g.leagueId)] ?? 'Pointage par période';
+    soccer: 'Pointage par demie', volleyball: 'Points par set' }[sportOf(g.leagueId)] ?? 'Pointage par période';
 }
 
 /** Texte d'ESPN en français, si la traduction est activée et déjà faite. */

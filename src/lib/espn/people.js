@@ -173,6 +173,21 @@ export function draftFr(raw) {
 }
 
 /**
+ * « 17/11/2003 » : ESPN écrit jour/mois ou mois/jour selon les cas. Un nombre
+ * au-dessus de 12 tranche ; sinon, l'âge donné par ESPN départage.
+ */
+export function birthDate(text, age, now = new Date()) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(text ?? '').trim());
+  if (!m) return null;
+  const [a, b, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const make = (month, day) => (month >= 1 && month <= 12 && day >= 1 && day <= 31 ? new Date(Date.UTC(y, month - 1, day)) : null);
+  const ageOn = (d) => now.getUTCFullYear() - d.getUTCFullYear() - (now < new Date(Date.UTC(now.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())) ? 1 : 0);
+  const options = [make(a, b), make(b, a)].filter(Boolean); // mois/jour, puis jour/mois
+  if (!options.length) return null;
+  return (age && options.find((d) => ageOn(d) === age)) || options[0];
+}
+
+/**
  * Fiche d'un joueur : poste, numéro, équipe, âge, date et lieu de naissance,
  * taille et poids (en cm et kg), repêchage, main (hockey). null sans données.
  */
@@ -188,10 +203,11 @@ export async function fetchPlayerBio(leagueId, athleteId) {
     a = await getCore(`/v2/sports/${sport}/leagues/${code}/athletes/${encodeURIComponent(athleteId)}?lang=en&region=us`);
   }
   if (!a?.displayName) return null;
-  const inches = Number(a.height);
-  const pounds = Number(a.weight);
-  const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(a.displayDOB ?? '');
-  const dob = a.dateOfBirth ? new Date(a.dateOfBirth) : dm ? new Date(Date.UTC(Number(dm[3]), Number(dm[1]) - 1, Number(dm[2]))) : null;
+  // Taille et poids : en nombres (API core) ou en texte (« 6' 2" », « 193 lbs »).
+  const ft = /(\d+)\s*'\s*(\d+)?/.exec(a.displayHeight ?? '');
+  const inches = Number(a.height) || (ft ? Number(ft[1]) * 12 + Number(ft[2] ?? 0) : 0);
+  const pounds = Number(a.weight) || Number(/(\d+(?:\.\d+)?)\s*lb/i.exec(a.displayWeight ?? '')?.[1]) || 0;
+  const dob = a.dateOfBirth ? new Date(a.dateOfBirth) : birthDate(a.displayDOB, Number(a.age));
   const bp = a.birthPlace ?? {};
   const years = Number(a.experience?.years);
   const nth = /(\d+)(?:st|nd|rd|th)\s+season/i.exec(a.displayExperience ?? '');
