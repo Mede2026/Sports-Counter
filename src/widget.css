@@ -149,7 +149,7 @@ html, body {
 .games { display: flex; flex-direction: column; }
 /* Forme choisie à la souris : hauteur fixe, la liste défile à l'intérieur. */
 .widget--shaped { display: flex; flex-direction: column; }
-.widget--shaped .games { flex: 1; min-height: 0; overflow-y: auto; }
+.widget--shaped .games { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
 /* Poignée du coin bas-droit : tirer pour changer la taille. */
 .grip {
@@ -739,3 +739,7 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 
 /* F1 : quelle séance le podium montre (course, qualifs, essais). */
 .podium__cap { margin: 8px 0 -2px 12px; font-size: 11px; font-weight: 650; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+
+/* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
+html, body { overflow-x: hidden; }

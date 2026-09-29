@@ -89,6 +89,7 @@ body {
 .main {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -658,3 +659,7 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 .news__item small { font-size: 11.5px; line-height: 1.35; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .news__item em { font-style: normal; font-size: 10.5px; color: var(--text-faint); }
 .news__item:hover b { color: #4aa3ff; }
+
+
+/* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
+html, body { overflow-x: hidden; }

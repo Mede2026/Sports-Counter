@@ -71,7 +71,7 @@ export function rowOf(g, now = new Date()) {
  * - `teamGames` : [{ key, games }] calendrier de chaque équipe favorite ;
  * - `standings` : Map « ligue:équipe » -> { rank, group, points }.
  */
-export function buildModel({ today = [], teamGames = [], standings = new Map(), favInfo = {}, division = null, f1 = null, now = new Date() }) {
+export function buildModel({ today = [], teamGames = [], standings = new Map(), favInfo = {}, division = null, f1 = null, now = new Date(), heroMax = 4 }) {
   const t = now.getTime();
   const byId = new Map();
   const add = (g) => { if (g?.id && !byId.has(g.id)) byId.set(g.id, g); };
@@ -122,29 +122,43 @@ export function buildModel({ today = [], teamGames = [], standings = new Map(), 
     }
   }
 
-  const heroGame = live[0] ?? todayRows.find((g) => g.state === 'pre') ?? upcoming[0] ?? null;
-  const hero = heroGame ? rowOf(heroGame, now) : null;
-  if (hero?.kind === 'match') {
-    for (const side of [hero.away, hero.home]) side.form = form.find((f) => f.teamId === side.id)?.results ?? [];
-  }
-  if (hero && heroGame.state === 'pre') hero.until = untilCoarse(heroGame.startsAt, now);
+  // Matchs en grand : tous ceux d'aujourd'hui (en direct d'abord, puis à
+  // venir, puis finis), sinon le prochain. `heroMax` : réglage « Combien ».
+  const max = Math.max(1, Math.min(6, Number(heroMax) || 4));
+  const todayOrder = [...live,
+    ...todayRows.filter((g) => g.state === 'pre'),
+    ...todayRows.filter((g) => g.state === 'post')];
+  const heroGames = (todayOrder.length ? todayOrder : upcoming.slice(0, 1)).slice(0, max);
+  const heroes = heroGames.map((g) => {
+    const row = rowOf(g, now);
+    if (row.kind === 'match') {
+      for (const side of [row.away, row.home]) side.form = form.find((f) => f.teamId === side.id)?.results ?? [];
+    }
+    if (g.state === 'pre') row.until = untilCoarse(g.startsAt, now);
+    return row;
+  });
+  const inHero = (g) => heroGames.includes(g);
   return {
     now,
-    hero,
+    hero: heroes[0] ?? null,
+    heroes,
     form: form.slice(0, 5),
     division,
     f1: f1?.slice(0, 5) ?? null,
-    today: todayRows.filter((g) => g !== heroGame).slice(0, 4).map((g) => rowOf(g, now)),
-    upcoming: upcoming.filter((g) => g !== heroGame).slice(0, 6).map((g) => rowOf(g, now)),
+    today: todayRows.filter((g) => !inHero(g)).slice(0, 4).map((g) => rowOf(g, now)),
+    upcoming: upcoming.filter((g) => !inHero(g)).slice(0, 6).map((g) => rowOf(g, now)),
     results: results.slice(0, 4).map(({ game, won }) => ({ ...rowOf(game, now), won })),
     standings: table.slice(0, 4),
   };
 }
 
+/** Matchs en grand (un modèle gardé par une ancienne version n'a que `hero`). */
+export const heroesOf = (model) => model?.heroes ?? (model?.hero ? [model.hero] : []);
+
 /** Adresses des images à charger avant de dessiner. */
 export function imageUrls(model) {
   const urls = new Set();
-  const rows = [model.hero, ...model.today, ...model.upcoming, ...model.results].filter(Boolean);
+  const rows = [...heroesOf(model), ...model.today, ...model.upcoming, ...model.results].filter(Boolean);
   for (const r of rows) {
     if (r.kind === 'match') { urls.add(r.away.logo); urls.add(r.home.logo); } else urls.add(r.logo);
     urls.add(r.leagueLogo);
@@ -163,9 +177,9 @@ export function modelKey(model) {
     ? `${r.id}|${r.away.score}-${r.home.score}|${r.when}`
     : `${r.id}|${r.when}`);
   return JSON.stringify([
-    model.now.toDateString(), strip(model.hero), model.today.map(strip), model.upcoming.map(strip),
+    model.now.toDateString(), heroesOf(model).map(strip), model.today.map(strip), model.upcoming.map(strip),
     model.results.map(strip), model.standings.map((s) => s.name + s.line),
-    (model.form ?? []).map((f) => f.results.join('') + f.record), model.division, model.f1, model.hero?.until,
+    (model.form ?? []).map((f) => f.results.join('') + f.record), model.division, model.f1, heroesOf(model).map((h) => h.until),
   ]);
 }
 
@@ -217,7 +231,7 @@ export const WALLPAPER_DEFAULTS = {
   color: '', // '' : couleur de l'équipe du thème ; sinon une couleur choisie
   side: 'right', // côté du panneau des listes
   dim: 0.55, // assombrissement de la photo, pour lire le texte
-  hero: true, today: true, upcoming: true, results: true, standings: true,
+  hero: true, heroCount: 4, today: true, upcoming: true, results: true, standings: true,
   form: true, division: true, f1: true,
 };
 
@@ -318,7 +332,7 @@ export function drawWallpaper(canvas, model, images, opts = {}) {
   };
 
   // Sans le grand « prochain match », il rejoint la liste d'aujourd'hui ou à venir.
-  const heroRows = !o.hero && model.hero ? [model.hero] : [];
+  const heroRows = !o.hero ? heroesOf(model) : [];
   const heroToday = heroRows.filter((r) => r.state !== 'pre' || /^Aujourd/.test(r.when));
   const heroLater = heroRows.filter((r) => !heroToday.includes(r));
   if (o.today) section('Aujourd’hui', [...heroToday, ...model.today], (r, ry) => drawRow(ctx, r, img, inner, ry, u));
@@ -377,20 +391,46 @@ function drawForm(ctx, results, x, y, u, align = 'center') {
  */
 function drawHero(ctx, model, img, { x, y, w, h, u, color, compact }) {
   const cx = x + w / 2;
-  const block = 520 * u;
-  const oy = compact ? y : y + Math.max(0, (h - block) / 2 - 30 * u);
   ctx.textAlign = 'center';
   // Date du jour, en tête : le fond d'écran sert aussi de calendrier.
   const day = DAY_FMT.format(model.now);
   ctx.fillStyle = MUTED;
   ctx.font = `500 ${Math.round(26 * u)}px ${FONT}`;
   ctx.fillText(day.charAt(0).toUpperCase() + day.slice(1), cx, y + 60 * u);
+  ctx.textAlign = 'left';
 
-  const r = model.hero;
-  if (!r) {
-    ctx.textAlign = 'left';
+  const heroes = heroesOf(model);
+  if (!heroes.length) return;
+  if (heroes.length === 1) {
+    // Un seul match : en pleine taille, comme avant.
+    const block = 520 * u;
+    const oy = compact ? y : y + Math.max(0, (h - block) / 2 - 30 * u);
+    drawHeroGame(ctx, heroes[0], img, { x, w, oy, u, color });
     return;
   }
+  // Plusieurs : deux l'un sous l'autre, ou une grille de deux colonnes. Chaque
+  // case réduit tout à la même échelle pour que rien ne déborde.
+  const cols = heroes.length <= 2 ? 1 : 2;
+  const rows = Math.ceil(heroes.length / cols);
+  const areaY = y + 80 * u;
+  const cellW = w / cols;
+  const cellH = (y + h - areaY) / rows;
+  heroes.forEach((r, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const k = Math.min(1, cellH / (500 * u), cellW / (760 * u));
+    const uu = u * k;
+    const cy = areaY + row * cellH;
+    // Le contenu va de oy + 90 à oy + 560 environ : centré dans sa case.
+    const oy = cy + (cellH - 470 * uu) / 2 - 90 * uu;
+    drawHeroGame(ctx, r, img, { x: x + col * cellW, w: cellW, oy, u: uu, color });
+  });
+}
+
+/** Un match en grand : logos, pointage, noms, fiche, forme, heure. */
+function drawHeroGame(ctx, r, img, { x, w, oy, u, color }) {
+  const cx = x + w / 2;
+  ctx.textAlign = 'center';
   const live = r.state === 'in';
   const center = oy + 240 * u; // centre des logos
   ctx.spot?.(r, x, oy + 90 * u, w, 440 * u);

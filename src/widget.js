@@ -11,7 +11,7 @@ import { MEDALS, esc as attr, formIcons, formTitle } from './lib/format.js';
 import { diskCache, pruneStorage } from './lib/cache.js';
 import { TRANSLATED_EVENT } from './lib/translate.js';
 import { fetchRaceControl, driverNumbers, isSanction } from './lib/openf1.js';
-import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors } from './lib/wallpaper.js';
+import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors, wallpaperOptions } from './lib/wallpaper.js';
 import { soundFor } from './lib/sound.js';
 import { inQuietHours, holdToast, heldToasts, clearHeld, quietSummary } from './lib/quiet.js';
 
@@ -944,7 +944,7 @@ async function updateWallpaper() {
         f1 = (await fetchF1Standings()).drivers.slice(0, 5).map((d) => ({ rank: d.rank, name: d.name, points: d.points }));
       } catch { /* championnat indisponible */ }
     }
-    const model = buildModel({ today: followed, teamGames, standings, favInfo: prefs.favInfo, division, f1 });
+    const model = buildModel({ today: followed, teamGames, standings, favInfo: prefs.favInfo, division, f1, heroMax: wallpaperOptions(prefs).heroCount });
     saveModel(model);
     // Les options comptent aussi : changer la couleur redessine l'image.
     const key = modelKey(model) + JSON.stringify(prefs.wallpaper ?? {}) + prefs.theme + wallpaperColors(prefs, followed).join();

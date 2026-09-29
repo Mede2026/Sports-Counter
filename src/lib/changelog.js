@@ -2,6 +2,8 @@
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
   '1.1.2': [
+    '🖼️ Fond d’écran : tous tes matchs du jour en grand (en direct d’abord), pas seulement un. Réglage « Matchs en grand » : 1, 2, 3, 4 ou 6.',
+    '↔️ Plus de défilement de gauche à droite dans les fenêtres : les barres d’outils passent à la ligne quand la fenêtre est étroite.',
     '🧊 Fini l’app figée : une connexion bloquée (souvent après une mise en veille) arrêtait tous les relevés, et le fond d’écran restait sur une vieille date. Chaque requête abandonne maintenant après 15 s, un relevé bloqué est relancé, et tout est relu au réveil de l’ordinateur.',
     '🖼️ Fond d’écran : Windows ne garde plus une vieille image après le redémarrage de l’app.',
     '⚾ Séries éliminatoires : un adversaire pas encore connu s’affiche « À déterminer » ou « Phillies ou Brewers », avec un « ? » dans le logo (le texte débordait).',

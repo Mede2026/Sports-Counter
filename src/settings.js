@@ -13,7 +13,7 @@ import { faceHtml, bindFaces } from './lib/face.js';
 import { esc } from './lib/format.js';
 import { ofTeam } from './lib/events.js';
 import { clearCaches, storageSize } from './lib/cache.js';
-import { wallpaperOptions, renderWallpaper, readModel, buildModel } from './lib/wallpaper.js';
+import { wallpaperOptions, renderWallpaper, readModel, buildModel, heroesOf } from './lib/wallpaper.js';
 import { SOUNDS, soundFor, playSound } from './lib/sound.js';
 import { initSheet, openTeamSheet, openPlayerSheet } from './sheet.js';
 
@@ -863,13 +863,16 @@ function demoWallModel() {
   };
   const f1 = [['Andrea Kimi Antonelli', 312], ['George Russell', 298], ['Max Verstappen', 276], ['Lando Norris', 251], ['Charles Leclerc', 230]]
     .map(([name, points], i) => ({ rank: i + 1, name, points: String(points) }));
-  return buildModel({ today: games, teamGames, favInfo, division, f1, now: new Date() });
+  return buildModel({ today: games, teamGames, favInfo, division, f1, now: new Date(), heroMax: wallpaperOptions(prefs).heroCount });
 }
 
 /** Aperçu : le dernier contenu du widget, ou des matchs de démonstration. */
 async function drawWallPreview() {
   const run = async () => {
-    const model = readModel() ?? demoWallModel();
+    const saved = readModel();
+    // « Combien de matchs en grand » : l'aperçu suit le réglage tout de suite
+    // (le widget refait sa propre image quelques secondes après).
+    const model = saved ? { ...saved, heroes: heroesOf(saved).slice(0, wallpaperOptions(prefs).heroCount) } : demoWallModel();
     await renderWallpaper(wallEl('wallPreview'), model, prefs);
   };
   // Un dessin à la fois ; le dernier réglage l'emporte.
@@ -889,6 +892,7 @@ function initWallpaper() {
   pick('wallSide', 'side');
   pick('wallDim', 'dim', (x) => Number(x.value));
   pick('wallHero', 'hero');
+  pick('wallHeroCount', 'heroCount', (x) => Number(x.value));
   pick('wallToday', 'today');
   pick('wallUpcoming', 'upcoming');
   pick('wallResults', 'results');

@@ -203,3 +203,7 @@ span.crest {
 
 /* Drapeaux : rectangle entier, jamais rogné ni entouré d'un halo. */
 img[data-flag] { object-fit: contain; border-radius: 3px; background: transparent !important; box-shadow: none !important; filter: none !important; }
+
+
+/* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
+html, body { overflow-x: hidden; }
