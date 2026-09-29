@@ -1956,7 +1956,7 @@ async function runDiagnostic() {
   const box = document.getElementById('diag');
   const btn = document.getElementById('btnDiag');
   btn.disabled = true;
-  const cell = (r) => (r ? `<td class="${r.ok ? 'diag--ok' : 'diag--err'}">${r.ok ? '✅' : '❌'} ${r.text}</td>` : '<td class="st__muted">—</td>');
+  const cell = (r) => (r ? `<td class="${!r.ok ? 'diag--err' : r.warn ? 'diag--warn' : 'diag--ok'}">${!r.ok ? '❌' : r.warn ? '⚠️' : '✅'} ${r.text}</td>` : '<td class="st__muted">—</td>');
   const rows = new Map(LEAGUES.map((l) => [l.id, `<tr><td>${l.label}</td><td colspan="2" class="st__muted">…</td></tr>`]));
   const draw = () => {
     box.innerHTML = `<table class="st__table diag"><thead><tr><th class="st__team">Ligue</th><th>Scores du jour</th><th>Équipes</th></tr></thead>

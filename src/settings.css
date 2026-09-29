@@ -651,6 +651,7 @@ kbd {
 .diag td { font-size: 11.5px; text-align: left; vertical-align: top; word-break: break-word; }
 .diag td.diag--err { color: #ffa07a; }
 .diag td.diag--ok { color: var(--text-muted); }
+.diag td.diag--warn { color: #f2c55c; }
 
 /* Drapeaux : rectangle entier, jamais rogné ni entouré d'un halo. */
 img[data-flag] { object-fit: contain; border-radius: 3px; background: transparent !important; box-shadow: none !important; filter: none !important; }

@@ -1086,7 +1086,10 @@ export async function probeLeague(leagueId) {
       const want = league.teams || 0;
       const bare = teams.filter((t) => !t.logo).length;
       out.teams = {
-        ok: teams.length > 0 && teams.length >= want && !bare,
+        // Toute la ligue est là : réussi. Quelques logos absents chez ESPN
+        // (petites universités) : seulement un avertissement.
+        ok: teams.length > 0 && teams.length >= want,
+        warn: bare > 0,
         text: [
           want ? `${teams.length}/${want} équipes` : `${teams.length} équipe${teams.length > 1 ? 's' : ''}`,
           bare ? `${bare} sans logo` : '',

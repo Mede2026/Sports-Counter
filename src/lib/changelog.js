@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.1.1': [
+    '🩺 Diagnostic : une ligue complète dont ESPN n’a pas tous les logos (petites universités au volleyball) affiche ⚠️ au lieu de ❌. Ces équipes gardent leur pastille de couleur avec leur sigle.',
+  ],
   '1.1.0': [
     '🏐 Volleyball : le volleyball universitaire américain (NCAA féminin et masculin), avec les points du set en cours, une notification à chaque set gagné, le pointage par set et le classement. (ESPN n’a pas de ligue professionnelle de volleyball.)',
     '⚽ Ligue Europa : les 36 équipes (deux clubs étaient écartés à tort).',
