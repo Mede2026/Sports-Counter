@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from './espn/core.js';
 // OpenF1 : base gratuite de données de F1, pour ce qu'ESPN ne donne pas —
 // pneus, arrêts aux stands, direction de course, radio des équipes, météo,
 // tours, télémétrie et position des voitures sur le circuit. Gratuit après
@@ -12,7 +13,7 @@ const inTauri = () => !!globalThis.window?.__TAURI__;
 const squash = (text) => String(text ?? '').normalize('NFD').replace(/[^a-z0-9]/gi, '').toLowerCase();
 
 async function viaPage(url) {
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

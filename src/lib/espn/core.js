@@ -10,8 +10,27 @@ export function inTauri() {
   return typeof window !== 'undefined' && !!window.__TAURI__;
 }
 
+// Au-delà, une requête est abandonnée. Sans limite, une connexion restée
+// bloquée (après une mise en veille, par exemple) attendait pour toujours, et
+// plus aucun relevé ne partait : scores et fond d'écran restaient figés.
+export const FETCH_TIMEOUT_MS = 15_000;
+
+/** fetch avec délai maximum : erreur « délai dépassé » au lieu d'attendre sans fin. */
+export async function fetchWithTimeout(url, ms = FETCH_TIMEOUT_MS) {
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = setTimeout(() => ctrl?.abort(), ms);
+  try {
+    return await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error(`délai dépassé (${Math.round(ms / 1000)} s)`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function viaPage(url) {
-  const res = await fetch(url);
+  const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

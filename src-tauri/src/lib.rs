@@ -1547,7 +1547,15 @@ fn set_wallpaper(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<(),
     set_wallpaper_fit("10", "0");
     // Deux noms en alternance : avec toujours le même, Windows peut garder
     // l'ancienne image en mémoire.
-    let flip = NEXT_WALLPAPER.fetch_add(1, Ordering::SeqCst) % 2;
+    // Jamais le nom de l'image déjà posée : au redémarrage de l'app, le
+    // compteur repart à zéro et retombait parfois sur ce nom, et Windows
+    // gardait alors l'ancienne image (fond d'écran figé).
+    let mut flip = NEXT_WALLPAPER.fetch_add(1, Ordering::SeqCst) % 2;
+    let posed = current.to_lowercase();
+    if posed.ends_with(&format!("sports-counter-{flip}.jpg")) {
+        flip = 1 - flip;
+        NEXT_WALLPAPER.fetch_add(1, Ordering::SeqCst);
+    }
     let file = dir.join(format!("sports-counter-{flip}.jpg"));
     std::fs::write(&file, bytes).map_err(|e| e.to_string())?;
     let path = file.to_string_lossy().to_string();

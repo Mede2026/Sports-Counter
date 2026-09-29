@@ -24,7 +24,8 @@ export async function teamsFromSchedule(league) {
     for (const event of data?.events ?? []) {
       for (const c of event?.competitions?.[0]?.competitors ?? []) {
         const id = c?.team?.id != null ? String(c.team.id) : null;
-        if (id && !seen.has(id)) seen.set(id, toTeam(c.team));
+        // « À déterminer » (séries) : pas une équipe de la ligue.
+        if (id && !seen.has(id) && !placeholderTeam(c.team)) seen.set(id, toTeam(c.team));
       }
     }
   };
@@ -160,13 +161,28 @@ export async function fetchTeams(leagueId) {
   return teams;
 }
 
+/**
+ * Adversaire pas encore connu (séries éliminatoires) : ESPN écrit « TBD » ou
+ * « Phillies/Brewers » (le gagnant de cette série). → « À déterminer »,
+ * « Phillies ou Brewers », et « ? » comme sigle (le texte débordait du logo).
+ */
+export function placeholderTeam(t) {
+  const abbr = String(t?.abbreviation ?? '').trim();
+  const name = String(t?.shortDisplayName ?? t?.displayName ?? t?.name ?? '').trim();
+  if (/^tbd$/i.test(abbr) || /^tbd$/i.test(name) || /^to be determined$/i.test(name)) return { abbr: '?', name: 'À déterminer' };
+  const parts = (name.includes('/') ? name : abbr.includes('/') ? abbr : '').split('/').map((x) => x.trim()).filter(Boolean);
+  return parts.length > 1 ? { abbr: '?', name: parts.join(' ou ') } : null;
+}
+
 export function normalizeCompetitor(c, state) {
   const t = c?.team ?? {};
+  const tbd = placeholderTeam(t);
   return {
     id: String(t.id ?? ''),
-    abbr: t.abbreviation ?? t.shortDisplayName ?? '???',
-    name: t.shortDisplayName ?? t.displayName ?? '',
-    full: t.displayName ?? '',
+    abbr: tbd?.abbr ?? t.abbreviation ?? t.shortDisplayName ?? '???',
+    name: tbd?.name ?? t.shortDisplayName ?? t.displayName ?? '',
+    full: tbd?.name ?? t.displayName ?? '',
+    tbd: !!tbd,
     logo: t.logo ?? t.logos?.[0]?.href ?? '',
     color: t.color ? `#${t.color}` : null,
     alt: t.alternateColor ? `#${t.alternateColor}` : null,

@@ -1,6 +1,11 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.1.2': [
+    '🧊 Fini l’app figée : une connexion bloquée (souvent après une mise en veille) arrêtait tous les relevés, et le fond d’écran restait sur une vieille date. Chaque requête abandonne maintenant après 15 s, un relevé bloqué est relancé, et tout est relu au réveil de l’ordinateur.',
+    '🖼️ Fond d’écran : Windows ne garde plus une vieille image après le redémarrage de l’app.',
+    '⚾ Séries éliminatoires : un adversaire pas encore connu s’affiche « À déterminer » ou « Phillies ou Brewers », avec un « ? » dans le logo (le texte débordait).',
+  ],
   '1.1.1': [
     '🩺 Diagnostic : une ligue complète dont ESPN n’a pas tous les logos (petites universités au volleyball) affiche ⚠️ au lieu de ❌. Ces équipes gardent leur pastille de couleur avec leur sigle.',
   ],

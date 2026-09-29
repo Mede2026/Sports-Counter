@@ -878,6 +878,7 @@ const WALLPAPER_IDLE_MS = 15 * 60 * 1000;
 let wallpaperKey = '';
 let wallpaperAt = 0;
 let wallpaperBusy = false;
+let wallpaperBusySince = 0;
 let wallpaperRestored = false; // fond d'origine déjà remis depuis le dernier changement de mode
 
 const wallpaperMode = () => ['wallpaper', 'both'].includes(prefs.widgetMode);
@@ -896,8 +897,11 @@ async function updateWallpaper() {
     return;
   }
   wallpaperRestored = false;
+  // Une image bloquée plus de 2 minutes (requête figée) n'empêche plus les suivantes.
+  if (wallpaperBusy && Date.now() - wallpaperBusySince > 2 * 60 * 1000) wallpaperBusy = false;
   if (wallpaperBusy || Date.now() - wallpaperAt < WALLPAPER_EVERY_MS) return;
   wallpaperBusy = true;
+  wallpaperBusySince = Date.now();
   try {
     const favs = prefs.favorites.filter((k) => LEAGUES_BY_ID[k.split(':')[0]]?.kind === 'team').slice(0, 8);
     const teamGames = [];
@@ -1105,7 +1109,18 @@ async function morningDigest() {
  * Toutes les 30 s : comptes à rebours et rappels, sans toucher au réseau.
  * Un match dont l'heure est passée déclenche un relevé, pour le voir commencer.
  */
+let lastTick = Date.now();
+
 function tick() {
+  // Retour de veille (les minuteries se sont arrêtées) : tout est relu tout
+  // de suite, fond d'écran compris, au lieu d'attendre le prochain relevé.
+  const slept = Date.now() - lastTick > 3 * TICK_MS;
+  lastTick = Date.now();
+  if (slept) {
+    wallpaperAt = 0;
+    refresh(true);
+    return;
+  }
   let started = false;
   el.games.querySelectorAll('[data-start]').forEach((node) => {
     const text = untilText(new Date(Number(node.dataset.start)), Date.now(), 'short' in node.dataset);
@@ -1595,9 +1610,19 @@ let refreshing = null;
 const STARTUP_DELAY_MS = 4000;
 let booted = false;
 
+let refreshStarted = 0;
+// Un relevé plus long que ça est considéré comme bloqué : on en relance un.
+const REFRESH_STUCK_MS = 2 * 60 * 1000;
+
 function refresh(force = false) {
-  // Un relevé à la fois : un clic pendant un relevé ne le double pas.
-  refreshing ??= doRefresh(force).finally(() => { refreshing = null; });
+  // Un relevé à la fois : un clic pendant un relevé ne le double pas. Mais un
+  // relevé bloqué (connexion figée) ne doit pas empêcher tous les suivants.
+  if (refreshing && Date.now() - refreshStarted > REFRESH_STUCK_MS) refreshing = null;
+  if (!refreshing) {
+    refreshStarted = Date.now();
+    const mine = doRefresh(force).finally(() => { if (refreshing === mine) refreshing = null; });
+    refreshing = mine;
+  }
   return refreshing;
 }
 
