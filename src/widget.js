@@ -15,7 +15,7 @@ import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors, wall
 import { soundFor } from './lib/sound.js';
 import { inQuietHours, holdToast, heldToasts, clearHeld, quietSummary } from './lib/quiet.js';
 
-const REFRESH_LIVE_MS = 25_000;   // un match est en cours
+const REFRESH_LIVE_MS = 10_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours
 const TICK_MS = 30_000;           // comptes à rebours et rappels
 const DAY_MS = 24 * 3600 * 1000;
@@ -871,9 +871,10 @@ function shootoutLine(game) {
 
 /* ---------- Mode « Fond d'écran » ---------- */
 
-// Au plus une nouvelle image par minute ; sans changement, une toutes les
-// 15 minutes (l'heure de mise à jour en bas de l'image reste juste).
+// Au plus une nouvelle image par minute (toutes les 15 s pendant un match) ;
+// sans changement, une toutes les 15 minutes (l'heure en bas reste juste).
 const WALLPAPER_EVERY_MS = 60 * 1000;
+const WALLPAPER_LIVE_MS = 15 * 1000;
 const WALLPAPER_IDLE_MS = 15 * 60 * 1000;
 let wallpaperKey = '';
 let wallpaperAt = 0;
@@ -899,7 +900,8 @@ async function updateWallpaper() {
   wallpaperRestored = false;
   // Une image bloquée plus de 2 minutes (requête figée) n'empêche plus les suivantes.
   if (wallpaperBusy && Date.now() - wallpaperBusySince > 2 * 60 * 1000) wallpaperBusy = false;
-  if (wallpaperBusy || Date.now() - wallpaperAt < WALLPAPER_EVERY_MS) return;
+  const live = followed.some((g) => g.state === 'in');
+  if (wallpaperBusy || Date.now() - wallpaperAt < (live ? WALLPAPER_LIVE_MS : WALLPAPER_EVERY_MS)) return;
   wallpaperBusy = true;
   wallpaperBusySince = Date.now();
   try {
@@ -944,7 +946,13 @@ async function updateWallpaper() {
         f1 = (await fetchF1Standings()).drivers.slice(0, 5).map((d) => ({ rank: d.rank, name: d.name, points: d.points }));
       } catch { /* championnat indisponible */ }
     }
-    const model = buildModel({ today: followed, teamGames, standings, favInfo: prefs.favInfo, division, f1, heroMax: wallpaperOptions(prefs).heroCount });
+    // Tableaux des scores du moment des ligues favorites : le calendrier d'une
+    // équipe est gardé en cache des heures, son match en cours y est périmé.
+    const fresh = [];
+    for (const leagueId of new Set(favs.map((k) => k.split(':')[0]))) {
+      fresh.push(...await loadBoard(leagueId).catch(() => []));
+    }
+    const model = buildModel({ today: followed, teamGames, fresh, standings, favInfo: prefs.favInfo, division, f1, heroMax: wallpaperOptions(prefs).heroCount });
     saveModel(model);
     // Les options comptent aussi : changer la couleur redessine l'image.
     const key = modelKey(model) + JSON.stringify(prefs.wallpaper ?? {}) + prefs.theme + wallpaperColors(prefs, followed).join();
@@ -1583,7 +1591,7 @@ async function nextGamesForIdleFavorites(todayGames) {
 
 /*
  * Relevé par ligue, gardé entre deux rafraîchissements. Pendant un match, on
- * ne redemande toutes les 25 s que les ligues qui ont un match en cours (ou
+ * ne redemande toutes les 10 s que les ligues qui ont un match en cours (ou
  * sur le point de commencer) ; les autres gardent leur relevé jusqu'à 5 min.
  */
 const boards = new Map(); // idLigue -> { at, games }
@@ -1703,11 +1711,11 @@ async function doRefresh(force) {
   booted = true;
   const hasLive = visible.some((g) => g.state === 'in');
   applyWidgetMode(hasLive);
-  schedule(hasLive, followed, offline);
+  schedule(followed.some((g) => g.state === 'in'), followed, offline);
 }
 
 /**
- * Prochain relevé : 25 s pendant un match, sinon 5 min — mais jamais après
+ * Prochain relevé : 10 s pendant un match, sinon 5 min — mais jamais après
  * l'heure de départ d'un match suivi, pour le voir commencer à temps.
  */
 function schedule(hasLive, games, offline = false) {

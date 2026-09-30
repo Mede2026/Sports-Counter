@@ -184,7 +184,7 @@ export function matchLogo(list, ...names) {
 }
 
 // Après un échec, TheSportsDB n'est pas réinterrogé avant 30 min : le widget
-// rafraîchit toutes les 25 s pendant un match.
+// rafraîchit toutes les 10 s pendant un match.
 export const LOGO_RETRY_MS = 30 * 60 * 1000;
 export const logoFailedAt = new Map();
 

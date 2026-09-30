@@ -21,7 +21,7 @@ seulement les équipes que tu choisis.
   taper la combinaison (avec Ctrl ou Alt).
 - **Logos des équipes** affichés à côté de chaque score.
 - **Choix des équipes** dans une fenêtre de réglages, ligue par ligue.
-- **Rafraîchissement adaptatif** : toutes les 25 s pendant un match, toutes les 5 min sinon.
+- **Rafraîchissement adaptatif** : toutes les 10 s pendant un match (fond d’écran : toutes les 15 s), toutes les 5 min sinon.
 - **Prochain match** : une équipe favorite qui ne joue pas aujourd'hui montre
   quand même son prochain match (jusqu'à 10 jours).
 - **F1** : la séance en cours ou la prochaine, et le **top 3** 🥇🥈🥉 pendant

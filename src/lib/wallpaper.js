@@ -65,18 +65,57 @@ export function rowOf(g, now = new Date()) {
   };
 }
 
+// Avancement d'un match : un match fini est plus à jour qu'un match en cours.
+const STAGE = { pre: 0, in: 1, post: 2 };
+const hasScore = (t) => /\d/.test(String(t?.score ?? ''));
+const scored = (g) => hasScore(g?.home) && hasScore(g?.away);
+
+/** `a` est-il une copie plus à jour que `b` du même match ? */
+function isNewer(a, b) {
+  const sa = STAGE[a.state] ?? 0;
+  const sb = STAGE[b.state] ?? 0;
+  return sa > sb || (sa === sb && scored(a) && !scored(b));
+}
+
+/** Un match en cours ou fini sans pointage le prend d'une autre copie qui l'a. */
+function withScores(g, copies) {
+  if (g.kind !== 'match' || g.state === 'pre' || scored(g)) return g;
+  const other = copies.find((c) => c !== g && c.kind === 'match' && scored(c) && STAGE[c.state] >= STAGE[g.state]);
+  if (!other) return g;
+  const side = (mine) => {
+    const theirs = [other.home, other.away].find((t) => t.id === mine.id);
+    return theirs ? { ...mine, score: theirs.score } : mine;
+  };
+  return { ...g, home: side(g.home), away: side(g.away) };
+}
+
 /**
  * Tout ce que l'image montre, à partir des matchs déjà connus du widget.
  * - `today` : matchs suivis d'aujourd'hui (en direct d'abord) ;
  * - `teamGames` : [{ key, games }] calendrier de chaque équipe favorite ;
  * - `standings` : Map « ligue:équipe » -> { rank, group, points }.
  */
-export function buildModel({ today = [], teamGames = [], standings = new Map(), favInfo = {}, division = null, f1 = null, now = new Date(), heroMax = 4 }) {
+export function buildModel({ today = [], teamGames = [], fresh = [], standings = new Map(), favInfo = {}, division = null, f1 = null, now = new Date(), heroMax = 4 }) {
   const t = now.getTime();
+  // Un même match peut venir de plusieurs sources (tableau des scores du jour,
+  // calendrier de l'équipe gardé en cache) : on garde la plus avancée, et à
+  // égalité celle qui a un pointage.
   const byId = new Map();
-  const add = (g) => { if (g?.id && !byId.has(g.id)) byId.set(g.id, g); };
+  const add = (g) => {
+    if (!g?.id) return;
+    const had = byId.get(g.id);
+    if (!had || isNewer(g, had)) byId.set(g.id, g);
+  };
   today.forEach(add);
   teamGames.forEach(({ games }) => games.forEach(add));
+  // `fresh` : les tableaux des scores du moment. Ils ne font que remplacer une
+  // copie plus vieille d'un match déjà là (ils n'ajoutent pas d'autres matchs).
+  for (const g of fresh) {
+    const had = g?.id ? byId.get(g.id) : null;
+    if (had && STAGE[g.state] >= STAGE[had.state]) byId.set(g.id, g);
+  }
+  const copies = [...today, ...fresh, ...teamGames.flatMap((x) => x.games)];
+  for (const [id, g] of byId) byId.set(id, withScores(g, copies.filter((x) => x?.id === id)));
   const all = [...byId.values()];
   const time = (g) => (isDate(g.startsAt) ? g.startsAt.getTime() : 0);
   const sameDay = (g) => isDate(g.startsAt) && g.startsAt.toDateString() === now.toDateString();
@@ -128,7 +167,8 @@ export function buildModel({ today = [], teamGames = [], standings = new Map(), 
   const todayOrder = [...live,
     ...todayRows.filter((g) => g.state === 'pre'),
     ...todayRows.filter((g) => g.state === 'post')];
-  const heroGames = (todayOrder.length ? todayOrder : upcoming.slice(0, 1)).slice(0, max);
+  // Des matchs en cours : eux seuls sont en grand, les prochains attendent.
+  const heroGames = (live.length ? live : todayOrder.length ? todayOrder : upcoming.slice(0, 1)).slice(0, max);
   const heroes = heroGames.map((g) => {
     const row = rowOf(g, now);
     if (row.kind === 'match') {
@@ -145,8 +185,8 @@ export function buildModel({ today = [], teamGames = [], standings = new Map(), 
     form: form.slice(0, 5),
     division,
     f1: f1?.slice(0, 5) ?? null,
-    today: todayRows.filter((g) => !inHero(g)).slice(0, 4).map((g) => rowOf(g, now)),
-    upcoming: upcoming.filter((g) => !inHero(g)).slice(0, 6).map((g) => rowOf(g, now)),
+    today: todayRows.filter((g) => !inHero(g) && !(live.length && g.state === 'pre')).slice(0, 4).map((g) => rowOf(g, now)),
+    upcoming: live.length ? [] : upcoming.filter((g) => !inHero(g)).slice(0, 6).map((g) => rowOf(g, now)),
     results: results.slice(0, 4).map(({ game, won }) => ({ ...rowOf(game, now), won })),
     standings: table.slice(0, 4),
   };
@@ -306,7 +346,7 @@ export function drawWallpaper(canvas, model, images, opts = {}) {
   const zoneX = o.side === 'left' ? px + panelW + margin : margin * 2.2;
   const zoneW = o.side === 'left' ? W - zoneX - margin * 2.2 : px - margin * 3.2;
   const hasCards = (o.form && model.form?.length) || (o.division && model.division?.rows?.length) || (o.f1 && model.f1?.length);
-  const cardsH = Math.min(380 * u, (bottom - top) * 0.42);
+  const cardsH = Math.min(340 * u, (bottom - top) * 0.38);
   if (o.hero) {
     drawHero(ctx, model, img, { x: zoneX, y: top, w: zoneW, h: bottom - top - (hasCards ? cardsH : 0), u, color, compact: hasCards });
   }
@@ -385,6 +425,10 @@ function drawForm(ctx, results, x, y, u, align = 'center') {
   ctx.textBaseline = 'alphabetic';
 }
 
+// Taille « naturelle » d'un match en grand (écran 1080p, échelle 1).
+const HERO_W = 700;
+const HERO_H = 440;
+
 /**
  * Le prochain match (ou celui en cours), en grand. `compact` : des cartes
  * suivent en dessous, le bloc se tasse en haut au lieu d'être centré.
@@ -401,29 +445,31 @@ function drawHero(ctx, model, img, { x, y, w, h, u, color, compact }) {
 
   const heroes = heroesOf(model);
   if (!heroes.length) return;
-  if (heroes.length === 1) {
-    // Un seul match : en pleine taille, comme avant.
-    const block = 520 * u;
-    const oy = compact ? y : y + Math.max(0, (h - block) / 2 - 30 * u);
-    drawHeroGame(ctx, heroes[0], img, { x, w, oy, u, color });
-    return;
-  }
-  // Plusieurs : deux l'un sous l'autre, ou une grille de deux colonnes. Chaque
-  // case réduit tout à la même échelle pour que rien ne déborde.
-  const cols = heroes.length <= 2 ? 1 : 2;
-  const rows = Math.ceil(heroes.length / cols);
+  // Chaque match a sa case ; on prend la grille (1, 2 ou 3 colonnes) qui les
+  // dessine le plus gros, puis tout est mis à l'échelle de sa case (jusqu'à
+  // 1,4 fois la taille normale quand la place le permet).
   const areaY = y + 80 * u;
+  const areaH = y + h - areaY;
+  let best = null;
+  for (let cols = 1; cols <= Math.min(3, heroes.length); cols += 1) {
+    const rows = Math.ceil(heroes.length / cols);
+    const k = Math.min(1.4, areaH / rows / (HERO_H * u), w / cols / (HERO_W * u));
+    if (!best || k > best.k + 0.001) best = { cols, rows, k };
+  }
+  const { cols, rows, k } = best;
   const cellW = w / cols;
-  const cellH = (y + h - areaY) / rows;
+  const cellH = areaH / rows;
+  const uu = u * k;
   heroes.forEach((r, i) => {
-    const col = i % cols;
     const row = Math.floor(i / cols);
-    const k = Math.min(1, cellH / (500 * u), cellW / (760 * u));
-    const uu = u * k;
+    // Dernière rangée incomplète : ses matchs sont centrés.
+    const inRow = row === rows - 1 ? heroes.length - row * cols : cols;
+    const cx0 = x + (w - inRow * cellW) / 2 + (i % cols) * cellW;
+    // Le contenu va de oy + 95 à oy + 535 environ : centré dans sa case,
+    // ou collé en haut quand des cartes suivent et qu'il y a un seul match.
     const cy = areaY + row * cellH;
-    // Le contenu va de oy + 90 à oy + 560 environ : centré dans sa case.
-    const oy = cy + (cellH - 470 * uu) / 2 - 90 * uu;
-    drawHeroGame(ctx, r, img, { x: x + col * cellW, w: cellW, oy, u: uu, color });
+    const oy = (compact && heroes.length === 1 ? cy : cy + (cellH - HERO_H * uu) / 2) - 95 * uu;
+    drawHeroGame(ctx, r, img, { x: cx0, w: cellW, oy, u: uu, color });
   });
 }
 
@@ -466,9 +512,19 @@ function drawHeroGame(ctx, r, img, { x, w, oy, u, color }) {
     }
     ctx.textAlign = 'center';
     ctx.fillStyle = INK;
-    ctx.font = `800 ${Math.round((live || r.state === 'post' ? 84 : 54) * u)}px ${FONT}`;
     ctx.textBaseline = 'middle';
-    ctx.fillText(live || r.state === 'post' ? `${r.away.score}  –  ${r.home.score}` : '@', cx, center);
+    // Pointage entre les deux logos, réduit s'il est trop large (« 112 – 108 »).
+    // Sans pointage connu, « vs » plutôt que des tirets.
+    const played = live || r.state === 'post';
+    const known = /\d/.test(`${r.away.score}${r.home.score}`);
+    const text = played && known ? `${r.away.score}  –  ${r.home.score}` : played ? 'vs' : '@';
+    const room = 2 * (gap - size * 0.68) - 16 * u;
+    let px = (played && known ? 104 : 58) * u;
+    ctx.font = `800 ${Math.round(px)}px ${FONT}`;
+    const tw = ctx.measureText(text).width;
+    if (tw > room) px *= room / tw;
+    ctx.font = `800 ${Math.round(px)}px ${FONT}`;
+    ctx.fillText(text, cx, center);
     ctx.textBaseline = 'alphabetic';
     below = nameY + (r.away.form?.length || r.home.form?.length ? 110 : r.away.record ? 80 : 50) * u;
   } else {

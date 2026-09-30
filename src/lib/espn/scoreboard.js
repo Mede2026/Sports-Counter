@@ -897,7 +897,7 @@ export async function fetchScoreboard(leagueId) {
 }
 
 // Calendrier des jours à venir : il change peu, inutile de le redemander à
-// chaque rafraîchissement du widget (toutes les 25 s pendant un match).
+// chaque rafraîchissement du widget (toutes les 10 s pendant un match).
 // Horizon d'affichage : le widget ne montre que les matchs des 4 prochains
 // jours. Au-delà, inutile de chercher.
 export const LOOKAHEAD_DAYS = 4;

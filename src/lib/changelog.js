@@ -1,6 +1,12 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.1.3': [
+    '🖼️ Fond d’écran : le pointage d’un match en cours s’affiche (il restait parfois « – – – »).',
+    '🔍 Fond d’écran : les matchs en grand sont beaucoup plus gros, placés dans la grille qui prend le plus de place.',
+    '🔴 Fond d’écran : pendant un match, seuls les matchs en cours sont montrés ; les prochains reviennent quand c’est fini.',
+    '⚡ Pendant un match : le widget se rafraîchit toutes les 10 s (au lieu de 25 s), et le fond d’écran toutes les 15 s (au lieu d’une minute).',
+  ],
   '1.1.2': [
     '🖼️ Fond d’écran : tous tes matchs du jour en grand (en direct d’abord), pas seulement un. Réglage « Matchs en grand » : 1, 2, 3, 4 ou 6.',
     '↔️ Plus de défilement de gauche à droite dans les fenêtres : les barres d’outils passent à la ligne quand la fenêtre est étroite.',
