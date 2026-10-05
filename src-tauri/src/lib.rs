@@ -1772,7 +1772,8 @@ fn watch_desktop_clicks(app: AppHandle) {
     };
 
     std::thread::spawn(move || {
-        let mut down: Option<Point> = None;
+        // Point où le bouton a été enfoncé, et si c'était sur le bureau.
+        let mut down: Option<(Point, bool)> = None;
         loop {
             let idle = WALL_SPOTS.lock().unwrap().spots.is_empty();
             std::thread::sleep(Duration::from_millis(if idle { 500 } else { 35 }));
@@ -1786,11 +1787,18 @@ fn watch_desktop_clicks(app: AppHandle) {
                 continue;
             }
             match (pressed, down) {
-                (true, None) => down = Some(p),
-                (false, Some(start)) => {
+                // Le bureau doit être sous la souris dès l'appui : un clic sur
+                // le X d'une fenêtre ferme celle-ci au relâchement, et le
+                // bureau apparaît alors sous la souris sans avoir été cliqué.
+                (true, None) => down = Some((p, on_desktop(p))),
+                (false, Some((start, from_desktop))) => {
                     down = None;
                     // Un vrai clic : pas un glisser (sélection de fichiers).
-                    if (p.x - start.x).abs() > 6 || (p.y - start.y).abs() > 6 || !on_desktop(p) {
+                    if !from_desktop
+                        || (p.x - start.x).abs() > 6
+                        || (p.y - start.y).abs() > 6
+                        || !on_desktop(p)
+                    {
                         continue;
                     }
                     let mut info = MonitorInfo {

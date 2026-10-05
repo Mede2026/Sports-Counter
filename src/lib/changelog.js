@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.1.4': [
+    '🖱️ Fond d’écran : fermer une app avec son X (ou cliquer dans une fenêtre) n’ouvre plus la fenêtre Match quand un match du fond d’écran est juste derrière. Seul un clic directement sur le bureau compte.',
+  ],
   '1.1.3': [
     '🖼️ Fond d’écran : le pointage d’un match en cours s’affiche (il restait parfois « – – – »).',
     '🔍 Fond d’écran : les matchs en grand sont beaucoup plus gros, placés dans la grille qui prend le plus de place.',
