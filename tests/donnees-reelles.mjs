@@ -208,7 +208,8 @@ await check('OpenF1', async () => {
 
 // SONDE TEMPORAIRE 3 : structure des pages FIS, de l'API IBU, des articles de marathons.
 await (async () => {
-  const out = [];
+  const out = { push: (x) => console.log(`SONDE ${x}`) };
+  const pj = (t) => { try { return JSON.parse(t); } catch { return { _raw: String(t).slice(0, 120) }; } };
   const text = async (u) => { try { const r = await fetch(u); return r.ok ? await r.text() : `HTTP ${r.status}`; } catch (e) { return `ERR ${errText(e)}`; } };
   const clean = (h) => h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').replace(/\s+/g, ' ');
   const around = (h, needle, before, after) => { const i = h.indexOf(needle); return i < 0 ? `(pas de « ${needle} »)` : h.slice(Math.max(0, i - before), i + after); };
@@ -232,23 +233,30 @@ await (async () => {
     out.push(`FIS ${sec}/${cat} 2026 : ${(h.match(/event-details\.html/g) ?? []).length} liens`);
   }
   // IBU : courses d'une étape, puis résultats d'une course.
-  const ev = JSON.parse(await text('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2526&Level=1'));
-  const comps = JSON.parse(await text(`https://biathlonresults.com/modules/sportapi/api/Competitions?EventId=${ev[0].EventId}`));
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  await wait(5000);
+  const ev = pj(await text('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2526&Level=1'));
+  out.push(`IBU évts : ${JSON.stringify(ev).slice(0, 200)}`);
+  await wait(3000);
+  const comps = pj(await text(`https://biathlonresults.com/modules/sportapi/api/Competitions?EventId=${ev[0]?.EventId ?? 'BT2526SWRLCP01'}`));
+  if (!Array.isArray(comps)) out.push(`IBU courses : ${JSON.stringify(comps)}`);
+  else {
   out.push(`IBU courses : ${JSON.stringify(comps.slice(0, 2))}`);
+  await wait(3000);
   const rr = await text(`https://biathlonresults.com/modules/sportapi/api/Results?RaceId=${comps[0].RaceId}`);
   out.push(`IBU résultats : ${rr.slice(0, 2500)}`);
+  }
   out.push(`IBU actuel : ${(await text('https://biathlonresults.com/modules/sportapi/api/CurrentCompetition')).slice(0, 600)}`);
   // Marathons : les 7 majeurs, édition 2025 et 2026.
   for (const y of [2025, 2026]) {
     for (const city of ['Tokyo', 'Boston', 'London', 'Sydney', 'Berlin', 'Chicago', 'New_York_City']) {
-      const j = JSON.parse(await text(`https://en.wikipedia.org/w/api.php?action=parse&page=${y}_${city}_Marathon&prop=wikitext&section=0&format=json&formatversion=2&redirects=1`) || '{}');
+      const j = pj(await text(`https://en.wikipedia.org/w/api.php?action=parse&page=${y}_${city}_Marathon&prop=wikitext&section=0&format=json&formatversion=2&redirects=1`) || '{}');
       const w = j.parse?.wikitext ?? `ABSENT ${JSON.stringify(j).slice(0, 80)}`;
       const box = (w.match(/\{\{\s*infobox[\s\S]*?\n\}\}|\{\{\s*infobox[^\n]*\}\}/i) ?? [w.slice(0, 200)])[0];
       out.push(`MARATHON ${y} ${city} (${j.parse?.title ?? '-'}) : ${box.replace(/\s+/g, ' ').slice(0, 700)}`);
     }
   }
-  console.log(`=====SONDE=====\n${out.join('\n')}\n=====FIN SONDE=====`);
-})();
+})().catch((e) => console.log(`SONDE plantée : ${errText(e)}`));
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
