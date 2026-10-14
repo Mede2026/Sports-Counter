@@ -206,6 +206,37 @@ await check('OpenF1', async () => {
   ok('OpenF1', `${session.label} : ${parts.join(', ') || 'rien'}`);
 });
 
+// SONDE TEMPORAIRE : quels sports (olympiques, ski, marathon…) existent chez ESPN et TheSportsDB ?
+await (async () => {
+  const j = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : { _status: r.status }; } catch (e) { return { _err: errText(e) }; } };
+  const out = [];
+  const sports = await j('https://sports.core.api.espn.com/v2/sports?limit=200');
+  for (const it of sports.items ?? []) {
+    const sp = await j(it.$ref.replace('http:', 'https:'));
+    const lg = await j(`https://sports.core.api.espn.com/v2/sports/${sp.slug}/leagues?limit=300`);
+    const names = [];
+    for (const l of (lg.items ?? []).slice(0, 60)) {
+      const d = await j(l.$ref.replace('http:', 'https:'));
+      names.push(`${d.slug}=${d.abbreviation ?? d.name}`);
+    }
+    out.push(`SPORT ${sp.slug} (${sp.name}) [${lg.count ?? '?'}] : ${names.join(', ')}`);
+  }
+  for (const path of ['olympics', 'olympics/winter', 'olympics/summer', 'skiing', 'athletics', 'track-and-field', 'running', 'cycling', 'olympic-sports', 'snowboarding', 'alpine-skiing']) {
+    const d = await j(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard`);
+    out.push(`SITE ${path} -> ${d._status ?? d._err ?? `${(d.events ?? []).length} évts, leagues=${(d.leagues ?? []).map((l) => l.slug).join('/')}`}`);
+  }
+  const all = await j('https://www.thesportsdb.com/api/v1/json/3/all_sports.php');
+  out.push(`TSDB sports : ${(all.sports ?? []).map((x) => x.strSport).join(', ')}`);
+  for (const sp of ['Skiing', 'Athletics', 'Cycling', 'Winter Sports', 'Swimming', 'Snowboarding', 'Biathlon', 'Multi Sports', 'Olympics']) {
+    const d = await j(`https://www.thesportsdb.com/api/v1/json/3/search_all_leagues.php?s=${encodeURIComponent(sp)}`);
+    out.push(`TSDB ${sp} : ${(d.countries ?? d.countrys ?? []).map((l) => `${l.idLeague}=${l.strLeague}`).join(', ') || JSON.stringify(d).slice(0, 80)}`);
+  }
+  for (const u of ['https://data.fis-ski.com/', 'https://www.fis-ski.com/DB/alpine-skiing/calendar-results.html', 'https://api.fis-ski.com/', 'https://www.worldathletics.org/competition/calendar-results']) {
+    try { const r = await fetch(u); out.push(`URL ${u} -> ${r.status} ${r.headers.get('content-type')}`); } catch (e) { out.push(`URL ${u} -> ${errText(e)}`); }
+  }
+  console.log(`=====SONDE=====\n${out.join('\n')}\n=====FIN SONDE=====`);
+})();
+
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
 const scoresOk = rows.some(([st, area]) => st === '✅' && area.startsWith('Scores'));
