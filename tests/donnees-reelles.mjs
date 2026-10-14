@@ -206,34 +206,52 @@ await check('OpenF1', async () => {
   ok('OpenF1', `${session.label} : ${parts.join(', ') || 'rien'}`);
 });
 
-// SONDE TEMPORAIRE : quels sports (olympiques, ski, marathon…) existent chez ESPN et TheSportsDB ?
+// SONDE TEMPORAIRE 2 : sources pour le ski, le biathlon, les marathons.
 await (async () => {
-  const j = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : { _status: r.status }; } catch (e) { return { _err: errText(e) }; } };
   const out = [];
-  const sports = await j('https://sports.core.api.espn.com/v2/sports?limit=200');
-  for (const it of sports.items ?? []) {
-    const sp = await j(it.$ref.replace('http:', 'https:'));
-    const lg = await j(`https://sports.core.api.espn.com/v2/sports/${sp.slug}/leagues?limit=300`);
-    const names = [];
-    for (const l of (lg.items ?? []).slice(0, 60)) {
-      const d = await j(l.$ref.replace('http:', 'https:'));
-      names.push(`${d.slug}=${d.abbreviation ?? d.name}`);
+  const get = async (u, n = 300) => {
+    try { const r = await fetch(u); const t = await r.text(); out.push(`GET ${u}\n  -> ${r.status} ${r.headers.get('content-type')} ${t.length}o : ${t.slice(0, n).replace(/\s+/g, ' ')}`); return t; } catch (e) { out.push(`GET ${u} -> ${errText(e)}`); return ''; }
+  };
+  for (const u of ['https://sports.core.api.espn.com/v2/sports/olympics', 'https://sports.core.api.espn.com/v2/sports/olympics/leagues?limit=100',
+    'https://site.api.espn.com/apis/site/v2/sports/olympics/winter/medals', 'https://site.web.api.espn.com/apis/site/v2/sports/olympics/winter/medals',
+    'https://site.api.espn.com/apis/site/v2/sports/olympics/summer/news', 'https://site.api.espn.com/apis/site/v2/sports/skiing/fis/scoreboard']) await get(u, 400);
+  // FIS : calendrier de la Coupe du monde de ski alpin.
+  const cal = await get('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=2027&categorycode=WC', 200);
+  const rows = cal.match(/<a[^>]+class="[^"]*g-row[^"]*"[\s\S]{0,1500}?<\/a>/g) ?? [];
+  out.push(`FIS lignes g-row : ${rows.length}`);
+  for (const r of rows.slice(0, 3)) out.push(`  ROW ${r.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300)} || href=${(r.match(/href="([^"]+)"/) ?? [])[1]}`);
+  const ev = (cal.match(/href="(https:\/\/www\.fis-ski\.com\/DB\/general\/event-details\.html[^"]+)"/) ?? [])[1];
+  if (ev) {
+    const t = await get(ev.replace(/&amp;/g, '&'), 100);
+    const links = [...new Set(t.match(/https:\/\/www\.fis-ski\.com\/DB\/general\/results\.html\?[^"]+/g) ?? [])];
+    out.push(`  courses : ${links.length} ${links.slice(0, 2).join(' ')}`);
+    // Une course de la saison passée, terminée : la structure des résultats.
+  }
+  const res = await get('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=2026&categorycode=WC', 50);
+  const ev2 = (res.match(/href="(https:\/\/www\.fis-ski\.com\/DB\/general\/event-details\.html[^"]+)"/g) ?? []).at(-1);
+  if (ev2) {
+    const t = await get(ev2.slice(6, -1).replace(/&amp;/g, '&'), 50);
+    const race = (t.match(/https:\/\/www\.fis-ski\.com\/DB\/general\/results\.html\?[^"]+/) ?? [])[0];
+    if (race) {
+      const rt = await get(race.replace(/&amp;/g, '&'), 50);
+      const rr = rt.match(/<a[^>]+class="[^"]*table-row[^"]*"[\s\S]{0,2500}?<\/a>/g) ?? [];
+      out.push(`  résultats : ${rr.length} lignes`);
+      for (const r of rr.slice(0, 2)) out.push(`  RES ${r.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 250)}`);
+      out.push(`  TITRE ${(rt.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) ?? [])[1]?.replace(/\s+/g, ' ')}`);
     }
-    out.push(`SPORT ${sp.slug} (${sp.name}) [${lg.count ?? '?'}] : ${names.join(', ')}`);
   }
-  for (const path of ['olympics', 'olympics/winter', 'olympics/summer', 'skiing', 'athletics', 'track-and-field', 'running', 'cycling', 'olympic-sports', 'snowboarding', 'alpine-skiing']) {
-    const d = await j(`https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard`);
-    out.push(`SITE ${path} -> ${d._status ?? d._err ?? `${(d.events ?? []).length} évts, leagues=${(d.leagues ?? []).map((l) => l.slug).join('/')}`}`);
-  }
-  const all = await j('https://www.thesportsdb.com/api/v1/json/3/all_sports.php');
-  out.push(`TSDB sports : ${(all.sports ?? []).map((x) => x.strSport).join(', ')}`);
-  for (const sp of ['Skiing', 'Athletics', 'Cycling', 'Winter Sports', 'Swimming', 'Snowboarding', 'Biathlon', 'Multi Sports', 'Olympics']) {
-    const d = await j(`https://www.thesportsdb.com/api/v1/json/3/search_all_leagues.php?s=${encodeURIComponent(sp)}`);
-    out.push(`TSDB ${sp} : ${(d.countries ?? d.countrys ?? []).map((l) => `${l.idLeague}=${l.strLeague}`).join(', ') || JSON.stringify(d).slice(0, 80)}`);
-  }
-  for (const u of ['https://data.fis-ski.com/', 'https://www.fis-ski.com/DB/alpine-skiing/calendar-results.html', 'https://api.fis-ski.com/', 'https://www.worldathletics.org/competition/calendar-results']) {
-    try { const r = await fetch(u); out.push(`URL ${u} -> ${r.status} ${r.headers.get('content-type')}`); } catch (e) { out.push(`URL ${u} -> ${errText(e)}`); }
-  }
+  // FIS live (en direct pendant les courses).
+  await get('https://live.fis-ski.com/', 200);
+  // IBU (biathlon) : API publique en JSON.
+  await get('https://biathlonresults.com/modules/sportapi/api/Seasons', 300);
+  await get('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2627&Level=1', 600);
+  await get('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2526&Level=1', 300);
+  // Marathons : Wikipédia (infobox) et un site de résultats.
+  await get('https://en.wikipedia.org/w/api.php?action=parse&page=2025_Berlin_Marathon&prop=wikitext&section=0&format=json&formatversion=2', 1500);
+  await get('https://en.wikipedia.org/w/api.php?action=parse&page=2026_Boston_Marathon&prop=wikitext&section=0&format=json&formatversion=2', 600);
+  await get('https://en.wikipedia.org/w/api.php?action=parse&page=World_Marathon_Majors&prop=wikitext&format=json&formatversion=2', 200);
+  // Olympiques : Wikipédia (calendrier) et olympics.com.
+  await get('https://olympics.com/en/api/v1/b2p/menu/topbar/en', 150);
   console.log(`=====SONDE=====\n${out.join('\n')}\n=====FIN SONDE=====`);
 })();
 
