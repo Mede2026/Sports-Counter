@@ -206,52 +206,47 @@ await check('OpenF1', async () => {
   ok('OpenF1', `${session.label} : ${parts.join(', ') || 'rien'}`);
 });
 
-// SONDE TEMPORAIRE 2 : sources pour le ski, le biathlon, les marathons.
+// SONDE TEMPORAIRE 3 : structure des pages FIS, de l'API IBU, des articles de marathons.
 await (async () => {
   const out = [];
-  const get = async (u, n = 300) => {
-    try { const r = await fetch(u); const t = await r.text(); out.push(`GET ${u}\n  -> ${r.status} ${r.headers.get('content-type')} ${t.length}o : ${t.slice(0, n).replace(/\s+/g, ' ')}`); return t; } catch (e) { out.push(`GET ${u} -> ${errText(e)}`); return ''; }
-  };
-  for (const u of ['https://sports.core.api.espn.com/v2/sports/olympics', 'https://sports.core.api.espn.com/v2/sports/olympics/leagues?limit=100',
-    'https://site.api.espn.com/apis/site/v2/sports/olympics/winter/medals', 'https://site.web.api.espn.com/apis/site/v2/sports/olympics/winter/medals',
-    'https://site.api.espn.com/apis/site/v2/sports/olympics/summer/news', 'https://site.api.espn.com/apis/site/v2/sports/skiing/fis/scoreboard']) await get(u, 400);
-  // FIS : calendrier de la Coupe du monde de ski alpin.
-  const cal = await get('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=2027&categorycode=WC', 200);
-  const rows = cal.match(/<a[^>]+class="[^"]*g-row[^"]*"[\s\S]{0,1500}?<\/a>/g) ?? [];
-  out.push(`FIS lignes g-row : ${rows.length}`);
-  for (const r of rows.slice(0, 3)) out.push(`  ROW ${r.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300)} || href=${(r.match(/href="([^"]+)"/) ?? [])[1]}`);
-  const ev = (cal.match(/href="(https:\/\/www\.fis-ski\.com\/DB\/general\/event-details\.html[^"]+)"/) ?? [])[1];
-  if (ev) {
-    const t = await get(ev.replace(/&amp;/g, '&'), 100);
-    const links = [...new Set(t.match(/https:\/\/www\.fis-ski\.com\/DB\/general\/results\.html\?[^"]+/g) ?? [])];
-    out.push(`  courses : ${links.length} ${links.slice(0, 2).join(' ')}`);
-    // Une course de la saison passée, terminée : la structure des résultats.
+  const text = async (u) => { try { const r = await fetch(u); return r.ok ? await r.text() : `HTTP ${r.status}`; } catch (e) { return `ERR ${errText(e)}`; } };
+  const clean = (h) => h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').replace(/\s+/g, ' ');
+  const around = (h, needle, before, after) => { const i = h.indexOf(needle); return i < 0 ? `(pas de « ${needle} »)` : h.slice(Math.max(0, i - before), i + after); };
+  // Calendrier FIS : un évènement passé (saison 2026) et un à venir (2027).
+  for (const season of ['2027', '2026']) {
+    const h = clean(await text(`https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=${season}&categorycode=WC`));
+    const n = (h.match(/event-details\.html/g) ?? []).length;
+    out.push(`FIS cal ${season} : ${h.length}o, ${n} liens d'évènements`);
+    out.push(`  EXTRAIT ${around(h, 'event-details.html', 600, 2600)}`);
   }
-  const res = await get('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=2026&categorycode=WC', 50);
-  const ev2 = (res.match(/href="(https:\/\/www\.fis-ski\.com\/DB\/general\/event-details\.html[^"]+)"/g) ?? []).at(-1);
-  if (ev2) {
-    const t = await get(ev2.slice(6, -1).replace(/&amp;/g, '&'), 50);
-    const race = (t.match(/https:\/\/www\.fis-ski\.com\/DB\/general\/results\.html\?[^"]+/) ?? [])[0];
-    if (race) {
-      const rt = await get(race.replace(/&amp;/g, '&'), 50);
-      const rr = rt.match(/<a[^>]+class="[^"]*table-row[^"]*"[\s\S]{0,2500}?<\/a>/g) ?? [];
-      out.push(`  résultats : ${rr.length} lignes`);
-      for (const r of rr.slice(0, 2)) out.push(`  RES ${r.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 250)}`);
-      out.push(`  TITRE ${(rt.match(/<h1[^>]*>([\s\S]*?)<\/h1>/) ?? [])[1]?.replace(/\s+/g, ' ')}`);
+  // Détails d'un évènement : ses courses (date, discipline, sexe, état).
+  const det = clean(await text('https://www.fis-ski.com/DB/general/event-details.html?sectorcode=AL&eventid=58030&seasoncode=2026'));
+  out.push(`FIS détails : ${around(det, 'results.html?sectorcode=AL&amp;raceid=', 1500, 2500)}`);
+  // Résultats d'une course.
+  const res = clean(await text('https://www.fis-ski.com/DB/general/results.html?sectorcode=AL&raceid=127429'));
+  out.push(`FIS entête : ${around(res, '<h1', 100, 1800)}`);
+  out.push(`FIS résultats : ${around(res, 'table-row', 300, 3000)}`);
+  // Autres disciplines et catégories (JO, Mondiaux).
+  for (const [sec, cat] of [['SB', 'WC'], ['FS', 'WC'], ['CC', 'WC'], ['JP', 'WC'], ['NK', 'WC'], ['AL', 'OWG'], ['AL', 'WSC']]) {
+    const h = await text(`https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=${sec}&seasoncode=2026&categorycode=${cat}`);
+    out.push(`FIS ${sec}/${cat} 2026 : ${(h.match(/event-details\.html/g) ?? []).length} liens`);
+  }
+  // IBU : courses d'une étape, puis résultats d'une course.
+  const ev = JSON.parse(await text('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2526&Level=1'));
+  const comps = JSON.parse(await text(`https://biathlonresults.com/modules/sportapi/api/Competitions?EventId=${ev[0].EventId}`));
+  out.push(`IBU courses : ${JSON.stringify(comps.slice(0, 2))}`);
+  const rr = await text(`https://biathlonresults.com/modules/sportapi/api/Results?RaceId=${comps[0].RaceId}`);
+  out.push(`IBU résultats : ${rr.slice(0, 2500)}`);
+  out.push(`IBU actuel : ${(await text('https://biathlonresults.com/modules/sportapi/api/CurrentCompetition')).slice(0, 600)}`);
+  // Marathons : les 7 majeurs, édition 2025 et 2026.
+  for (const y of [2025, 2026]) {
+    for (const city of ['Tokyo', 'Boston', 'London', 'Sydney', 'Berlin', 'Chicago', 'New_York_City']) {
+      const j = JSON.parse(await text(`https://en.wikipedia.org/w/api.php?action=parse&page=${y}_${city}_Marathon&prop=wikitext&section=0&format=json&formatversion=2&redirects=1`) || '{}');
+      const w = j.parse?.wikitext ?? `ABSENT ${JSON.stringify(j).slice(0, 80)}`;
+      const box = (w.match(/\{\{\s*infobox[\s\S]*?\n\}\}|\{\{\s*infobox[^\n]*\}\}/i) ?? [w.slice(0, 200)])[0];
+      out.push(`MARATHON ${y} ${city} (${j.parse?.title ?? '-'}) : ${box.replace(/\s+/g, ' ').slice(0, 700)}`);
     }
   }
-  // FIS live (en direct pendant les courses).
-  await get('https://live.fis-ski.com/', 200);
-  // IBU (biathlon) : API publique en JSON.
-  await get('https://biathlonresults.com/modules/sportapi/api/Seasons', 300);
-  await get('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2627&Level=1', 600);
-  await get('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2526&Level=1', 300);
-  // Marathons : Wikipédia (infobox) et un site de résultats.
-  await get('https://en.wikipedia.org/w/api.php?action=parse&page=2025_Berlin_Marathon&prop=wikitext&section=0&format=json&formatversion=2', 1500);
-  await get('https://en.wikipedia.org/w/api.php?action=parse&page=2026_Boston_Marathon&prop=wikitext&section=0&format=json&formatversion=2', 600);
-  await get('https://en.wikipedia.org/w/api.php?action=parse&page=World_Marathon_Majors&prop=wikitext&format=json&formatversion=2', 200);
-  // Olympiques : Wikipédia (calendrier) et olympics.com.
-  await get('https://olympics.com/en/api/v1/b2p/menu/topbar/en', 150);
   console.log(`=====SONDE=====\n${out.join('\n')}\n=====FIN SONDE=====`);
 })();
 
