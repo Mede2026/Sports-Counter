@@ -10,6 +10,7 @@ import { diskCache } from '../cache.js';
 import { autoFr } from '../translate.js';
 import { SHOT_STATS, assistNames, athletePhoto, boardQuery, byName, driverPhoto, getJson, headshotUrl, isScoring, readTeamsCache, safe, scoreText, scorerName, sportOfLeague, statOf, teamsFromCore, teamsFromDirectory, toTeam, writeTeamsCache, ymd } from './core.js';
 import { fillGameLogos, fillLogos, logoError } from './logos.js';
+import { fetchRaceBoard, fetchRaceRange } from '../races.js';
 
 /** Listes intégrées à l'app, pour les ligues dont on a une copie vérifiée. */
 export const BUNDLED_TEAMS = { nhl: NHL_TEAMS };
@@ -891,6 +892,8 @@ export function baseballSituation(sit, leagueId) {
 export async function fetchScoreboard(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league) return [];
+  // Ski, biathlon, marathons : hors ESPN (races.js).
+  if (league.kind === 'race') return fetchRaceBoard(leagueId);
   const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
   const logo = league.logo || leagueLogo(data);
   return fillGameLogos(leagueId, (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo)));
@@ -907,6 +910,7 @@ export const dayCache = diskCache('days', DAY_TTL);
 
 export async function fetchDay(leagueId, offsetDays) {
   const league = LEAGUES_BY_ID[leagueId];
+  if (league?.kind === 'race') return fetchRaceRange(leagueId, offsetDays, offsetDays);
   const date = ymd(offsetDays);
   const key = `${leagueId}:${date}`;
   const hit = dayCache.get(key);
@@ -1016,6 +1020,7 @@ export async function fetchF1Calendar(fromOffset, toOffset) {
  */
 export async function fetchLeagueCalendar(leagueId, fromOffset, toOffset) {
   const league = LEAGUES_BY_ID[leagueId];
+  if (league?.kind === 'race') return fetchRaceRange(leagueId, fromOffset, toOffset);
   let events;
   let logo = league.logo ?? '';
   try {
@@ -1051,6 +1056,7 @@ const RANGE_CHUNK = 3;
  * sautée ; rien de lisible du tout lève l'erreur.
  */
 export async function fetchLeagueRange(leagueId, fromOffset, toOffset) {
+  if (LEAGUES_BY_ID[leagueId]?.kind === 'race') return fetchRaceRange(leagueId, fromOffset, toOffset);
   const chunks = [];
   for (let d = fromOffset; d <= toOffset; d += RANGE_CHUNK) chunks.push([d, Math.min(toOffset, d + RANGE_CHUNK - 1)]);
   const out = [];
@@ -1089,6 +1095,16 @@ export function demoEvents(extra = false) {
 export async function probeLeague(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   const out = { scores: null, teams: null };
+  if (league.kind === 'race') {
+    // Source hors ESPN : les courses d'avant-hier à dans 4 jours.
+    try {
+      const n = (await fetchRaceBoard(leagueId)).length;
+      out.scores = { ok: true, text: n ? `${n} course${n > 1 ? 's' : ''} cette semaine` : 'aucune course cette semaine' };
+    } catch (err) {
+      out.scores = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
+    }
+    return out;
+  }
   try {
     const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
     const n = (data?.events ?? []).length;

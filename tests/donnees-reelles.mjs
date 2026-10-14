@@ -206,32 +206,26 @@ await check('OpenF1', async () => {
   ok('OpenF1', `${session.label} : ${parts.join(', ') || 'rien'}`);
 });
 
-// SONDE TEMPORAIRE 4 : détails FIS (liste des courses, ligne de résultat, fin de ligne du calendrier).
-await (async () => {
-  const out = { push: (x) => console.log(`SONDE ${x}`) };
-  const text = async (u) => { try { const r = await fetch(u); return r.ok ? await r.text() : `HTTP ${r.status}`; } catch (e) { return `ERR ${errText(e)}`; } };
-  const clean = (h) => h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').replace(/\s+/g, ' ').replace(/ class="[^"]*"/g, (m) => m.length > 40 ? ` class="${m.slice(8, 40)}…"` : m);
-  const around = (h, needle, before, after, from = 0) => { const i = h.indexOf(needle, from); return i < 0 ? `(pas de « ${needle} »)` : h.slice(Math.max(0, i - before), i + after); };
-  const cal = clean(await text('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=2026&categorycode=WC'));
-  const i = cal.indexOf('id="57999"');
-  out.push(`CAL fin de ligne : ${cal.slice(i + 2600, i + 5200)}`);
-  const can = cal.indexOf('title="Cancelled"');
-  out.push(`CAL annulé : ${can < 0 ? 'aucun' : cal.slice(can - 300, can + 100)}`);
-  const det = clean(await text('https://www.fis-ski.com/DB/general/event-details.html?sectorcode=AL&eventid=57999&seasoncode=2026'));
-  out.push(`DET : ${around(det, 'raceid=', 1200, 3500)}`);
-  const res = clean(await text('https://www.fis-ski.com/DB/general/results.html?sectorcode=AL&raceid=127429'));
-  out.push(`RES : ${around(res, 'athlete-biography', 1500, 2200)}`);
-  const cc = clean(await text('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=CC&seasoncode=2026&categorycode=WC'));
-  const ccid = (cc.match(/eventid=(\d+)/) ?? [])[1];
-  const ccd = clean(await text(`https://www.fis-ski.com/DB/general/event-details.html?sectorcode=CC&eventid=${ccid}&seasoncode=2026`));
-  const ccr = (ccd.match(/raceid=(\d+)/) ?? [])[1];
-  const ccres = clean(await text(`https://www.fis-ski.com/DB/general/results.html?sectorcode=CC&raceid=${ccr}`));
-  out.push(`CC entête : ${around(ccres, 'event-header__kind', 0, 200)}`);
-  out.push(`CC RES : ${around(ccres, 'athlete-biography', 600, 1600)}`);
-  const sb = clean(await text('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=SB&seasoncode=2026&categorycode=WC'));
-  const sbi = sb.indexOf('table-row reset-padding');
-  out.push(`SB ligne : ${sb.slice(sbi, sbi + 200)} … ${(sb.slice(sbi, sbi + 8000).match(/clip">[^<]+</g) ?? []).join(' ')}`);
-})().catch((e) => console.log(`SONDE plantée : ${errText(e)}`));
+// 8. Sports hors ESPN : ski et snowboard (FIS), biathlon (IBU), marathons
+// (Wikipédia). Une semaine de la saison passée, pour avoir des résultats à
+// lire, puis les courses à venir.
+const races = await import('../src/lib/races.js');
+const PAST = {
+  skial: '2026-01-11T15:00:00Z', skifond: '2026-01-11T15:00:00Z', snow: '2026-01-11T15:00:00Z',
+  biathlon: '2026-01-11T15:00:00Z', marathon: '2025-09-22T12:00:00Z',
+};
+for (const [id, when] of Object.entries(PAST)) {
+  const label = LEAGUES_BY_ID[id].label;
+  await check(`Courses ${label}`, async () => {
+    const past = await races.fetchRaceRange(id, -3, 1, new Date(when));
+    const done = past.filter((g) => g.state === 'post' && g.results?.length);
+    const first = done[0];
+    const podium = first ? `${first.title}, ${first.session} : ${first.top3.map((d) => `${d.pos}. ${d.name}${d.time ? ` ${d.time}` : ''}`).join(', ')}` : '';
+    const next = await races.fetchRaceRange(id, 0, 60);
+    const text = `${past.length} course(s) la semaine du ${when.slice(0, 10)}, ${done.length} avec classement${podium ? ` (${podium})` : ''} · ${next.length} à venir (60 j)`;
+    (done.length && first.top3.every((d) => d.name) ? ok : warn)(`Courses ${label}`, text);
+  });
+}
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.

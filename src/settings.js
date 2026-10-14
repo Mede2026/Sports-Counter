@@ -111,6 +111,10 @@ function renderTeams() {
     renderTennis(league);
     return;
   }
+  if (league.kind === 'race') {
+    renderRace(league);
+    return;
+  }
 
   const q = query.trim().toLowerCase();
   const list = q ? teams.filter((t) => `${t.name} ${t.abbr}`.toLowerCase().includes(q)) : teams;
@@ -356,6 +360,55 @@ function renderWhole(league) {
   el.teams.querySelectorAll('[data-fighter]').forEach((row) => row.addEventListener('click', () => pickFighter(row.dataset.fighter)));
 }
 
+/* ---------- Ski, biathlon, marathons : toutes les courses ---------- */
+
+// Prochaines courses de chaque sport, pour l'aperçu sous la case à cocher.
+const raceLists = new Map(); // idLigue -> courses | Error
+
+function renderRace(league) {
+  const on = prefs.leagues.includes(league.id);
+  const list = raceLists.get(league.id);
+  let body;
+  if (!list) body = '<div class="state">Chargement des prochaines courses…</div>';
+  else if (list instanceof Error) {
+    body = errorBlock('Impossible de charger le calendrier.', list,
+      '<br /><button class="ghost" id="btnRetryRaces">Réessayer</button>');
+  } else if (!list.length) body = '<div class="state">Aucune course dans les 30 prochains jours (hors saison).</div>';
+  else {
+    body = list.slice(0, 12).map((g) => `
+      <div class="team-row race-row">
+        ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
+        <span class="team-row__name">${esc(g.title)} <small class="st__muted">${esc(g.session)}</small></span>
+        <span class="team-row__abbr">${esc(dayName(g.startsAt))} ${esc(TIME_FMT.format(g.startsAt))}</span>
+      </div>`).join('');
+  }
+  const source = league.source === 'fis' ? 'la FIS (Coupe du monde, Mondiaux et Jeux olympiques)'
+    : league.source === 'ibu' ? 'l’IBU (Coupe du monde, avec les résultats en direct)'
+      : 'Wikipédia (Tokyo, Boston, Londres, Sydney, Berlin, Chicago, New York)';
+  el.teams.innerHTML = `
+    <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
+      <span class="check">${CHECK}</span>
+      ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
+      <span class="team-row__name">Suivre toutes les courses <small class="st__muted">${esc(league.label)} : le podium dans le widget, une notification au gagnant</small></span>
+    </div>
+    <div class="subhead">Prochaines courses <small>données de ${source}</small></div>
+    ${body}`;
+  bindCrests(el.teams);
+  document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);
+  document.getElementById('btnRetryRaces')?.addEventListener('click', () => { raceLists.delete(league.id); loadRaces(league.id); });
+}
+
+async function loadRaces(leagueId) {
+  if (raceLists.has(leagueId)) return;
+  try {
+    const all = IS_DEMO ? [] : await fetchLeagueRange(leagueId, 0, 30);
+    raceLists.set(leagueId, all.filter((g) => g.state !== 'post'));
+  } catch (err) {
+    raceLists.set(leagueId, err instanceof Error ? err : new Error(String(err)));
+  }
+  if (current === leagueId && view === 'teams') renderTeams();
+}
+
 async function loadFighters() {
   if (fighters) return;
   renderTeams();
@@ -581,6 +634,7 @@ async function selectLeague() {
   if (league.kind === 'card') { renderTeams(); loadFighters(); return; }
   if (league.kind === 'golf') { renderTeams(); loadGolfers(current); return; }
   if (league.kind === 'tennis') { renderTeams(); loadTennis(current); return; }
+  if (league.kind === 'race') { renderTeams(); loadRaces(current); return; }
 
   if (cache.has(current)) { teams = cache.get(current); renderTeams(); return; }
 

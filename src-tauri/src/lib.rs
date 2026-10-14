@@ -101,13 +101,17 @@ const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(20);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 
 /// Sites où un clic sur un match a le droit d'emmener.
-const ESPN_HOSTS: [&str; 6] = [
+const ESPN_HOSTS: [&str; 9] = [
     "www.espn.com",
     "espn.com",
     "www.espn.ca",
     "espn.ca",
     "www.espn.co.uk",
     "espn.co.uk",
+    // Ski, biathlon et marathons : les pages de résultats de leurs sources.
+    "www.fis-ski.com",
+    "biathlonresults.com",
+    "en.wikipedia.org",
 ];
 
 /// Seuls ces caractères peuvent composer le chemin demandé par l'interface.
@@ -118,7 +122,7 @@ fn path_is_safe(path: &str) -> bool {
         && !path.contains("..")
         && path
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-?=&:<>".contains(c))
+            .all(|c| c.is_ascii_alphanumeric() || "/._-?=&:<>|".contains(c))
 }
 
 /// Relaie une requête vers l'API ESPN depuis Rust.
@@ -182,6 +186,12 @@ async fn relay_fetch(path: &str) -> Result<String, String> {
     } else if let Some(rest) = path.strip_prefix("wiki/") {
         // Logos de secours : l'image de l'article Wikipédia d'une équipe.
         format!("{WIKI_API}{rest}")
+    } else if let Some(rest) = path.strip_prefix("fis/") {
+        // Ski alpin, ski de fond, saut, snowboard… : le site de la FIS (ESPN n'a pas ces sports).
+        format!("https://www.fis-ski.com/DB/{rest}")
+    } else if let Some(rest) = path.strip_prefix("ibu/") {
+        // Biathlon : l'API publique de l'IBU, avec les résultats en direct.
+        format!("https://biathlonresults.com/modules/sportapi/api/{rest}")
     } else if let Some(rest) = path.strip_prefix("tsdb/") {
         // Logos de secours, pour les ligues dont ESPN n'a pas les logos (LCF).
         format!("{SPORTSDB}/{rest}")

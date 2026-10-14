@@ -3,7 +3,7 @@
 // buts, pénalités, classement ; onglets « Joueurs » (box score) et « Jeux »
 // (tous les jeux du match). F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
-import { fetchMatchDetail, fetchTeamNews, fetchScoreboard, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras } from './lib/api.js';
+import { fetchMatchDetail, fetchTeamNews, fetchScoreboard, fetchLeagueRange, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras } from './lib/api.js';
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -671,6 +671,32 @@ function matchHtml(g, table) {
 
 /* ---------- F1 ---------- */
 
+/** Une course de ski, de biathlon ou un marathon : le classement complet. */
+function raceHtml(g) {
+  const league = LEAGUES_BY_ID[g.leagueId];
+  const hero = `<section class="hero hero--f1">
+    ${crestHtml({ logo: league?.logo, abbr: league?.short, color: league?.accent }, 'crest-xl')}
+    <div class="hero__title">${esc(g.title)}${g.nation ? ` <small>${esc(g.nation)}</small>` : ''}</div>
+    ${statusHtml(g)}
+  </section>`;
+  const results = g.results ?? [];
+  const rows = results.map((d) => {
+    // Temps du gagnant, puis l'écart des suivants ; au biathlon, les tirs manqués.
+    const right = d.pos === 1 || !d.gap ? d.time : d.gap;
+    const sub = [d.nat, d.shooting ? `tirs ${d.shooting}` : ''].filter(Boolean).join(' · ');
+    return `<li>
+      <span class="pos">${MEDALS[d.pos] ?? d.pos}</span>
+      <span class="drv"><b>${esc(d.name)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span>
+      ${right ? `<span class="gap">${esc(right)}</span>` : ''}
+    </li>`;
+  }).join('');
+  const source = league?.source === 'fis' ? 'la FIS' : league?.source === 'ibu' ? 'l’IBU' : 'Wikipédia';
+  const empty = g.state === 'pre'
+    ? `<div class="state">La course n'a pas encore eu lieu${isDate(g.startsAt) ? ` : ${esc(whenText(g.startsAt))}` : ''}.</div>`
+    : `<div class="state">${esc(source)} n'a pas encore publié le classement.${g.state === 'in' ? ' Il arrive dès la fin de la course.' : ''}</div>`;
+  return `${hero}<section class="card"><h3>${esc(g.session || 'Classement')}</h3>${rows ? `<ol class="grid">${rows}</ol>` : empty}</section>`;
+}
+
 function f1Html(g) {
   const favs = prefs.favDrivers ?? [];
   const league = LEAGUES_BY_ID.f1;
@@ -1044,7 +1070,12 @@ function ufcHtml(g) {
 async function fromScoreboard() {
   if (IS_DEMO) return demoEvents(true).find((e) => e.leagueId === current.league) ?? demoEvents()[0];
   const games = await fetchScoreboard(current.league);
-  return games.find((x) => x.id === current.event) ?? null;
+  const hit = games.find((x) => x.id === current.event) ?? null;
+  // Une course ouverte depuis le calendrier peut être loin d'aujourd'hui.
+  if (!hit && LEAGUES_BY_ID[current.league]?.kind === 'race') {
+    return (await fetchLeagueRange(current.league, -60, 120)).find((x) => x.id === current.event) ?? null;
+  }
+  return hit;
 }
 
 // Fenêtre réduite : on ne relit rien ; tout reprend dès qu'elle revient.
@@ -1085,6 +1116,13 @@ async function load() {
       el.title.textContent = g.title;
       const gp = g;
       build = () => f1Html(gp);
+      html = build();
+    } else if (league?.kind === 'race') {
+      g = await fromScoreboard();
+      if (!g) throw new Error("Cette course n'est plus au programme.");
+      el.title.textContent = g.title;
+      const r = g;
+      build = () => raceHtml(r);
       html = build();
     } else if (league?.kind === 'golf') {
       g = await fromScoreboard();

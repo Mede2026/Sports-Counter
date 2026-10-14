@@ -54,6 +54,63 @@ const octagon = (bg) => svg(`
   <path d="M24 12h16l12 12v16L40 52H24L12 40V24z" fill="none" stroke="#fff" stroke-width="3.2" stroke-linejoin="round"/>
   <text x="32" y="37.5" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="13" fill="#fff">UFC</text>`);
 
+/** Skieur alpin qui descend, bâtons en arrière. */
+const skier = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <path d="M10 50l44-14" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="38" cy="15" r="5" fill="#fff"/>
+  <path d="M35 21l-9 9 7 5-4 9M26 30l-8-2M35 23l8 7 6-2" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`);
+
+/** Fondeur en pas de patin, deux bâtons. */
+const nordic = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <path d="M8 50h48" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="30" cy="14" r="5" fill="#fff"/>
+  <path d="M29 20l-4 13 9 6v8M25 33l-9 10M30 22l10 6M18 24l-6 24M44 26l4 22" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>`);
+
+/** Sauteur à ski en vol, skis en V. */
+const jumper = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <circle cx="46" cy="18" r="5" fill="#fff"/>
+  <path d="M42 22L18 38" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M12 30l40 18M12 40l40 10" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>`);
+
+/** Planche à neige sur une pente. */
+const board = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <circle cx="34" cy="13" r="5" fill="#fff"/>
+  <path d="M33 19l-3 11 8 6M30 30l-9 5M33 21l10-2M21 23l9-2" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="10" y="42" width="44" height="7" rx="3.5" transform="rotate(-14 32 45)" fill="#fff"/>`);
+
+/** Flocon, pour le ski acrobatique. */
+const flake = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <g stroke="#fff" stroke-width="3.4" stroke-linecap="round">
+    <path d="M32 12v40M14.7 22l34.6 20M14.7 42l34.6-20"/>
+    <path d="M27 15l5 5 5-5M27 49l5-5 5 5M15 28l7-1-2-6M49 36l-7 1 2 6M15 36l7 1-2 6M49 28l-7-1 2-6"/>
+  </g>`);
+
+/** Cible de biathlon. */
+const target = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <circle cx="32" cy="32" r="19" fill="#fff"/>
+  <circle cx="32" cy="32" r="12" fill="#1b2a4a"/>
+  <circle cx="32" cy="32" r="5" fill="#fff"/>`);
+
+/** Coureur, pour les marathons. */
+const runner = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <circle cx="38" cy="13" r="5" fill="#fff"/>
+  <path d="M36 20l-6 13 8 6-3 12M30 33l-11 7M35 22l9 7 7-2M33 22l-9 3-4 8" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`);
+
+/** Anneaux olympiques. */
+const rings = (bg) => svg(`
+  <rect width="64" height="64" rx="16" fill="${bg}"/>
+  <g fill="none" stroke-width="3.2">
+    <circle cx="17" cy="27" r="8" stroke="#2f8fe0"/><circle cx="32" cy="27" r="8" stroke="#fff"/><circle cx="47" cy="27" r="8" stroke="#e8363d"/>
+    <circle cx="24.5" cy="36" r="8" stroke="#f2c55c"/><circle cx="39.5" cy="36" r="8" stroke="#3fbf6a"/>
+  </g>`);
+
 export const LEAGUE_ICONS = {
   ufc: octagon('#c8102e'),
   atp: tennis('#1d4f91'),
@@ -70,4 +127,16 @@ export const LEAGUE_ICONS = {
   ncaaf: football('#1c5d4d'),
   vbw: volleyball('#8a5a12'),
   vbm: volleyball('#1f3f7a'),
+  olyhm: rings('#14304f'),
+  olyhw: rings('#4a1f3a'),
+  olybm: rings('#4a3412'),
+  olybw: rings('#3a1f4a'),
+  skial: skier('#1b4f7a'),
+  skifond: nordic('#1d5a4a'),
+  saut: jumper('#3d2f6b'),
+  combine: nordic('#284a7a'),
+  snow: board('#7a3a24'),
+  freeski: flake('#5e5a1c'),
+  biathlon: target('#7a2830'),
+  marathon: runner('#7a5214'),
 };

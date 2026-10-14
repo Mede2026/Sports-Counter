@@ -9,7 +9,8 @@ import { LEAGUE_ICONS } from './league-icons.js';
 // `kind` : 'team' (on coche des équipes), 'event' (F1 : on suit la saison),
 // 'card' (UFC : on suit les galas, combat par combat), 'golf' (on suit les
 // tournois : tableau des meneurs), 'tennis' (on choisit ses joueurs ; un
-// tournoi donne un match par rencontre).
+// tournoi donne un match par rencontre), 'race' (ski, biathlon, marathons :
+// on suit toutes les courses, hors ESPN).
 // `query` : paramètres ajoutés au tableau des scores d'ESPN ; `teamsQuery` : à
 // la liste des équipes.
 // `tournament` : compétition internationale — on peut suivre ses équipes
@@ -53,6 +54,23 @@ export const LEAGUES = [
     query: 'groups=90&limit=500', teamsQuery: '?limit=1000' },
   { id: 'vbm',  group: 'Volleyball', label: 'Volley NCAA (M)',    path: 'volleyball/mens-college-volleyball', kind: 'team', accent: '#7fb3ff', short: 'VB-M', teams: 60,
     query: 'limit=500', teamsQuery: '?limit=1000' },
+  // Jeux olympiques : ESPN n'a que les sports d'équipe, et seulement pendant
+  // les Jeux. Le ski, le biathlon et les autres sports d'hiver sont plus bas.
+  { id: 'olyhm', group: 'Olympiques', label: 'Hockey olympique (H)', path: 'hockey/olympics-mens-ice-hockey', kind: 'team', accent: '#4fc3f7', short: 'JO-H', teams: 12, tournament: true },
+  { id: 'olyhw', group: 'Olympiques', label: 'Hockey olympique (F)', path: 'hockey/olympics-womens-ice-hockey', kind: 'team', accent: '#f48fb1', short: 'JO-F', teams: 10, tournament: true },
+  { id: 'olybm', group: 'Olympiques', label: 'Basketball olympique (H)', path: 'basketball/mens-olympics-basketball', kind: 'team', accent: '#ffb74d', short: 'JO-B', teams: 12, tournament: true },
+  { id: 'olybw', group: 'Olympiques', label: 'Basketball olympique (F)', path: 'basketball/womens-olympics-basketball', kind: 'team', accent: '#ce93d8', short: 'JO-BF', teams: 12, tournament: true },
+  // Sports sans ESPN (kind 'race') : les courses viennent du site de la FIS,
+  // de l'API de l'IBU ou de Wikipédia (voir races.js). `fis` : code du sport
+  // à la FIS. Coupe du monde, championnats du monde et Jeux olympiques.
+  { id: 'skial',  group: 'Sports d’hiver', label: 'Ski alpin',          path: 'race/skial',  kind: 'race', source: 'fis', fis: 'AL', accent: '#6ec6ff', short: 'ALP' },
+  { id: 'skifond', group: 'Sports d’hiver', label: 'Ski de fond',       path: 'race/skifond', kind: 'race', source: 'fis', fis: 'CC', accent: '#8be9c0', short: 'FOND' },
+  { id: 'saut',   group: 'Sports d’hiver', label: 'Saut à ski',         path: 'race/saut',   kind: 'race', source: 'fis', fis: 'JP', accent: '#b39ddb', short: 'SAUT' },
+  { id: 'combine', group: 'Sports d’hiver', label: 'Combiné nordique',  path: 'race/combine', kind: 'race', source: 'fis', fis: 'NK', accent: '#90caf9', short: 'COMB' },
+  { id: 'snow',   group: 'Sports d’hiver', label: 'Snowboard',          path: 'race/snow',   kind: 'race', source: 'fis', fis: 'SB', accent: '#ffab91', short: 'SNOW' },
+  { id: 'freeski', group: 'Sports d’hiver', label: 'Ski acrobatique',   path: 'race/freeski', kind: 'race', source: 'fis', fis: 'FS', accent: '#fff59d', short: 'ACRO' },
+  { id: 'biathlon', group: 'Sports d’hiver', label: 'Biathlon',         path: 'race/biathlon', kind: 'race', source: 'ibu', accent: '#ef9a9a', short: 'BIAT' },
+  { id: 'marathon', group: 'Course à pied', label: 'Marathons majeurs', path: 'race/marathon', kind: 'race', source: 'marathon', accent: '#ffcc80', short: 'MARA' },
 ];
 
 // Icône dessinée pour les ligues dont ESPN ne donne pas de logo utilisable.
@@ -64,4 +82,4 @@ export const LEAGUES_BY_ID = Object.fromEntries(LEAGUES.map((l) => [l.id, l]));
 export const sportOf = (leagueId) => LEAGUES_BY_ID[leagueId]?.path.split('/')[0] ?? '';
 
 /** Ligues qu'on suit en entier (sans cocher d'équipes) : F1, UFC, golf, tennis. */
-export const isWholeLeague = (leagueId) => ['event', 'card', 'golf', 'tennis'].includes(LEAGUES_BY_ID[leagueId]?.kind);
+export const isWholeLeague = (leagueId) => ['event', 'card', 'golf', 'tennis', 'race'].includes(LEAGUES_BY_ID[leagueId]?.kind);

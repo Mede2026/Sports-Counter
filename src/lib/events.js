@@ -55,6 +55,8 @@ export function snapshot(g, opts = {}) {
     return { state: g.state, leader: g.state === 'in' ? g.players?.[0]?.name ?? '' : '', favs };
   }
   if (g.kind === 'tennis') return { state: g.state, sets: g.a?.sets?.length ?? 0 };
+  // Ski, biathlon, marathon : le gagnant connu (ou non) de la course.
+  if (g.race) return { state: g.state, winner: g.state === 'post' ? g.top3?.[0]?.name ?? '' : '' };
   if (g.kind === 'match') return { state: g.state, home: g.home.score, away: g.away.score, period: g.period ?? null };
   if (g.kind === 'card') {
     // État de chaque combat d'un combattant favori, pour voir son début et sa fin.
@@ -303,6 +305,32 @@ function sessionEvents(g, before, opts = {}) {
 }
 
 /**
+ * Ski, biathlon, marathons : le départ, puis le gagnant dès que la source
+ * publie le classement (parfois quelques minutes après l'arrivée).
+ */
+function raceEvents(g, before) {
+  const out = [];
+  const league = LEAGUES_BY_ID[g.leagueId];
+  const team = { abbr: league?.short ?? '', logo: g.logo || league?.logo || '', color: league?.accent ?? '#888' };
+  const where = [league?.label, g.title].filter(Boolean).join(' · ');
+  if (g.state === 'in' && before.state === 'pre') {
+    out.push({ title: `${g.session || 'La course'} : c'est parti`, body: where, team, link: g.link ?? '' });
+  }
+  const winners = (g.results ?? []).filter((d) => d.pos === 1);
+  if (g.state === 'post' && winners.length && !before.winner) {
+    const names = winners.map((d) => d.name).join(' et ');
+    const time = winners.length === 1 && winners[0].time ? ` en ${winners[0].time}` : '';
+    out.push({
+      title: `${MEDALS[1]} ${winners.length > 1 ? `Victoires de ${names}` : `Victoire de ${names}`}${time}`,
+      body: [g.session, where].filter(Boolean).join(' · '),
+      team,
+      link: g.link ?? '',
+    });
+  }
+  return out;
+}
+
+/**
  * UFC : début du gala, début du combat principal, et son vainqueur. Les
  * autres combats de la soirée ne notifient pas : ce serait une avalanche.
  */
@@ -432,6 +460,7 @@ export function detectEvents(prev, games, opts = {}) {
     else if (g.kind === 'card') out.push(...cardEvents(g, before, opts));
     else if (g.kind === 'golf') out.push(...golfEvents(g, before, opts));
     else if (g.kind === 'tennis') out.push(...tennisEvents(g, before, opts));
+    else if (g.race) out.push(...raceEvents(g, before));
     else out.push(...sessionEvents(g, before, opts));
   }
   return out.slice(-MAX_PER_REFRESH);

@@ -120,6 +120,8 @@ const CAP_DAY = new Intl.DateTimeFormat('fr-CA', { weekday: 'short', day: 'numer
 function sessionCaption(g) {
   const s = g.session ?? '';
   const day = g.state === 'post' && isDate(g.startsAt) ? ` · ${CAP_DAY.format(g.startsAt)}` : '';
+  // Ski, biathlon, marathon : classement en cours (provisoire), ou final.
+  if (g.race) return g.state === 'in' ? `🔴 ${s} : ${g.statusText === 'En direct' ? 'classement en direct' : 'classement provisoire'}` : `🏁 ${s}${day}`;
   if (g.state === 'in') return `🔴 ${s || 'Séance'} : ${g.qual ? 'classement en direct' : 'positions en direct'}`;
   if (g.qual) return `⏱️ ${/sprint/i.test(s) ? 'Qualifs sprint : grille du sprint' : 'Qualifs : grille de départ'}${day}`;
   if (/^course$/i.test(s)) return `🏁 Résultat de la course${day}`;
@@ -269,7 +271,7 @@ function compactCard(game) {
   if (game.kind === 'event') {
     const leader = game.state !== 'pre' ? game.top3?.[0] : null;
     // Séance finie : la pole (qualifs) ou le vainqueur (course, sprint), dit clairement.
-    const lead = leader && (game.state === 'post' ? (game.qual ? '⏱️ Pole : ' : /course|sprint/i.test(game.session ?? '') ? '🏆 ' : '🥇 ') : '🥇 ');
+    const lead = leader && (game.state === 'post' ? (game.qual ? '⏱️ Pole : ' : game.race || /course|sprint/i.test(game.session ?? '') ? '🏆 ' : '🥇 ') : '🥇 ');
     const when = pre ? middleWhen : leader ? `${lead}${leader.short || leader.name}` : game.statusText;
     // Deux lignes : la séance (Essais 1, Qualifications, Course…), puis
     // l'heure, le compte à rebours ou le meneur.
