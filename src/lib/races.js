@@ -327,7 +327,8 @@ async function fisRaces(league, from, to, now) {
         async () => parseFisEvent(await getText('fis', `general/event-details.html?sectorcode=${sector}&eventid=${ev.id}&seasoncode=${fisSeason(ev.start)}`)));
     } catch { return; }
     for (const r of races) {
-      if (!r.startsAt || r.startsAt < from || r.startsAt > to || /training/i.test(r.discipline)) continue;
+      // Entraînements et qualifications : pas des courses à suivre.
+      if (!r.startsAt || r.startsAt < from || r.startsAt > to || /training|qualif/i.test(r.discipline)) continue;
       games.push({ ev, r });
     }
   }));

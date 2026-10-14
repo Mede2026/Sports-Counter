@@ -549,7 +549,8 @@ function showLeague(id) {
   const kind = LEAGUES_BY_ID[id]?.kind;
   el.search.placeholder = kind === 'event' ? 'Rechercher un pilote…' : kind === 'card' ? 'Rechercher un combattant…'
     : kind === 'tennis' ? 'Rechercher un joueur…' : kind === 'golf' ? 'Rechercher un golfeur…' : 'Rechercher une équipe…';
-  el.search.hidden = false;
+  // Ski, biathlon, marathons : rien à chercher, on suit toutes les courses.
+  el.search.hidden = kind === 'race';
   setView('teams');
   selectLeague();
 }

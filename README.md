@@ -63,6 +63,15 @@ seulement les équipes que tu choisis.
   change et pour le vainqueur.
 - **Tennis** (ATP, WTA) : tes joueurs favoris (manches, rappel, résultat), et
   si tu veux tous les matchs en direct du circuit.
+- **Sports d'hiver** : ski alpin, ski de fond, saut à ski, combiné nordique,
+  snowboard et ski acrobatique (Coupe du monde, Mondiaux et Jeux olympiques,
+  d'après le site de la FIS), et **biathlon** avec les résultats en direct
+  (API de l'IBU). Le podium dans le widget, le classement complet dans la
+  fenêtre Match, une notification au gagnant.
+- **Marathons majeurs** : Tokyo, Boston, Londres, Sydney, Berlin, Chicago et
+  New York, avec les gagnants et leur temps (d'après Wikipédia).
+- **Jeux olympiques** : hockey et basketball olympiques (hommes et femmes),
+  pendant les Jeux.
 - **Alignement** (fenêtre Match) : trios et paires de défense au hockey (grille
   de profondeur d'ESPN), ordre des frappeurs et lanceurs au baseball.
 - **F1, fenêtre Match** : un bouton par séance (essais, qualifs, sprint, course)

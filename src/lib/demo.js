@@ -115,7 +115,19 @@ export const DEMO_TEAMS = [
 const G = (i, name, short, posText, score, thru) => ({ id: `g${i}`, name, short, photo: '', flag: '', order: i + 1, pos: i + 1, posText, score, thru });
 const T = (id, name, short, sets, winner = false, seed = null) => ({ id, name, short, photo: '', flag: '', seed, winner, sets });
 
+// Ski alpin (source FIS) : une course finie, comme dans le widget.
+const SKI = (pos, name, short, nat, time, gap = '') => ({ id: `s${pos}`, pos, name, short, nat, time, gap, photo: '', flag: '', team: '' });
+const DEMO_SKI = [
+  SKI(1, 'Mikaela Shiffrin', 'M. Shiffrin', 'USA', '1:48.34'), SKI(2, 'Valérie Grenier', 'V. Grenier', 'CAN', '1:48.62', '+0.28'),
+  SKI(3, 'Lara Gut-Behrami', 'L. Gut-Behrami', 'SUI', '1:48.95', '+0.61'), SKI(4, 'Federica Brignone', 'F. Brignone', 'ITA', '1:49.10', '+0.76'),
+];
+
 export const DEMO_EXTRA = [
+  {
+    id: 'demo-ski-1', leagueId: 'skial', kind: 'event', race: true, state: 'post', title: 'Mont-Tremblant', nation: 'CAN',
+    session: 'Slalom géant · Femmes', statusText: 'Terminée', clock: '', startsAt: new Date(Date.now() - 3 * 3600e3),
+    results: DEMO_SKI, top3: DEMO_SKI.slice(0, 3), sessions: [], qual: false, phase: null, flag: '', logo: '',
+  },
   {
     id: 'demo-pga-1', leagueId: 'pga', kind: 'golf', state: 'in', title: 'Tour Championship', logo: '',
     round: 3, session: 'Ronde 3', statusText: 'Ronde 3', clock: '', startsAt: null,

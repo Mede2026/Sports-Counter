@@ -1,6 +1,13 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.2.0': [
+    '⛷️ Sports d’hiver : ski alpin, ski de fond, saut à ski, combiné nordique, snowboard et ski acrobatique. Coupe du monde, championnats du monde et Jeux olympiques, avec le podium dans le widget et le classement complet en cliquant. (Données du site de la FIS, ESPN n’a pas ces sports.)',
+    '🎯 Biathlon : toutes les courses de la Coupe du monde, avec le classement en direct pendant la course.',
+    '🏃 Marathons majeurs : Tokyo, Boston, Londres, Sydney, Berlin, Chicago et New York, avec les gagnants et leur temps.',
+    '🏅 Jeux olympiques : hockey et basketball olympiques, hommes et femmes (pendant les Jeux).',
+    '🔔 Une notification au départ de chaque course suivie, puis au gagnant.',
+  ],
   '1.1.4': [
     '🖱️ Fond d’écran : fermer une app avec son X (ou cliquer dans une fenêtre) n’ouvre plus la fenêtre Match quand un match du fond d’écran est juste derrière. Seul un clic directement sur le bureau compte.',
   ],

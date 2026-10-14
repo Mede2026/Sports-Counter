@@ -211,7 +211,7 @@ await check('OpenF1', async () => {
 // lire, puis les courses à venir.
 const races = await import('../src/lib/races.js');
 const PAST = {
-  skial: '2026-01-11T15:00:00Z', skifond: '2026-01-11T15:00:00Z', snow: '2026-01-11T15:00:00Z',
+  skial: '2026-01-11T15:00:00Z', skifond: '2025-12-14T15:00:00Z', snow: '2026-01-11T15:00:00Z',
   biathlon: '2026-01-11T15:00:00Z', marathon: '2025-09-22T12:00:00Z',
 };
 for (const [id, when] of Object.entries(PAST)) {
