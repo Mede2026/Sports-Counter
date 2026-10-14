@@ -206,56 +206,31 @@ await check('OpenF1', async () => {
   ok('OpenF1', `${session.label} : ${parts.join(', ') || 'rien'}`);
 });
 
-// SONDE TEMPORAIRE 3 : structure des pages FIS, de l'API IBU, des articles de marathons.
+// SONDE TEMPORAIRE 4 : détails FIS (liste des courses, ligne de résultat, fin de ligne du calendrier).
 await (async () => {
   const out = { push: (x) => console.log(`SONDE ${x}`) };
-  const pj = (t) => { try { return JSON.parse(t); } catch { return { _raw: String(t).slice(0, 120) }; } };
   const text = async (u) => { try { const r = await fetch(u); return r.ok ? await r.text() : `HTTP ${r.status}`; } catch (e) { return `ERR ${errText(e)}`; } };
-  const clean = (h) => h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').replace(/\s+/g, ' ');
-  const around = (h, needle, before, after) => { const i = h.indexOf(needle); return i < 0 ? `(pas de « ${needle} »)` : h.slice(Math.max(0, i - before), i + after); };
-  // Calendrier FIS : un évènement passé (saison 2026) et un à venir (2027).
-  for (const season of ['2027', '2026']) {
-    const h = clean(await text(`https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=${season}&categorycode=WC`));
-    const n = (h.match(/event-details\.html/g) ?? []).length;
-    out.push(`FIS cal ${season} : ${h.length}o, ${n} liens d'évènements`);
-    out.push(`  EXTRAIT ${around(h, 'event-details.html', 600, 2600)}`);
-  }
-  // Détails d'un évènement : ses courses (date, discipline, sexe, état).
-  const det = clean(await text('https://www.fis-ski.com/DB/general/event-details.html?sectorcode=AL&eventid=58030&seasoncode=2026'));
-  out.push(`FIS détails : ${around(det, 'results.html?sectorcode=AL&amp;raceid=', 1500, 2500)}`);
-  // Résultats d'une course.
+  const clean = (h) => h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<svg[\s\S]*?<\/svg>/g, '<svg/>').replace(/\s+/g, ' ').replace(/ class="[^"]*"/g, (m) => m.length > 40 ? ` class="${m.slice(8, 40)}…"` : m);
+  const around = (h, needle, before, after, from = 0) => { const i = h.indexOf(needle, from); return i < 0 ? `(pas de « ${needle} »)` : h.slice(Math.max(0, i - before), i + after); };
+  const cal = clean(await text('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=AL&seasoncode=2026&categorycode=WC'));
+  const i = cal.indexOf('id="57999"');
+  out.push(`CAL fin de ligne : ${cal.slice(i + 2600, i + 5200)}`);
+  const can = cal.indexOf('title="Cancelled"');
+  out.push(`CAL annulé : ${can < 0 ? 'aucun' : cal.slice(can - 300, can + 100)}`);
+  const det = clean(await text('https://www.fis-ski.com/DB/general/event-details.html?sectorcode=AL&eventid=57999&seasoncode=2026'));
+  out.push(`DET : ${around(det, 'raceid=', 1200, 3500)}`);
   const res = clean(await text('https://www.fis-ski.com/DB/general/results.html?sectorcode=AL&raceid=127429'));
-  out.push(`FIS entête : ${around(res, '<h1', 100, 1800)}`);
-  out.push(`FIS résultats : ${around(res, 'table-row', 300, 3000)}`);
-  // Autres disciplines et catégories (JO, Mondiaux).
-  for (const [sec, cat] of [['SB', 'WC'], ['FS', 'WC'], ['CC', 'WC'], ['JP', 'WC'], ['NK', 'WC'], ['AL', 'OWG'], ['AL', 'WSC']]) {
-    const h = await text(`https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=${sec}&seasoncode=2026&categorycode=${cat}`);
-    out.push(`FIS ${sec}/${cat} 2026 : ${(h.match(/event-details\.html/g) ?? []).length} liens`);
-  }
-  // IBU : courses d'une étape, puis résultats d'une course.
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  await wait(5000);
-  const ev = pj(await text('https://biathlonresults.com/modules/sportapi/api/Events?SeasonId=2526&Level=1'));
-  out.push(`IBU évts : ${JSON.stringify(ev).slice(0, 200)}`);
-  await wait(3000);
-  const comps = pj(await text(`https://biathlonresults.com/modules/sportapi/api/Competitions?EventId=${ev[0]?.EventId ?? 'BT2526SWRLCP01'}`));
-  if (!Array.isArray(comps)) out.push(`IBU courses : ${JSON.stringify(comps)}`);
-  else {
-  out.push(`IBU courses : ${JSON.stringify(comps.slice(0, 2))}`);
-  await wait(3000);
-  const rr = await text(`https://biathlonresults.com/modules/sportapi/api/Results?RaceId=${comps[0].RaceId}`);
-  out.push(`IBU résultats : ${rr.slice(0, 2500)}`);
-  }
-  out.push(`IBU actuel : ${(await text('https://biathlonresults.com/modules/sportapi/api/CurrentCompetition')).slice(0, 600)}`);
-  // Marathons : les 7 majeurs, édition 2025 et 2026.
-  for (const y of [2025, 2026]) {
-    for (const city of ['Tokyo', 'Boston', 'London', 'Sydney', 'Berlin', 'Chicago', 'New_York_City']) {
-      const j = pj(await text(`https://en.wikipedia.org/w/api.php?action=parse&page=${y}_${city}_Marathon&prop=wikitext&section=0&format=json&formatversion=2&redirects=1`) || '{}');
-      const w = j.parse?.wikitext ?? `ABSENT ${JSON.stringify(j).slice(0, 80)}`;
-      const box = (w.match(/\{\{\s*infobox[\s\S]*?\n\}\}|\{\{\s*infobox[^\n]*\}\}/i) ?? [w.slice(0, 200)])[0];
-      out.push(`MARATHON ${y} ${city} (${j.parse?.title ?? '-'}) : ${box.replace(/\s+/g, ' ').slice(0, 700)}`);
-    }
-  }
+  out.push(`RES : ${around(res, 'athlete-biography', 1500, 2200)}`);
+  const cc = clean(await text('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=CC&seasoncode=2026&categorycode=WC'));
+  const ccid = (cc.match(/eventid=(\d+)/) ?? [])[1];
+  const ccd = clean(await text(`https://www.fis-ski.com/DB/general/event-details.html?sectorcode=CC&eventid=${ccid}&seasoncode=2026`));
+  const ccr = (ccd.match(/raceid=(\d+)/) ?? [])[1];
+  const ccres = clean(await text(`https://www.fis-ski.com/DB/general/results.html?sectorcode=CC&raceid=${ccr}`));
+  out.push(`CC entête : ${around(ccres, 'event-header__kind', 0, 200)}`);
+  out.push(`CC RES : ${around(ccres, 'athlete-biography', 600, 1600)}`);
+  const sb = clean(await text('https://www.fis-ski.com/DB/general/calendar-results.html?sectorcode=SB&seasoncode=2026&categorycode=WC'));
+  const sbi = sb.indexOf('table-row reset-padding');
+  out.push(`SB ligne : ${sb.slice(sbi, sbi + 200)} … ${(sb.slice(sbi, sbi + 8000).match(/clip">[^<]+</g) ?? []).join(' ')}`);
 })().catch((e) => console.log(`SONDE plantée : ${errText(e)}`));
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
