@@ -275,7 +275,7 @@ function compactCard(game) {
     const when = pre ? middleWhen : leader ? `${lead}${leader.short || leader.name}` : game.statusText;
     // Deux lignes : la séance (Essais 1, Qualifications, Course…), puis
     // l'heure, le compte à rebours ou le meneur.
-    const label = game.session ? `<small class="row__label">${sessionText(game)}</small>` : '';
+    const label = game.session ? `<small class="row__label">${sessionText(game)}${game.laps && game.state === 'in' ? ` · ${game.laps}` : ''}</small>` : '';
     return `<div ${cardAttrs(game, cls, tip)}>
       ${crestHtml({ logo: game.logo || league?.logo, abbr: league?.short ?? '?', color: league?.accent })}
       <span class="row__event row__event--two">${label}<span>${when}</span></span>

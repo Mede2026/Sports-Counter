@@ -215,8 +215,30 @@ export const SESSION_LABELS = {
   SS: 'Qualifs sprint',
   SQ: 'Qualifs sprint',
   SPRINT: 'Sprint',
+  SR: 'Sprint',
   RACE: 'Course',
 };
+
+// Nombre de tours de chaque Grand Prix (saison 2026). ESPN donne le tour en
+// cours (« period ») mais pas le total : on le reconnaît au nom du Grand Prix.
+export const RACE_LAPS = [
+  [/australia/i, 58], [/china|chinese/i, 56], [/japan/i, 53], [/bahrain/i, 57], [/saudi/i, 50], [/miami/i, 57],
+  [/canad/i, 70], [/monaco/i, 78], [/barcelona|catalun/i, 66], [/austria/i, 71], [/brit/i, 52], [/belgi/i, 44],
+  [/hungar/i, 70], [/dutch|netherlands/i, 72], [/ital/i, 53], [/madrid|spanish|spain/i, 57], [/azerbaijan|baku/i, 51],
+  [/singapore/i, 62], [/united states|austin|cota/i, 56], [/mexic/i, 71], [/brazil|são paulo|sao paulo/i, 71],
+  [/las vegas/i, 50], [/qatar/i, 57], [/abu dhabi/i, 58],
+];
+
+/**
+ * « Tour 54 / 56 » pendant une course (« Tour 12 » au sprint, dont le total
+ * n'est pas connu). Rien pendant les essais et les qualifications.
+ */
+export function lapsText(eventName, label, state, period) {
+  const lap = Number(period);
+  if (state !== 'in' || !(lap > 0) || !/^(course|sprint)$/i.test(label ?? '')) return '';
+  const total = /^course$/i.test(label) ? RACE_LAPS.find(([re]) => re.test(eventName ?? ''))?.[1] : null;
+  return total ? `Tour ${Math.min(lap, total)} / ${total}` : `Tour ${lap}`;
+}
 
 export function sessionLabel(comp) {
   const abbr = String(comp?.type?.abbreviation ?? '').toUpperCase();
@@ -795,6 +817,8 @@ export function normalizeEvent(event, leagueId, logo = '') {
     const sState = session.status?.type?.state ?? base.state;
     // Pas de classement avant le départ : il n'existe pas encore.
     const results = sState === 'pre' ? [] : classification(session);
+    const label = sessionLabel(session);
+    const laps = lapsText(event?.name || title, label, sState, session.status?.period);
     return {
       ...base,
       kind: 'event',
@@ -804,13 +828,13 @@ export function normalizeEvent(event, leagueId, logo = '') {
       results,
       top3: results.slice(0, 3),
       sessions: weekendSessions(event),
-      // Tour en cours / total, quand ESPN le donne (course et sprint).
-      laps: session.status?.period && session.laps ? `Tour ${session.status.period} / ${session.laps}` : '',
-      session: sessionLabel(session),
+      // Tour en cours / total (course et sprint), affiché à la place de « En cours ».
+      laps,
+      session: label,
       qual: isQualSession(session),
       phase: qualPhase(session),
       flag: flagOf(session.status),
-      statusText: statusFr(session.status?.type?.shortDetail ?? '') || base.statusText,
+      statusText: laps || statusFr(session.status?.type?.shortDetail ?? '') || base.statusText,
       startsAt: session.date ? new Date(session.date) : base.startsAt,
       clock: '',
     };

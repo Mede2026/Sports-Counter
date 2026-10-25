@@ -79,7 +79,7 @@ export const DEMO_EVENTS = [
   },
   {
     id: 'demo-f1-1', leagueId: 'f1', kind: 'event', state: 'in',
-    statusText: 'Tour 34 / 70', clock: '', startsAt: null, session: 'Course',
+    statusText: 'Tour 34 / 70', laps: 'Tour 34 / 70', clock: '', startsAt: null, session: 'Course',
     title: 'GP du Canada',
     top3: DEMO_GRID.slice(0, 3),
     results: DEMO_GRID,

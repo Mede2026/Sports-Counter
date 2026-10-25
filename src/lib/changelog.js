@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.2.1': [
+    '🏎️ F1 : pendant la course, le tour en cours et le total (« Tour 54 / 56 ») au lieu de « En cours ». Au sprint : le tour en cours.',
+  ],
   '1.2.0': [
     '⛷️ Sports d’hiver : ski alpin, ski de fond, saut à ski, combiné nordique, snowboard et ski acrobatique. Coupe du monde, championnats du monde et Jeux olympiques, avec le podium dans le widget et le classement complet en cliquant. (Données du site de la FIS, ESPN n’a pas ces sports.)',
     '🎯 Biathlon : toutes les courses de la Coupe du monde, avec le classement en direct pendant la course.',
