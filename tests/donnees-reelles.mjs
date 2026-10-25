@@ -227,6 +227,22 @@ for (const [id, when] of Object.entries(PAST)) {
   });
 }
 
+// SONDE TEMPORAIRE : champs d'ESPN pour le tour en cours d'une course de F1.
+await (async () => {
+  const j = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : { _s: r.status }; } catch (e) { return { _e: errText(e) }; } };
+  for (const d of ['', '?dates=20261018', '?dates=20261011']) {
+    const data = await j(`https://site.api.espn.com/apis/site/v2/sports/racing/f1/scoreboard${d}`);
+    for (const ev of data.events ?? []) {
+      for (const c of ev.competitions ?? []) {
+        const keys = Object.keys(c).join(',');
+        console.log(`SONDE F1 ${d} ${ev.shortName} ${c.type?.abbreviation ?? c.type?.text} : clés=${keys} | status=${JSON.stringify(c.status)} | laps=${c.laps} format=${JSON.stringify(c.format ?? null)} | comp0=${JSON.stringify(Object.keys(c.competitors?.[0] ?? {}))} stats0=${JSON.stringify((c.competitors?.[0]?.statistics ?? []).map((x) => `${x.name}=${x.displayValue}`))}`.slice(0, 1800));
+      }
+    }
+  }
+  const s = await j('https://api.openf1.org/v1/sessions?session_key=latest');
+  console.log(`SONDE OpenF1 latest : ${JSON.stringify(s).slice(0, 600)}`);
+})().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
+
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
 const scoresOk = rows.some(([st, area]) => st === '✅' && area.startsWith('Scores'));
