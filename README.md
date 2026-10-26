@@ -70,6 +70,10 @@ seulement les équipes que tu choisis.
   fenêtre Match, une notification au gagnant.
 - **Marathons majeurs** : Tokyo, Boston, Londres, Sydney, Berlin, Chicago et
   New York, avec les gagnants et leur temps (d'après Wikipédia).
+- **Volleyball international** : Ligue des nations (VNL), championnats du
+  monde (hommes et femmes) et Mondial des clubs, d'après le service de
+  données de la FIVB : sets gagnés, points de chaque set, notification à
+  chaque set.
 - **Jeux olympiques** : hockey et basketball olympiques (hommes et femmes),
   pendant les Jeux.
 - **Alignement** (fenêtre Match) : trios et paires de défense au hockey (grille
