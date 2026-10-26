@@ -16,6 +16,7 @@ import { clearCaches, storageSize } from './lib/cache.js';
 import { wallpaperOptions, renderWallpaper, readModel, buildModel, heroesOf } from './lib/wallpaper.js';
 import { SOUNDS, soundFor, playSound } from './lib/sound.js';
 import { initSheet, openTeamSheet, openPlayerSheet } from './sheet.js';
+import { applyGlass, glassMode } from './lib/glass.js';
 
 const IS_DEMO = new URLSearchParams(location.search).has('demo');
 const inTauri = () => !!window.__TAURI__;
@@ -686,6 +687,12 @@ function bindOptions() {
     savePrefs(prefs);
   });
   opacity.addEventListener('input', () => { prefs.opacity = Number(opacity.value) / 100; savePrefs(prefs); });
+
+  // Effet de verre : appliqué tout de suite ici ; les autres fenêtres le
+  // voient passer dans les réglages enregistrés.
+  const glass = document.getElementById('optGlass');
+  glass.value = glassMode(prefs);
+  glass.addEventListener('change', () => { prefs.glass = glass.value; savePrefs(prefs); applyGlass(glass.value); });
 
   const theme = document.getElementById('optTheme');
   renderThemeOptions();

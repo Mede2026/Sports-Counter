@@ -134,3 +134,12 @@ body {
 
 /* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
 html, body { overflow-x: hidden; }
+
+/* Effet de verre (réglage « Transparence ») : fonds translucides, l'acrylique
+   ou le mica de Windows se voit derrière. Les panneaux gardent un peu plus
+   de teinte que le fond, pour rester lisibles. */
+html.glass {
+  --bg: rgba(14, 16, 22, 0.5);
+  --panel: rgba(21, 24, 34, 0.6);
+  --panel-2: rgba(27, 31, 43, 0.66);
+}

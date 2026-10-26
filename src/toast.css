@@ -207,3 +207,8 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 
 /* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
 html, body { overflow-x: hidden; }
+
+/* Effet de verre : fond translucide, coins de la fenêtre (voir widget.css). */
+html.glass .toast { --surface: rgba(18, 20, 27, 0.6); border-radius: 0; }
+html.glass .toast[data-theme="light"] { --surface: rgba(248, 249, 252, 0.65); }
+html.glass.glass--round .toast { border-radius: 8px; }

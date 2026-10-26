@@ -3,6 +3,7 @@
 // Une version à la fois ; « ← » revient aux versions précédentes.
 import { notesSince, CHANGELOG, compareVersions } from './lib/changelog.js';
 import { esc } from './lib/format.js';
+import './lib/glass.js';
 
 const inTauri = () => !!window.__TAURI__;
 const params = new URLSearchParams(location.search);

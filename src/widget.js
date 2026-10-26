@@ -14,6 +14,7 @@ import { fetchRaceControl, driverNumbers, isSanction } from './lib/openf1.js';
 import { buildModel, modelKey, renderWallpaper, saveModel, wallpaperColors, wallpaperOptions } from './lib/wallpaper.js';
 import { soundFor } from './lib/sound.js';
 import { inQuietHours, holdToast, heldToasts, clearHeld, quietSummary } from './lib/quiet.js';
+import './lib/glass.js';
 
 const REFRESH_LIVE_MS = 10_000;   // un match est en cours
 const REFRESH_IDLE_MS = 300_000;  // aucun match en cours

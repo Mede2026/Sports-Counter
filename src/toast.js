@@ -2,6 +2,7 @@
 // les affiche l'un après l'autre, puis se cache.
 import { crestHtml, bindCrests, setLightCrests } from './lib/crest.js';
 import { playSound } from './lib/sound.js';
+import './lib/glass.js';
 
 const DURATION_MS = 6000;
 // Une proposition de mise à jour reste plus longtemps ; sans réponse, elle

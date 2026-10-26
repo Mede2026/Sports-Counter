@@ -13,6 +13,7 @@ import { whenText, untilText, isDate, TIME_FMT, dayText, isDateOnly } from './li
 import { MEDALS, esc, ordinal, rank as rankText, formIcons, formTitle } from './lib/format.js';
 import { translated, translateAll, autoFr, TRANSLATED_EVENT } from './lib/translate.js';
 import { faceHtml, bindFaces } from './lib/face.js';
+import './lib/glass.js';
 
 const REFRESH_LIVE_MS = 20_000;
 const REFRESH_IDLE_MS = 300_000;

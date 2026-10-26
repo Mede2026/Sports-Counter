@@ -463,7 +463,8 @@ fn open_window(
         .inner_size(size.0, size.1)
         .min_inner_size(min.0, min.1)
         .decorations(false)
-        .transparent(false)
+        // Transparente : l'effet de verre (acrylique, mica) se voit derrière la page.
+        .transparent(true)
         .additional_browser_args(BROWSER_ARGS)
         .resizable(true)
         .center();
@@ -1288,6 +1289,63 @@ fn show_toast(app: AppHandle) {
         to_front(&win);
         force_topmost(&win);
     }
+}
+
+/* ---------- Effet de verre (fenêtres translucides) ---------- */
+
+/// Pose l'effet de Windows sur la fenêtre qui le demande : « acrylic » (flou
+/// translucide), « mica » (Windows 11) ou rien. Renvoie vrai si Windows a
+/// aussi arrondi les coins de la fenêtre (Windows 11) : la page arrondit
+/// alors les siens pareil.
+#[tauri::command]
+fn set_glass(window: tauri::WebviewWindow, mode: String) -> Result<bool, String> {
+    use tauri::window::{Effect, EffectsBuilder};
+    let effect = match mode.as_str() {
+        "acrylic" => Some(Effect::Acrylic),
+        "mica" => Some(Effect::Mica),
+        _ => None,
+    };
+    match effect {
+        Some(e) => window.set_effects(EffectsBuilder::new().effect(e).build()),
+        None => window.set_effects(None::<tauri::utils::config::WindowEffectsConfig>),
+    }
+    .map_err(|e| e.to_string())?;
+    Ok(round_corners(&window, effect.is_some()))
+}
+
+/// Coins arrondis par Windows 11 (sans effet sur Windows 10, qui renvoie faux).
+#[cfg(windows)]
+fn round_corners(window: &tauri::WebviewWindow, on: bool) -> bool {
+    #[link(name = "dwmapi")]
+    extern "system" {
+        fn DwmSetWindowAttribute(
+            hwnd: isize,
+            attr: u32,
+            value: *const std::ffi::c_void,
+            size: u32,
+        ) -> i32;
+    }
+    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+    let Ok(hwnd) = window.hwnd() else {
+        return false;
+    };
+    // 2 = coins arrondis, 1 = jamais arrondis.
+    let pref: u32 = if on { 2 } else { 1 };
+    // SAFETY : fenêtre de l'app encore ouverte, pointeur vers une variable locale.
+    let hr = unsafe {
+        DwmSetWindowAttribute(
+            hwnd.0 as isize,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const u32 as *const std::ffi::c_void,
+            4,
+        )
+    };
+    on && hr == 0
+}
+
+#[cfg(not(windows))]
+fn round_corners(_window: &tauri::WebviewWindow, _on: bool) -> bool {
+    false
 }
 
 /* ---------- Fond d'écran avec les infos ---------- */
@@ -2214,6 +2272,7 @@ pub fn run() {
             open_settings,
             reveal_widget,
             fit_widget,
+            set_glass,
             get_autostart,
             set_autostart,
             set_hide_fullscreen,

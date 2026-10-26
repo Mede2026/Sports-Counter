@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.4.0': [
+    '🪟 Fenêtres translucides : l’effet de verre de Windows (acrylique) sur le widget, les réglages, la fenêtre Match, les notes et les notifications. Le bureau se devine en flou derrière. Réglages → Transparence : Acrylique, Mica (Windows 11) ou Aucune.',
+  ],
   '1.3.0': [
     '🏐 Volleyball international : Ligue des nations (VNL) et championnats du monde, hommes et femmes, et le Mondial des clubs. Le pointage en sets dans le widget, une notification à chaque set, et les points de chaque set en cliquant. (Données de la FIVB, ESPN n’a pas ces tournois.)',
   ],

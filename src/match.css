@@ -670,3 +670,12 @@ html, body { overflow-x: hidden; }
 .fivb__team b { overflow-wrap: anywhere; }
 .fivb__score { font-size: 32px; font-weight: 800; white-space: nowrap; }
 .fivb__win { color: var(--text); font-weight: 800; }
+
+/* Effet de verre (réglage « Transparence ») : fonds translucides, l'acrylique
+   ou le mica de Windows se voit derrière. Les panneaux gardent un peu plus
+   de teinte que le fond, pour rester lisibles. */
+html.glass {
+  --bg: rgba(14, 16, 22, 0.5);
+  --panel: rgba(21, 24, 34, 0.6);
+  --panel-2: rgba(27, 31, 43, 0.66);
+}

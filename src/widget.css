@@ -743,3 +743,13 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 
 /* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
 html, body { overflow-x: hidden; }
+
+/* ---------- Effet de verre (réglage « Transparence ») ----------
+   Windows dessine l'acrylique (ou le mica) derrière la fenêtre : le fond du
+   widget devient translucide pour le laisser voir, en gardant assez de
+   teinte pour que le texte reste lisible. Coins : ceux de Windows 11
+   (8 px) quand il arrondit la fenêtre, sinon carrés comme elle. */
+html.glass .widget { --surface: rgba(18, 20, 27, 0.55); }
+html.glass .widget[data-theme="light"] { --surface: rgba(248, 249, 252, 0.6); }
+html.glass { --radius: 0px; }
+html.glass.glass--round { --radius: 8px; }
