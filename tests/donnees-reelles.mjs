@@ -227,17 +227,28 @@ for (const [id, when] of Object.entries(PAST)) {
   });
 }
 
-// SONDE TEMPORAIRE : volleyball international (FIVB : VNL, championnats du monde).
+// SONDE TEMPORAIRE : volleyball international (FIVB), détails.
 await (async () => {
-  const get = async (u, n = 900) => {
-    try { const r = await fetch(u); const t = await r.text(); console.log(`SONDE ${u.slice(0, 160)}\n  -> ${r.status} ${r.headers.get('content-type')} ${t.length}o : ${t.slice(0, n).replace(/\s+/g, ' ')}`); return t; } catch (e) { console.log(`SONDE ${u.slice(0, 120)} -> ${errText(e)}`); return ''; }
-  };
-  const vis = (xml, fmt = '') => `https://www.fivb.org/Vis2009/XmlRequest.asmx?Request=${encodeURIComponent(xml)}${fmt}`;
-  await get(vis('<Request Type="GetVolleyTournamentList" Fields="No Code Name ShortName StartDate EndDate Gender Season Status"><Filter FirstDate="2025-05-01" LastDate="2026-12-31" /></Request>'), 2500);
-  await get(vis('<Request Type="GetVolleyTournamentList" Fields="No Code Name ShortName StartDate EndDate Gender"><Filter FirstDate="2025-05-01" LastDate="2026-12-31" /></Request>', '&Format=json'), 1200);
-  await get(vis('<Request Type="GetVolleyMatchList" Fields="No DateLocal TimeLocal DateTimeUtc TeamAName TeamBName TeamACode TeamBCode MatchPointsA MatchPointsB Status NoTournament City Round"><Filter FirstDate="2025-09-12" LastDate="2025-09-13" /></Request>'), 2500);
-  await get('https://en.volleyballworld.com/volleyball/competitions/volleyball-nations-league/schedule/', 300);
-  await get('https://www.volleyballworld.com/api/v1/globalschedule/2025-07-01/2025-07-02', 800);
+  const vis = async (xml) => { try { const r = await fetch(`https://www.fivb.org/Vis2009/XmlRequest.asmx?Request=${encodeURIComponent(xml)}`); return r.ok ? (await r.json()).data ?? [] : [`HTTP ${r.status}`]; } catch (e) { return [errText(e)]; } };
+  const ts = await vis('<Request Type="GetVolleyTournamentList" Fields="No Code Name StartDate EndDate Gender"><Filter FirstDate="2025-01-01" LastDate="2028-12-31" /></Request>');
+  const fivb = ts.filter((t) => /VNL|WCH|OG|WC20|NATIONS|WORLD|OLYMP/i.test(`${t.code} ${t.name}`) && !/U\d\d/i.test(`${t.code} ${t.name}`));
+  console.log(`SONDE tournois FIVB : ${JSON.stringify(fivb.map((t) => [t.no, t.code, t.name, t.startDate, t.endDate, t.gender]))}`.slice(0, 3500));
+  const vnl = fivb.find((t) => /^MVNL2025/.test(t.code)) ?? fivb[0];
+  const ms = await vis(`<Request Type="GetVolleyMatchList" Fields="No DateTimeUtc TeamAName TeamBName TeamACode TeamBCode MatchPointsA MatchPointsB Set1PointsA Set1PointsB Set2PointsA Set2PointsB Set3PointsA Set3PointsB Set4PointsA Set4PointsB Set5PointsA Set5PointsB Status Round RoundName PoolName Phase City CountryName"><Filter NoTournament="${vnl?.no}" /></Request>`);
+  const statuses = {};
+  for (const m of ms) statuses[m.status] = (statuses[m.status] ?? 0) + 1;
+  console.log(`SONDE ${vnl?.code} : ${ms.length} matchs, états ${JSON.stringify(statuses)}`);
+  console.log(`SONDE exemple : ${JSON.stringify(ms[0])}`);
+  console.log(`SONDE finale : ${JSON.stringify(ms.at(-1))}`);
+  const later = fivb.filter((t) => t.startDate > '2026-10-26');
+  for (const t of later.slice(0, 2)) {
+    const m2 = await vis(`<Request Type="GetVolleyMatchList" Fields="No DateTimeUtc TeamAName TeamBName TeamACode MatchPointsA Status RoundName"><Filter NoTournament="${t.no}" /></Request>`);
+    console.log(`SONDE à venir ${t.code} : ${m2.length} matchs ${JSON.stringify(m2[0] ?? null)}`);
+  }
+  for (const code of ['can', 'bra', 'pol', 'ita', 'jpn']) {
+    const r = await fetch(`https://a.espncdn.com/i/teamlogos/countries/500/${code}.png`);
+    console.log(`SONDE drapeau ${code} ${r.status}`);
+  }
 })().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
