@@ -367,31 +367,38 @@ const raceLists = new Map(); // idLigue -> courses | Error
 
 function renderRace(league) {
   const on = prefs.leagues.includes(league.id);
+  const matches = league.source === 'fivb'; // volleyball : des matchs, pas des courses
+  const what = matches ? { one: 'match', next: 'Prochains matchs', loading: 'prochains matchs', none: 'Aucun match' }
+    : { one: 'course', next: 'Prochaines courses', loading: 'prochaines courses', none: 'Aucune course' };
   const list = raceLists.get(league.id);
   let body;
-  if (!list) body = '<div class="state">Chargement des prochaines courses…</div>';
+  if (!list) body = `<div class="state">Chargement des ${what.loading}…</div>`;
   else if (list instanceof Error) {
     body = errorBlock('Impossible de charger le calendrier.', list,
       '<br /><button class="ghost" id="btnRetryRaces">Réessayer</button>');
-  } else if (!list.length) body = '<div class="state">Aucune course dans les 30 prochains jours (hors saison).</div>';
+  } else if (!list.length) body = `<div class="state">${what.none} dans les 30 prochains jours (hors saison).</div>`;
   else {
     body = list.slice(0, 12).map((g) => `
       <div class="team-row race-row">
         ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
-        <span class="team-row__name">${esc(g.title)} <small class="st__muted">${esc(g.session)}</small></span>
+        <span class="team-row__name">${esc(g.kind === 'match' ? `${g.away.name} – ${g.home.name}` : g.title)} <small class="st__muted">${esc(g.session)}</small></span>
         <span class="team-row__abbr">${esc(dayName(g.startsAt))} ${esc(TIME_FMT.format(g.startsAt))}</span>
       </div>`).join('');
   }
   const source = league.source === 'fis' ? 'la FIS (Coupe du monde, Mondiaux et Jeux olympiques)'
     : league.source === 'ibu' ? 'l’IBU (Coupe du monde, avec les résultats en direct)'
-      : 'Wikipédia (Tokyo, Boston, Londres, Sydney, Berlin, Chicago, New York)';
+      : matches ? 'la FIVB (pointage en direct, set par set)'
+        : 'Wikipédia (Tokyo, Boston, Londres, Sydney, Berlin, Chicago, New York)';
+  const follow = matches
+    ? 'Suivre tous les matchs <small class="st__muted">le pointage dans le widget, une notification à chaque set</small>'
+    : `Suivre toutes les courses <small class="st__muted">${esc(league.label)} : le podium dans le widget, une notification au gagnant</small>`;
   el.teams.innerHTML = `
     <div class="team-row${on ? ' team-row--on' : ''}" id="rowFollowWhole">
       <span class="check">${CHECK}</span>
       ${crestHtml({ logo: league.logo, abbr: league.short, color: league.accent }, 'crest-sm')}
-      <span class="team-row__name">Suivre toutes les courses <small class="st__muted">${esc(league.label)} : le podium dans le widget, une notification au gagnant</small></span>
+      <span class="team-row__name">${follow}</span>
     </div>
-    <div class="subhead">Prochaines courses <small>données de ${source}</small></div>
+    <div class="subhead">${what.next} <small>données de ${source}</small></div>
     ${body}`;
   bindCrests(el.teams);
   document.getElementById('rowFollowWhole').addEventListener('click', toggleLeague);

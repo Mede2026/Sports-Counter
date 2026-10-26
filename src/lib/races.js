@@ -18,6 +18,7 @@ const ROUTES = {
   fis: 'https://www.fis-ski.com/DB/',
   ibu: 'https://biathlonresults.com/modules/sportapi/api/',
   wiki: 'https://en.wikipedia.org/w/api.php',
+  vis: 'https://www.fivb.org/Vis2009/XmlRequest.asmx?Request=',
 };
 
 // L'IBU et Wikipédia refusent les rafales (erreur 429) : au moins 0,7 s
@@ -544,7 +545,113 @@ function raceGame(league, x) {
   };
 }
 
-const SOURCES = { fis: fisRaces, ibu: ibuRaces, marathon: marathonRaces };
+/* ---------- FIVB : volleyball international (VNL, championnats du monde) ---------- */
+
+/** Une demande au service de données de la FIVB (VIS) ; il répond en JSON. */
+async function vis(xml) {
+  const data = JSON.parse(await getText('vis', encodeURIComponent(xml)));
+  return data?.data ?? [];
+}
+
+const ymdOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Tours d'un tournoi (« Pool 3 - Preliminary Phase », « Final 1-2 »), en français.
+const ROUNDS = [
+  [/final\s*1\s*-\s*2|^final$|gold/i, 'Finale'], [/final\s*3\s*-\s*4|bronze/i, 'Match pour la 3e place'],
+  [/semi/i, 'Demi-finale'], [/quarter/i, 'Quart de finale'], [/round of 16|eighth/i, 'Huitième de finale'],
+  [/final\s*(\d+)\s*-\s*(\d+)/i, 'Match de classement'],
+];
+
+/** « Pool 3 - Preliminary Phase » → « Poule 3 · Phase préliminaire ». */
+export function roundFr(pool = '') {
+  const p = String(pool ?? '').trim();
+  for (const [re, fr] of ROUNDS) if (re.test(p)) return fr;
+  return p.replace(/\bPool\b/gi, 'Poule').replace(/\bPreliminary Phase\b/gi, 'phase préliminaire')
+    .replace(/\bWeek\b/gi, 'Semaine').replace(/\s+-\s+/g, ' · ');
+}
+
+// Pays : drapeau d'ESPN, à partir du code à trois lettres. Un club (« NEC
+// Red Rockets Kawasaki (JPN) ») garde son sigle.
+const flagOf = (code, name) => (/^[A-Z]{3}$/.test(code ?? '') && !/\(/.test(name ?? '')
+  ? `https://a.espncdn.com/i/teamlogos/countries/500/${code.toLowerCase()}.png` : '');
+
+/** Points de chaque set, sous les deux noms de champs que la FIVB a utilisés. */
+function setScores(m) {
+  const out = [];
+  for (let i = 1; i <= 5; i += 1) {
+    const a = m[`pointsTeamASet${i}`] ?? m[`set${i}PointsA`];
+    const b = m[`pointsTeamBSet${i}`] ?? m[`set${i}PointsB`];
+    if (a == null || b == null || (a === 0 && b === 0)) break;
+    out.push([Number(a), Number(b)]);
+  }
+  return out;
+}
+
+/** Un match de la FIVB, sous la forme d'un match du widget (pointage = sets gagnés). */
+export function fivbGame(league, m, now = new Date(), gender = '') {
+  const startsAt = new Date(m.dateTimeUtc);
+  const a = Number(m.matchPointsA);
+  const b = Number(m.matchPointsB);
+  const scored = m.matchPointsA != null && m.matchPointsB != null;
+  // État : 1 = au programme, 25 = terminé ; entre les deux, le match se joue.
+  const st = Number(m.status);
+  const state = st >= 25 ? 'post' : st > 1 ? 'in' : 'pre';
+  const sets = setScores(m);
+  const side = (code, name, score, won) => ({
+    id: String(code ?? name ?? ''), abbr: code || String(name ?? '').slice(0, 3).toUpperCase(), name: name ?? 'À déterminer',
+    short: name ?? '', logo: flagOf(code, name), color: '', score: state === 'pre' || !scored ? '–' : String(score),
+    winner: state === 'post' && won, record: '',
+  });
+  const round = roundFr(m.poolName ?? m.roundName ?? '');
+  return {
+    id: `fivb-${m.no}`,
+    leagueId: league.id,
+    kind: 'match',
+    fivb: true,
+    state,
+    statusText: state === 'post' ? (round && /finale|place/i.test(round) ? `Final · ${round}` : 'Final') : state === 'in' ? 'En cours' : '',
+    clock: state === 'in' && scored ? `${a + b + 1}e set` : '',
+    period: state === 'in' && scored ? a + b + 1 : null,
+    playoffs: /finale|place|quart|huiti/i.test(round),
+    startsAt,
+    session: [round, gender].filter(Boolean).join(' · '),
+    venue: [m.city, m.countryName].filter(Boolean).join(', '),
+    home: side(m.teamBCode, m.teamBName, b, b > a),
+    away: side(m.teamACode, m.teamAName, a, a > b),
+    sets,
+    link: 'https://en.volleyballworld.com/',
+  };
+}
+
+const VIS_FIELDS = 'No DateTimeUtc TeamAName TeamBName TeamACode TeamBCode MatchPointsA MatchPointsB Status PoolName City CountryName '
+  + [1, 2, 3, 4, 5].map((i) => `PointsTeamASet${i} PointsTeamBSet${i}`).join(' ');
+
+async function fivbMatches(league, from, to, now) {
+  // Tournois de la FIVB (VNL, Mondiaux…) qui touchent la période demandée.
+  const year = now.getFullYear();
+  const list = await cached(`vis:tournois:${year}`, 12 * 3600e3, () => vis(
+    `<Request Type="GetVolleyTournamentList" Fields="No Code Name StartDate EndDate Gender"><Filter FirstDate="${year - 1}-01-01" LastDate="${year + 1}-12-31" /></Request>`));
+  const codes = new RegExp(`^(${league.fivb.join('|')})\\d{4}$`);
+  const tournaments = list.filter((t) => codes.test(t.code ?? '')
+    && new Date(`${t.endDate}T23:59:59Z`).getTime() + DAY >= from.getTime() && new Date(`${t.startDate}T00:00:00Z`) <= to);
+  const games = [];
+  for (const t of tournaments) {
+    const live = new Date(`${t.startDate}T00:00:00Z`) <= now && now.getTime() <= new Date(`${t.endDate}T23:59:59Z`).getTime() + DAY;
+    let matches;
+    try {
+      matches = await cached(`vis:matchs:${t.no}:${ymdOf(from)}:${ymdOf(to)}`, live ? 30 * 1000 : 6 * 3600e3, () => vis(
+        `<Request Type="GetVolleyMatchList" Fields="${VIS_FIELDS}"><Filter NoTournament="${t.no}" FirstDate="${ymdOf(from)}" LastDate="${ymdOf(to)}" /></Request>`));
+    } catch { continue; }
+    const gender = league.fivb.length > 1 ? (Number(t.gender) === 1 ? 'Femmes' : 'Hommes') : '';
+    for (const m of matches) {
+      const g = fivbGame(league, m, now, gender);
+      if (g.startsAt >= from && g.startsAt <= to) games.push(g);
+    }
+  }
+  return games;
+}
+
+const SOURCES = { fis: fisRaces, ibu: ibuRaces, marathon: marathonRaces, fivb: fivbMatches };
 
 /** Courses de `fromOffset` à `toOffset` jours d'aujourd'hui, dans l'ordre. */
 export async function fetchRaceRange(leagueId, fromOffset, toOffset, now = new Date()) {

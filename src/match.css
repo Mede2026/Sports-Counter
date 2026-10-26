@@ -663,3 +663,10 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 
 /* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
 html, body { overflow-x: hidden; }
+
+/* Volleyball de la FIVB : les deux pays face à face, les sets gagnés au milieu. */
+.fivb__teams { display: flex; align-items: center; justify-content: space-around; gap: 12px; width: 100%; }
+.fivb__team { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; flex: 1; text-align: center; }
+.fivb__team b { overflow-wrap: anywhere; }
+.fivb__score { font-size: 32px; font-weight: 800; white-space: nowrap; }
+.fivb__win { color: var(--text); font-weight: 800; }

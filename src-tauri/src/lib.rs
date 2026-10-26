@@ -101,7 +101,7 @@ const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(20);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 
 /// Sites où un clic sur un match a le droit d'emmener.
-const ESPN_HOSTS: [&str; 9] = [
+const ESPN_HOSTS: [&str; 10] = [
     "www.espn.com",
     "espn.com",
     "www.espn.ca",
@@ -112,6 +112,7 @@ const ESPN_HOSTS: [&str; 9] = [
     "www.fis-ski.com",
     "biathlonresults.com",
     "en.wikipedia.org",
+    "en.volleyballworld.com",
 ];
 
 /// Seuls ces caractères peuvent composer le chemin demandé par l'interface.
@@ -122,7 +123,7 @@ fn path_is_safe(path: &str) -> bool {
         && !path.contains("..")
         && path
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-?=&:<>|".contains(c))
+            .all(|c| c.is_ascii_alphanumeric() || "/._-?=&:<>|%".contains(c))
 }
 
 /// Relaie une requête vers l'API ESPN depuis Rust.
@@ -192,6 +193,10 @@ async fn relay_fetch(path: &str) -> Result<String, String> {
     } else if let Some(rest) = path.strip_prefix("ibu/") {
         // Biathlon : l'API publique de l'IBU, avec les résultats en direct.
         format!("https://biathlonresults.com/modules/sportapi/api/{rest}")
+    } else if let Some(rest) = path.strip_prefix("vis/") {
+        // Volleyball international (VNL, championnats du monde) : le service de
+        // données de la FIVB. `rest` est la demande XML, déjà encodée.
+        format!("https://www.fivb.org/Vis2009/XmlRequest.asmx?Request={rest}")
     } else if let Some(rest) = path.strip_prefix("tsdb/") {
         // Logos de secours, pour les ligues dont ESPN n'a pas les logos (LCF).
         format!("{SPORTSDB}/{rest}")

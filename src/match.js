@@ -671,6 +671,23 @@ function matchHtml(g, table) {
 
 /* ---------- F1 ---------- */
 
+/** Un match de volleyball de la FIVB : sets gagnés, puis les points de chaque set. */
+function fivbHtml(g) {
+  const team = (t) => `<div class="fivb__team">${crestHtml(t, 'crest-xl')}<b>${esc(t.name)}</b></div>`;
+  const score = g.state === 'pre' ? '<span class="vs">VS</span>' : `<b class="fivb__score">${esc(g.away.score)} – ${esc(g.home.score)}</b>`;
+  const hero = `<section class="hero">
+    <div class="fivb__teams">${team(g.away)}${score}${team(g.home)}</div>
+    ${statusHtml(g)}
+    ${g.venue ? `<div class="status">${esc(g.venue)}</div>` : ''}
+  </section>`;
+  const rows = (g.sets ?? []).map(([a, b], i) => `<li><span class="drv"><b>${rankText(i + 1)} set</b></span>
+    <span class="gap${a > b ? ' fivb__win' : ''}">${a}</span><span class="gap${b > a ? ' fivb__win' : ''}">${b}</span></li>`).join('');
+  const table = rows
+    ? `<section class="card"><h3>Points par set · ${esc(g.away.abbr)} – ${esc(g.home.abbr)}</h3><ol class="grid">${rows}</ol></section>`
+    : g.state === 'pre' ? '' : `<section class="card"><div class="state">La FIVB n'a pas encore donné les points des sets${g.state === 'in' ? ' ; ils arrivent pendant le match' : ''}.</div></section>`;
+  return hero + table;
+}
+
 /** Une course de ski, de biathlon ou un marathon : le classement complet. */
 function raceHtml(g) {
   const league = LEAGUES_BY_ID[g.leagueId];
@@ -1122,7 +1139,7 @@ async function load() {
       if (!g) throw new Error("Cette course n'est plus au programme.");
       el.title.textContent = g.title;
       const r = g;
-      build = () => raceHtml(r);
+      build = () => (r.kind === 'match' ? fivbHtml(r) : raceHtml(r));
       html = build();
     } else if (league?.kind === 'golf') {
       g = await fromScoreboard();

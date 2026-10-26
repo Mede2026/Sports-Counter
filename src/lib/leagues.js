@@ -54,6 +54,13 @@ export const LEAGUES = [
     query: 'groups=90&limit=500', teamsQuery: '?limit=1000' },
   { id: 'vbm',  group: 'Volleyball', label: 'Volley NCAA (M)',    path: 'volleyball/mens-college-volleyball', kind: 'team', accent: '#7fb3ff', short: 'VB-M', teams: 60,
     query: 'limit=500', teamsQuery: '?limit=1000' },
+  // Volleyball international : le service de données de la FIVB (hors ESPN).
+  // `fivb` : début du code des tournois (« MVNL2027 », « WWCH2027 »…).
+  { id: 'vnlm',  group: 'Volleyball', label: 'Ligue des nations (H)', path: 'volleyball/fivb-vnl-m', kind: 'race', source: 'fivb', fivb: ['MVNL'], accent: '#5ec8f2', short: 'VNL-H' },
+  { id: 'vnlw',  group: 'Volleyball', label: 'Ligue des nations (F)', path: 'volleyball/fivb-vnl-w', kind: 'race', source: 'fivb', fivb: ['WVNL'], accent: '#f28fc3', short: 'VNL-F' },
+  { id: 'vwchm', group: 'Volleyball', label: 'Championnat du monde (H)', path: 'volleyball/fivb-wch-m', kind: 'race', source: 'fivb', fivb: ['MWCH'], accent: '#ffd166', short: 'CM-H' },
+  { id: 'vwchw', group: 'Volleyball', label: 'Championnat du monde (F)', path: 'volleyball/fivb-wch-w', kind: 'race', source: 'fivb', fivb: ['WWCH'], accent: '#ff9f68', short: 'CM-F' },
+  { id: 'vclub', group: 'Volleyball', label: 'Mondial des clubs',     path: 'volleyball/fivb-club', kind: 'race', source: 'fivb', fivb: ['MCWC', 'WCWC'], accent: '#a3e07a', short: 'CLUB' },
   // Jeux olympiques : ESPN n'a que les sports d'équipe, et seulement pendant
   // les Jeux. Le ski, le biathlon et les autres sports d'hiver sont plus bas.
   { id: 'olyhm', group: 'Olympiques', label: 'Hockey olympique (H)', path: 'hockey/olympics-mens-ice-hockey', kind: 'team', accent: '#4fc3f7', short: 'JO-H', teams: 12, tournament: true },

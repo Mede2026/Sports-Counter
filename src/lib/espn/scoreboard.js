@@ -1123,7 +1123,8 @@ export async function probeLeague(leagueId) {
     // Source hors ESPN : les courses d'avant-hier à dans 4 jours.
     try {
       const n = (await fetchRaceBoard(leagueId)).length;
-      out.scores = { ok: true, text: n ? `${n} course${n > 1 ? 's' : ''} cette semaine` : 'aucune course cette semaine' };
+      const [one, none] = league.source === 'fivb' ? ['match', 'aucun match'] : ['course', 'aucune course'];
+      out.scores = { ok: true, text: n ? `${n} ${one}${n > 1 ? 's' : ''} cette semaine` : `${none} cette semaine` };
     } catch (err) {
       out.scores = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
     }

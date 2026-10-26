@@ -214,6 +214,17 @@ const PAST = {
   skial: '2026-01-11T15:00:00Z', skifond: '2025-12-14T15:00:00Z', snow: '2026-01-11T15:00:00Z',
   biathlon: '2026-01-11T15:00:00Z', marathon: '2025-09-22T12:00:00Z',
 };
+// Volleyball de la FIVB : la finale de la VNL 2025 et celle du Mondial féminin.
+for (const [id, when] of [['vnlm', '2025-08-04T12:00:00Z'], ['vwchw', '2025-09-08T12:00:00Z']]) {
+  const label = LEAGUES_BY_ID[id].label;
+  await check(`Matchs ${label}`, async () => {
+    const past = await races.fetchRaceRange(id, -2, 0, new Date(when));
+    const done = past.filter((g) => g.state === 'post' && g.home.score !== '–');
+    const last = done.at(-1);
+    const text = `${past.length} match(s) avant le ${when.slice(0, 10)}, ${done.length} terminés${last ? ` (${last.session || 'match'} : ${last.away.name} ${last.away.score} – ${last.home.score} ${last.home.name}, ${last.sets.length} sets détaillés)` : ''}`;
+    (done.length ? ok : warn)(`Matchs ${label}`, text);
+  });
+}
 for (const [id, when] of Object.entries(PAST)) {
   const label = LEAGUES_BY_ID[id].label;
   await check(`Courses ${label}`, async () => {
@@ -226,30 +237,6 @@ for (const [id, when] of Object.entries(PAST)) {
     (done.length && first.top3.every((d) => d.name) ? ok : warn)(`Courses ${label}`, text);
   });
 }
-
-// SONDE TEMPORAIRE : volleyball international (FIVB), détails.
-await (async () => {
-  const vis = async (xml) => { try { const r = await fetch(`https://www.fivb.org/Vis2009/XmlRequest.asmx?Request=${encodeURIComponent(xml)}`); return r.ok ? (await r.json()).data ?? [] : [`HTTP ${r.status}`]; } catch (e) { return [errText(e)]; } };
-  const ts = await vis('<Request Type="GetVolleyTournamentList" Fields="No Code Name StartDate EndDate Gender"><Filter FirstDate="2025-01-01" LastDate="2028-12-31" /></Request>');
-  const fivb = ts.filter((t) => /VNL|WCH|OG|WC20|NATIONS|WORLD|OLYMP/i.test(`${t.code} ${t.name}`) && !/U\d\d/i.test(`${t.code} ${t.name}`));
-  console.log(`SONDE tournois FIVB : ${JSON.stringify(fivb.map((t) => [t.no, t.code, t.name, t.startDate, t.endDate, t.gender]))}`.slice(0, 3500));
-  const vnl = fivb.find((t) => /^MVNL2025/.test(t.code)) ?? fivb[0];
-  const ms = await vis(`<Request Type="GetVolleyMatchList" Fields="No DateTimeUtc TeamAName TeamBName TeamACode TeamBCode MatchPointsA MatchPointsB Set1PointsA Set1PointsB Set2PointsA Set2PointsB Set3PointsA Set3PointsB Set4PointsA Set4PointsB Set5PointsA Set5PointsB Status Round RoundName PoolName Phase City CountryName"><Filter NoTournament="${vnl?.no}" /></Request>`);
-  const statuses = {};
-  for (const m of ms) statuses[m.status] = (statuses[m.status] ?? 0) + 1;
-  console.log(`SONDE ${vnl?.code} : ${ms.length} matchs, états ${JSON.stringify(statuses)}`);
-  console.log(`SONDE exemple : ${JSON.stringify(ms[0])}`);
-  console.log(`SONDE finale : ${JSON.stringify(ms.at(-1))}`);
-  const later = fivb.filter((t) => t.startDate > '2026-10-26');
-  for (const t of later.slice(0, 2)) {
-    const m2 = await vis(`<Request Type="GetVolleyMatchList" Fields="No DateTimeUtc TeamAName TeamBName TeamACode MatchPointsA Status RoundName"><Filter NoTournament="${t.no}" /></Request>`);
-    console.log(`SONDE à venir ${t.code} : ${m2.length} matchs ${JSON.stringify(m2[0] ?? null)}`);
-  }
-  for (const code of ['can', 'bra', 'pol', 'ita', 'jpn']) {
-    const r = await fetch(`https://a.espncdn.com/i/teamlogos/countries/500/${code}.png`);
-    console.log(`SONDE drapeau ${code} ${r.status}`);
-  }
-})().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
