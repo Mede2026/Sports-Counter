@@ -227,6 +227,19 @@ for (const [id, when] of Object.entries(PAST)) {
   });
 }
 
+// SONDE TEMPORAIRE : volleyball international (FIVB : VNL, championnats du monde).
+await (async () => {
+  const get = async (u, n = 900) => {
+    try { const r = await fetch(u); const t = await r.text(); console.log(`SONDE ${u.slice(0, 160)}\n  -> ${r.status} ${r.headers.get('content-type')} ${t.length}o : ${t.slice(0, n).replace(/\s+/g, ' ')}`); return t; } catch (e) { console.log(`SONDE ${u.slice(0, 120)} -> ${errText(e)}`); return ''; }
+  };
+  const vis = (xml, fmt = '') => `https://www.fivb.org/Vis2009/XmlRequest.asmx?Request=${encodeURIComponent(xml)}${fmt}`;
+  await get(vis('<Request Type="GetVolleyTournamentList" Fields="No Code Name ShortName StartDate EndDate Gender Season Status"><Filter FirstDate="2025-05-01" LastDate="2026-12-31" /></Request>'), 2500);
+  await get(vis('<Request Type="GetVolleyTournamentList" Fields="No Code Name ShortName StartDate EndDate Gender"><Filter FirstDate="2025-05-01" LastDate="2026-12-31" /></Request>', '&Format=json'), 1200);
+  await get(vis('<Request Type="GetVolleyMatchList" Fields="No DateLocal TimeLocal DateTimeUtc TeamAName TeamBName TeamACode TeamBCode MatchPointsA MatchPointsB Status NoTournament City Round"><Filter FirstDate="2025-09-12" LastDate="2025-09-13" /></Request>'), 2500);
+  await get('https://en.volleyballworld.com/volleyball/competitions/volleyball-nations-league/schedule/', 300);
+  await get('https://www.volleyballworld.com/api/v1/globalschedule/2025-07-01/2025-07-02', 800);
+})().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
+
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
 const scoresOk = rows.some(([st, area]) => st === '✅' && area.startsWith('Scores'));
