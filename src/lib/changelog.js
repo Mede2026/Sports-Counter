@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.4.1': [
+    '🪟 Fenêtres translucides : les boutons gris de Windows (réduire, agrandir, fermer) n’apparaissent plus en haut du widget et des fenêtres.',
+  ],
   '1.4.0': [
     '🪟 Fenêtres translucides : l’effet de verre de Windows (acrylique) sur le widget, les réglages, la fenêtre Match, les notes et les notifications. Le bureau se devine en flou derrière. Réglages → Transparence : Acrylique, Mica (Windows 11) ou Aucune.',
   ],

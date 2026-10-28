@@ -1310,8 +1310,53 @@ fn set_glass(window: tauri::WebviewWindow, mode: String) -> Result<bool, String>
         None => window.set_effects(None::<tauri::utils::config::WindowEffectsConfig>),
     }
     .map_err(|e| e.to_string())?;
+    hide_caption_buttons(&window);
     Ok(round_corners(&window, effect.is_some()))
 }
+
+/// L'effet de verre étend le cadre de Windows dans la fenêtre : sans cela,
+/// Windows y redessine ses boutons (réduire, agrandir, fermer) en haut, même
+/// sur une fenêtre sans barre de titre. Ils viennent du style « menu
+/// système » : on le retire (l'app a ses propres boutons).
+#[cfg(windows)]
+fn hide_caption_buttons(window: &tauri::WebviewWindow) {
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
+        fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
+        fn SetWindowPos(
+            hwnd: isize,
+            after: isize,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+    }
+    const GWL_STYLE: i32 = -16;
+    const WS_SYSMENU: isize = 0x0008_0000;
+    // Ne bouge rien, ne change pas l'ordre : redessine seulement le cadre.
+    const SWP_REFRESH: u32 = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020;
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let hwnd = hwnd.0 as isize;
+    // SAFETY : fenêtre de l'app encore ouverte ; appels user32 sans pointeur.
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        // Sans menu système, Windows ne dessine aucun des trois boutons ; le
+        // reste du style (ancrage sur les bords de l'écran) ne change pas.
+        let wanted = style & !WS_SYSMENU;
+        if wanted != style {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, wanted);
+            SetWindowPos(hwnd, 0, 0, 0, 0, 0, SWP_REFRESH);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn hide_caption_buttons(_window: &tauri::WebviewWindow) {}
 
 /// Coins arrondis par Windows 11 (sans effet sur Windows 10, qui renvoie faux).
 #[cfg(windows)]
