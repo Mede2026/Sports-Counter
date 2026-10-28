@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.4.2': [
+    '🪟 Transparence « Verre » (nouvelle, par défaut) : beaucoup plus translucide, comme l’Explorateur de fichiers en verre. Ton fond d’écran se voit nettement en flou derrière toutes les fenêtres de l’app. L’acrylique et le mica sont aussi plus transparents.',
+  ],
   '1.4.1': [
     '🪟 Fenêtres translucides : les boutons gris de Windows (réduire, agrandir, fermer) n’apparaissent plus en haut du widget et des fenêtres.',
   ],

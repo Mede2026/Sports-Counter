@@ -1,12 +1,12 @@
-// Effet de verre des fenêtres (translucide) : « acrylique » (flou, le bureau
-// se devine derrière), « mica » (teinte du fond d'écran, Windows 11) ou
-// aucun. Chaque page importe ce module : il applique le réglage à sa propre
+// Effet de verre des fenêtres (translucide) : « verre » (flou sans teinte, le
+// bureau se voit nettement), « acrylique » (flou teinté), « mica » (teinte du
+// fond d'écran, Windows 11) ou aucun. Chaque page importe ce module : il applique le réglage à sa propre
 // fenêtre, et le réapplique quand les réglages changent.
 const KEY = 'sports-counter.prefs.v1';
-export const GLASS_MODES = ['acrylic', 'mica', 'off'];
+export const GLASS_MODES = ['blur', 'acrylic', 'mica', 'off'];
 
-/** Effet choisi ; l'acrylique par défaut. */
-export const glassMode = (prefs) => (GLASS_MODES.includes(prefs?.glass) ? prefs.glass : 'acrylic');
+/** Effet choisi ; le verre (flou sans teinte, le plus translucide) par défaut. */
+export const glassMode = (prefs) => (GLASS_MODES.includes(prefs?.glass) ? prefs.glass : 'blur');
 
 let applied = null;
 
@@ -25,6 +25,7 @@ export async function applyGlass(mode) {
   try {
     const round = await tauri.core.invoke('set_glass', { mode });
     root.classList.toggle('glass', mode !== 'off');
+    root.dataset.glass = mode; // la teinte des fonds dépend de l'effet
     root.classList.toggle('glass--round', mode !== 'off' && round === true);
   } catch {
     root.classList.remove('glass', 'glass--round');

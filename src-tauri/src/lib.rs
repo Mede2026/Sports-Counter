@@ -1293,14 +1293,16 @@ fn show_toast(app: AppHandle) {
 
 /* ---------- Effet de verre (fenêtres translucides) ---------- */
 
-/// Pose l'effet de Windows sur la fenêtre qui le demande : « acrylic » (flou
-/// translucide), « mica » (Windows 11) ou rien. Renvoie vrai si Windows a
+/// Pose l'effet de Windows sur la fenêtre qui le demande : « blur » (verre :
+/// flou sans teinte), « acrylic » (flou teinté), « mica » (Windows 11) ou rien. Renvoie vrai si Windows a
 /// aussi arrondi les coins de la fenêtre (Windows 11) : la page arrondit
 /// alors les siens pareil.
 #[tauri::command]
 fn set_glass(window: tauri::WebviewWindow, mode: String) -> Result<bool, String> {
     use tauri::window::{Effect, EffectsBuilder};
     let effect = match mode.as_str() {
+        // Flou pur, sans teinte : le plus translucide (comme l'Explorateur avec un thème de verre).
+        "blur" => Some(Effect::Blur),
         "acrylic" => Some(Effect::Acrylic),
         "mica" => Some(Effect::Mica),
         _ => None,

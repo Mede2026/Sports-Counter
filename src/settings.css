@@ -788,7 +788,15 @@ html, body { overflow-x: hidden; }
    ou le mica de Windows se voit derrière. Les panneaux gardent un peu plus
    de teinte que le fond, pour rester lisibles. */
 html.glass {
-  --bg: rgba(14, 16, 22, 0.5);
-  --panel: rgba(21, 24, 34, 0.6);
-  --panel-2: rgba(27, 31, 43, 0.66);
+  --bg: rgba(14, 16, 22, 0.28);
+  --panel: rgba(21, 24, 34, 0.34);
+  --panel-2: rgba(27, 31, 43, 0.4);
 }
+/* Verre : comme l'Explorateur de fichiers translucide, le bureau se voit
+   nettement en flou ; le texte garde une ombre légère pour rester lisible. */
+html.glass[data-glass="blur"] {
+  --bg: rgba(14, 16, 22, 0.14);
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel-2: rgba(255, 255, 255, 0.09);
+}
+html.glass[data-glass="blur"] body { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
