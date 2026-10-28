@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.4.3': [
+    '🪟 Transparence refaite : le « verre » de Windows restait noir sur Windows 11 et faisait apparaître ses boutons (réduire, agrandir, fermer). L’app dessine maintenant elle-même ton fond d’écran, flou, derrière ses fenêtres, à leur place exacte sur l’écran : un vrai effet de vitre, et plus aucun bouton de Windows.',
+  ],
   '1.4.2': [
     '🪟 Transparence « Verre » (nouvelle, par défaut) : beaucoup plus translucide, comme l’Explorateur de fichiers en verre. Ton fond d’écran se voit nettement en flou derrière toutes les fenêtres de l’app. L’acrylique et le mica sont aussi plus transparents.',
   ],

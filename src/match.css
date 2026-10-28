@@ -671,19 +671,25 @@ html, body { overflow-x: hidden; }
 .fivb__score { font-size: 32px; font-weight: 800; white-space: nowrap; }
 .fivb__win { color: var(--text); font-weight: 800; }
 
-/* Effet de verre (réglage « Transparence ») : fonds translucides, l'acrylique
-   ou le mica de Windows se voit derrière. Les panneaux gardent un peu plus
-   de teinte que le fond, pour rester lisibles. */
+/* Effet de verre (réglage « Transparence ») : le fond d'écran de Windows,
+   flou (lib/glass.js), derrière toute la fenêtre, sous une teinte légère.
+   Les panneaux sont à peine plus clairs ; une ombre légère sous le texte le
+   garde lisible sur un fond d'écran clair. */
 html.glass {
-  --bg: rgba(14, 16, 22, 0.28);
-  --panel: rgba(21, 24, 34, 0.34);
-  --panel-2: rgba(27, 31, 43, 0.4);
-}
-/* Verre : comme l'Explorateur de fichiers translucide, le bureau se voit
-   nettement en flou ; le texte garde une ombre légère pour rester lisible. */
-html.glass[data-glass="blur"] {
-  --bg: rgba(14, 16, 22, 0.14);
+  --bg: rgba(14, 16, 22, 0.32);
   --panel: rgba(255, 255, 255, 0.06);
   --panel-2: rgba(255, 255, 255, 0.09);
 }
-html.glass[data-glass="blur"] body { text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+html.glass body { background: transparent; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
+html.glass body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: #10131b;
+  background-image: linear-gradient(rgba(14, 16, 22, 0.3), rgba(14, 16, 22, 0.3)), var(--glass-img);
+  background-size: auto, var(--glass-size);
+  background-position: 0 0, var(--glass-pos);
+  background-repeat: no-repeat, var(--glass-repeat, no-repeat);
+}

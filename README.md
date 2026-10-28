@@ -47,8 +47,8 @@ seulement les équipes que tu choisis.
   (désactivable dans les réglages).
 - **Sans Internet** : le widget le dit clairement (« vérifie ta connexion
   Internet »), garde les derniers scores connus et réessaie tout seul.
-- **Fenêtres translucides** : effet de verre de Windows (acrylique ou mica)
-  sur toutes les fenêtres, ou fond plein (Réglages → Transparence).
+- **Fenêtres translucides** : ton fond d'écran, flou, derrière toutes les
+  fenêtres de l'app (effet de vitre), ou fond plein (Réglages → Transparence).
 - **Couleurs de ton équipe** sur la bordure du widget.
 - **Clic sur un match** : ouvre la **fenêtre Match** — pointage par période,
   buts avec les passes, statistiques face à face, pénalités, classement des

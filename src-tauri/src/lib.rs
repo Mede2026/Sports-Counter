@@ -1293,106 +1293,57 @@ fn show_toast(app: AppHandle) {
 
 /* ---------- Effet de verre (fenêtres translucides) ---------- */
 
-/// Pose l'effet de Windows sur la fenêtre qui le demande : « blur » (verre :
-/// flou sans teinte), « acrylic » (flou teinté), « mica » (Windows 11) ou rien. Renvoie vrai si Windows a
-/// aussi arrondi les coins de la fenêtre (Windows 11) : la page arrondit
-/// alors les siens pareil.
+// Les effets de Windows (acrylique, mica, flou) ne vont pas : le flou est noir
+// sur Windows 11 récent, l'acrylique devient gris plein quand la fenêtre n'a
+// pas le focus (le widget ne l'a jamais), et tous font redessiner par Windows
+// ses boutons réduire / agrandir / fermer. L'app dessine donc elle-même le
+// fond d'écran, flou, derrière ses fenêtres : il lui faut le fichier.
+
+/// Fichier du fond d'écran de Windows. Diaporama, « Windows à la une » : la
+/// copie qu'affiche Windows (TranscodedWallpaper).
+fn glass_wallpaper_path() -> Option<std::path::PathBuf> {
+    let current = current_wallpaper()
+        .filter(|p| !p.is_empty())
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_file());
+    current.or_else(|| {
+        let appdata = std::env::var_os("APPDATA")?;
+        let p =
+            std::path::Path::new(&appdata).join("Microsoft\\Windows\\Themes\\TranscodedWallpaper");
+        p.is_file().then_some(p)
+    })
+}
+
+/// Fond d'écran pour l'effet de verre : date de modification (la page ne
+/// relit l'image que si elle a changé) et façon de l'afficher.
 #[tauri::command]
-fn set_glass(window: tauri::WebviewWindow, mode: String) -> Result<bool, String> {
-    use tauri::window::{Effect, EffectsBuilder};
-    let effect = match mode.as_str() {
-        // Flou pur, sans teinte : le plus translucide (comme l'Explorateur avec un thème de verre).
-        "blur" => Some(Effect::Blur),
-        "acrylic" => Some(Effect::Acrylic),
-        "mica" => Some(Effect::Mica),
-        _ => None,
-    };
-    match effect {
-        Some(e) => window.set_effects(EffectsBuilder::new().effect(e).build()),
-        None => window.set_effects(None::<tauri::utils::config::WindowEffectsConfig>),
-    }
-    .map_err(|e| e.to_string())?;
-    hide_caption_buttons(&window);
-    Ok(round_corners(&window, effect.is_some()))
+fn glass_wallpaper_info() -> serde_json::Value {
+    let path = glass_wallpaper_path();
+    let modified = path
+        .as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let (style, tile) = wallpaper_fit().unwrap_or_else(|| ("10".into(), "0".into()));
+    serde_json::json!({
+        "found": path.is_some(),
+        "modified": modified,
+        "style": style,
+        "tile": tile,
+    })
 }
 
-/// L'effet de verre étend le cadre de Windows dans la fenêtre : sans cela,
-/// Windows y redessine ses boutons (réduire, agrandir, fermer) en haut, même
-/// sur une fenêtre sans barre de titre. Ils viennent du style « menu
-/// système » : on le retire (l'app a ses propres boutons).
-#[cfg(windows)]
-fn hide_caption_buttons(window: &tauri::WebviewWindow) {
-    #[link(name = "user32")]
-    extern "system" {
-        fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
-        fn SetWindowLongPtrW(hwnd: isize, index: i32, value: isize) -> isize;
-        fn SetWindowPos(
-            hwnd: isize,
-            after: isize,
-            x: i32,
-            y: i32,
-            cx: i32,
-            cy: i32,
-            flags: u32,
-        ) -> i32;
+/// Octets du fond d'écran (JPEG, PNG, BMP ou WebP), pour l'effet de verre.
+#[tauri::command]
+fn glass_wallpaper_bytes() -> Result<tauri::ipc::Response, String> {
+    let path = glass_wallpaper_path().ok_or("aucun fond d'écran")?;
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    if bytes.len() > 40 * 1024 * 1024 || !is_image(&bytes) {
+        return Err("format d'image non pris en charge".into());
     }
-    const GWL_STYLE: i32 = -16;
-    const WS_SYSMENU: isize = 0x0008_0000;
-    // Ne bouge rien, ne change pas l'ordre : redessine seulement le cadre.
-    const SWP_REFRESH: u32 = 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020;
-    let Ok(hwnd) = window.hwnd() else {
-        return;
-    };
-    let hwnd = hwnd.0 as isize;
-    // SAFETY : fenêtre de l'app encore ouverte ; appels user32 sans pointeur.
-    unsafe {
-        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
-        // Sans menu système, Windows ne dessine aucun des trois boutons ; le
-        // reste du style (ancrage sur les bords de l'écran) ne change pas.
-        let wanted = style & !WS_SYSMENU;
-        if wanted != style {
-            SetWindowLongPtrW(hwnd, GWL_STYLE, wanted);
-            SetWindowPos(hwnd, 0, 0, 0, 0, 0, SWP_REFRESH);
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn hide_caption_buttons(_window: &tauri::WebviewWindow) {}
-
-/// Coins arrondis par Windows 11 (sans effet sur Windows 10, qui renvoie faux).
-#[cfg(windows)]
-fn round_corners(window: &tauri::WebviewWindow, on: bool) -> bool {
-    #[link(name = "dwmapi")]
-    extern "system" {
-        fn DwmSetWindowAttribute(
-            hwnd: isize,
-            attr: u32,
-            value: *const std::ffi::c_void,
-            size: u32,
-        ) -> i32;
-    }
-    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
-    let Ok(hwnd) = window.hwnd() else {
-        return false;
-    };
-    // 2 = coins arrondis, 1 = jamais arrondis.
-    let pref: u32 = if on { 2 } else { 1 };
-    // SAFETY : fenêtre de l'app encore ouverte, pointeur vers une variable locale.
-    let hr = unsafe {
-        DwmSetWindowAttribute(
-            hwnd.0 as isize,
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &pref as *const u32 as *const std::ffi::c_void,
-            4,
-        )
-    };
-    on && hr == 0
-}
-
-#[cfg(not(windows))]
-fn round_corners(_window: &tauri::WebviewWindow, _on: bool) -> bool {
-    false
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 /* ---------- Fond d'écran avec les infos ---------- */
@@ -2319,7 +2270,8 @@ pub fn run() {
             open_settings,
             reveal_widget,
             fit_widget,
-            set_glass,
+            glass_wallpaper_info,
+            glass_wallpaper_bytes,
             get_autostart,
             set_autostart,
             set_hide_fullscreen,

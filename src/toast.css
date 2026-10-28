@@ -208,9 +208,19 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 /* Jamais de défilement de gauche à droite de la fenêtre elle-même. */
 html, body { overflow-x: hidden; }
 
-/* Effet de verre : fond translucide, coins de la fenêtre (voir widget.css). */
-html.glass .toast { --surface: rgba(18, 20, 27, 0.34); border-radius: 0; }
-html.glass .toast[data-theme="light"] { --surface: rgba(248, 249, 252, 0.4); }
-html.glass[data-glass="blur"] .toast { --surface: rgba(18, 20, 27, 0.2); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
-html.glass[data-glass="blur"] .toast[data-theme="light"] { --surface: rgba(248, 249, 252, 0.26); text-shadow: none; }
-html.glass.glass--round .toast { border-radius: 8px; }
+/* Effet de verre : le fond d'écran flou derrière la notification (voir widget.css). */
+html.glass body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: #10131b;
+  background-image: var(--glass-img);
+  background-size: var(--glass-size);
+  background-position: var(--glass-pos);
+  background-repeat: var(--glass-repeat, no-repeat);
+  border-radius: 16px;
+}
+html.glass .toast { --surface: rgba(18, 20, 27, 0.3); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+html.glass .toast[data-theme="light"] { --surface: rgba(248, 249, 252, 0.45); text-shadow: none; }

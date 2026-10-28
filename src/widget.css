@@ -745,15 +745,22 @@ img[data-flag] { object-fit: contain; border-radius: 3px; background: transparen
 html, body { overflow-x: hidden; }
 
 /* ---------- Effet de verre (réglage « Transparence ») ----------
-   Windows dessine l'acrylique (ou le mica) derrière la fenêtre : le fond du
-   widget devient translucide pour le laisser voir, en gardant assez de
-   teinte pour que le texte reste lisible. Coins : ceux de Windows 11
-   (8 px) quand il arrondit la fenêtre, sinon carrés comme elle. */
-html.glass .widget { --surface: rgba(18, 20, 27, 0.3); }
-html.glass .widget[data-theme="light"] { --surface: rgba(248, 249, 252, 0.34); }
-/* Verre : presque aucune teinte, le bureau se voit en flou. Une ombre très
-   légère sous le texte le garde lisible sur un fond d'écran clair. */
-html.glass[data-glass="blur"] .widget { --surface: rgba(18, 20, 27, 0.16); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
-html.glass[data-glass="blur"] .widget[data-theme="light"] { --surface: rgba(248, 249, 252, 0.22); text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5); }
-html.glass { --radius: 0px; }
-html.glass.glass--round { --radius: 8px; }
+   Le fond d'écran de Windows, flou (dessiné par lib/glass.js), derrière le
+   widget, à sa place exacte sur l'écran : le widget a l'air d'une vitre.
+   Le fond du widget devient une teinte légère par-dessus ; une ombre légère
+   garde le texte lisible sur un fond d'écran clair. */
+html.glass body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: #10131b;
+  background-image: var(--glass-img);
+  background-size: var(--glass-size);
+  background-position: var(--glass-pos);
+  background-repeat: var(--glass-repeat, no-repeat);
+  border-radius: var(--radius);
+}
+html.glass .widget { --surface: rgba(18, 20, 27, 0.26); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); }
+html.glass .widget[data-theme="light"] { --surface: rgba(248, 249, 252, 0.42); text-shadow: none; }
