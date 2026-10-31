@@ -3,7 +3,7 @@
 // buts, pénalités, classement ; onglets « Joueurs » (box score) et « Jeux »
 // (tous les jeux du match). F1 : classement complet de la séance, pilote
 // favori et programme du week-end.
-import { fetchMatchDetail, fetchTeamNews, fetchScoreboard, fetchLeagueRange, fetchStandings, fetchTeamForm, fetchF1Standings, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras } from './lib/api.js';
+import { fetchMatchDetail, fetchTeamNews, fetchScoreboard, fetchLeagueRange, fetchStandings, fetchTeamForm, fetchF1Standings, markReserves, fetchHockeyLines, demoEvents, sameDriver, qualCuts, intervalText, fetchTyres, tyresOf, TYRES, TYRE_NAMES, fetchF1Extras } from './lib/api.js';
 import { LEAGUES_BY_ID, sportOf } from './lib/leagues.js';
 import { loadPrefs } from './lib/store.js';
 import { crestHtml, bindCrests } from './lib/crest.js';
@@ -780,7 +780,7 @@ function f1Html(g) {
     return `<li class="${isFav ? 'fav' : ''}${qualTag(d).includes('--out') ? ' out' : ''}">
       <span class="pos">${MEDALS[d.pos] ?? d.pos}</span>
       ${faceHtml(d, 'face')}
-      <span class="drv"><b>${esc(d.name)}</b>${d.team || q ? `<small>${esc([d.team, q].filter(Boolean).join(' · '))}</small>` : ''}${qualTag(d)}</span>
+      <span class="drv"><b>${esc(d.name)}</b>${d.reserve ? ' <span class="qtag qtag--reserve" title="Jeune pilote qui remplace un titulaire pendant cette séance">Réserviste</span>' : ''}${d.team || q ? `<small>${esc([d.team, q].filter(Boolean).join(' · '))}</small>` : ''}${qualTag(d)}</span>
       ${tyreHtml(d)}${gaps}
     </li>`;
   }).join('');
@@ -1131,6 +1131,7 @@ async function load() {
     } else if (league?.kind === 'event') {
       g = await fromScoreboard();
       if (!g) throw new Error('Cette séance n\'est plus au programme.');
+      if (!IS_DEMO) await markReserves([g]);
       el.title.textContent = g.title;
       const gp = g;
       build = () => f1Html(gp);

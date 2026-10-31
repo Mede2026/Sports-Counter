@@ -1,4 +1,4 @@
-import { fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchShootout, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, qualCuts, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
+import { markReserves, fetchScoreboard, fetchNextGames, fetchGoal, fetchPulledGoalies, fetchPenalties, fetchShootout, fetchYesterday, fetchMatchDetail, fetchTeamForm, fetchTeamGames, fetchStandings, qualCuts, fetchStandingsTable, fetchF1Standings, demoEvents, sameDriver, LOOKAHEAD_DAYS } from './lib/api.js';
 import { LEAGUES_BY_ID, isWholeLeague, sportOf } from './lib/leagues.js';
 import { loadPrefs, savePrefs } from './lib/store.js';
 import { errText, isOffline, OFFLINE_TITLE, OFFLINE_HINT } from './lib/err.js';
@@ -127,7 +127,9 @@ function sessionCaption(g) {
   if (g.qual) return `⏱️ ${/sprint/i.test(s) ? 'Qualifs sprint : grille du sprint' : 'Qualifs : grille de départ'}${day}`;
   if (/^course$/i.test(s)) return `🏁 Résultat de la course${day}`;
   if (/sprint/i.test(s)) return `🏁 Résultat du sprint${day}`;
-  return `🔧 ${s || 'Séance'} : meilleurs temps${day}`;
+  // Essais 1 : des écuries prêtent leur voiture à de jeunes pilotes (souvent de F2).
+  const reserves = (g.results ?? []).filter((d) => d.reserve).length;
+  return `🔧 ${s || 'Séance'} : meilleurs temps${day}${reserves ? ` · ${reserves} réserviste${reserves > 1 ? 's' : ''}` : ''}`;
 }
 
 /**
@@ -158,7 +160,7 @@ function podiumHtml(game) {
     const danger = fav && cut && d.pos > cut ? '<span class="podium__gap" title="Zone d\'élimination">⚠️ éliminé si ça finit ainsi</span>' : '';
     const gap = danger || (gp && d.pos > 1 && d.gap ? `<span class="podium__gap">${gapText(d.gap)}</span>` : '');
     return `<li class="${fav ? 'podium__fav' : ''}${extra}">
-      <span class="podium__medal">${medal}</span>${fav ? photo(fav) : ''}<span class="podium__name">${d.short || d.name}</span>${gap}</li>`;
+      <span class="podium__medal">${medal}</span>${fav ? photo(fav) : ''}<span class="podium__name">${d.short || d.name}${d.reserve ? ' <small class="podium__tag" title="Jeune pilote qui remplace un titulaire pendant cette séance">réserviste</small>' : ''}</span>${gap}</li>`;
   };
   let html = top.map((d) => line(d)).join('');
   // Tes pilotes favoris hors du podium : leur position, dessous.
@@ -1689,6 +1691,7 @@ async function doRefresh(force) {
   const upcoming = await nextGamesForIdleFavorites(today);
 
   followed = nextOnly([...today, ...upcoming.filter((g) => !beyondHorizon(g))].sort(sortGames));
+  await markReserves(followed); // F1 : jeunes pilotes qui remplacent un titulaire en essais 1
   forgetOldGames(followed);
   notifyEvents(followed);
   checkEmptyNets(followed);

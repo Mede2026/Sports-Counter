@@ -238,22 +238,13 @@ for (const [id, when] of Object.entries(PAST)) {
   });
 }
 
-// SONDE TEMPORAIRE : pilotes des essais 1 de F1 comparés aux pilotes du championnat.
-await (async () => {
-  const champ = await api.fetchF1Standings();
-  const names = new Set((champ.drivers ?? []).map((d) => d.name));
-  const board = await api.fetchScoreboard('f1');
-  for (const g of board) {
-    console.log(`SONDE ${g.title} : séance ${g.session} (${g.state}), ${g.sessions?.length} séances`);
-    const data = await (await fetch('https://site.api.espn.com/apis/site/v2/sports/racing/f1/scoreboard')).json();
-    for (const c of data.events?.[0]?.competitions ?? []) {
-      const ds = (c.competitors ?? []).map((x) => x.athlete?.displayName ?? '?');
-      const extra = ds.filter((n) => !names.has(n));
-      console.log(`SONDE ${c.type?.abbreviation} : ${ds.length} pilotes · hors championnat (${extra.length}) : ${extra.join(', ')}`);
-    }
-  }
-  console.log(`SONDE championnat : ${[...names].join(', ')}`);
-})().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
+// 9. F1 : réservistes (jeunes pilotes qui remplacent un titulaire en essais 1).
+await check('Réservistes F1', async () => {
+  const board = await api.markReserves(await api.fetchScoreboard('f1'));
+  const lines = (board ?? []).flatMap((g) => (g.sessions ?? []).filter((x) => x.results?.length)
+    .map((x) => `${x.label} : ${x.results.filter((d) => d.reserve).map((d) => d.name).join(', ') || 'aucun'}`));
+  ok('Réservistes F1', lines.join(' · ') || 'aucune séance avec classement');
+});
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.

@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.4.4': [
+    '🏎️ F1 : en essais 1, les jeunes pilotes (souvent de F2) qui remplacent un titulaire sont marqués « réserviste », dans le widget et la fenêtre Match. Le règlement oblige chaque écurie à leur prêter sa voiture quelques fois par saison.',
+  ],
   '1.4.3': [
     '🪟 Transparence refaite : le « verre » de Windows restait noir sur Windows 11 et faisait apparaître ses boutons (réduire, agrandir, fermer). L’app dessine maintenant elle-même ton fond d’écran, flou, derrière ses fenêtres, à leur place exacte sur l’écran : un vrai effet de vitre, et plus aucun bouton de Windows.',
   ],

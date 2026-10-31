@@ -693,3 +693,6 @@ html.glass body::before {
   background-position: 0 0, var(--glass-pos);
   background-repeat: no-repeat, var(--glass-repeat, no-repeat);
 }
+
+/* F1 : jeune pilote qui remplace un titulaire pendant les essais 1. */
+.qtag--reserve { background: rgba(242, 197, 92, 0.16); color: var(--gold); }

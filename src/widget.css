@@ -558,6 +558,8 @@ span.crest {
 /* ---------- Mode Grand Prix : top 5 et écarts ---------- */
 
 .podium__name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Jeune pilote qui remplace un titulaire (essais 1). */
+.podium__tag { font-size: 9px; font-weight: 700; letter-spacing: 0.03em; padding: 1px 5px; border-radius: 6px; background: rgba(242, 197, 92, 0.18); color: #f2c55c; vertical-align: 1px; }
 .podium__gap {
   margin-left: auto;
   font-size: 11px;

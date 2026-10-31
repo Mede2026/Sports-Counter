@@ -5,7 +5,7 @@ import { diskCache } from '../cache.js';
 import { autoFr } from '../translate.js';
 import { boardQuery, driverPhoto, getJson } from './core.js';
 import { fillLogos } from './logos.js';
-import { normalizeCompetitor } from './scoreboard.js';
+import { normalizeCompetitor, sameDriver } from './scoreboard.js';
 
 export const GROUP_FR = [
   [/eastern/i, "Association de l'Est"], [/western/i, "Association de l'Ouest"],
@@ -308,4 +308,29 @@ export async function fetchBracket(leagueId) {
     if (rounds.length) return { year, rounds };
   }
   return null;
+}
+
+/**
+ * Pilotes réservistes : en essais 1, chaque écurie doit parfois prêter sa
+ * voiture à un jeune pilote (souvent de F2). Ceux qui ne sont pas au
+ * championnat de F1 sont marqués `reserve`, pour le dire dans l'app.
+ * Sans championnat lisible, rien n'est marqué.
+ */
+export async function markReserves(games) {
+  const f1 = (games ?? []).filter((g) => g?.leagueId === 'f1' && g.kind === 'event');
+  if (!f1.length) return games;
+  let champ;
+  try {
+    champ = (await fetchF1Standings()).drivers ?? [];
+  } catch {
+    return games;
+  }
+  if (champ.length < 15) return games;
+  const mark = (list) => (list ?? []).forEach((d) => { d.reserve = !champ.some((c) => sameDriver(c, d)); });
+  for (const g of f1) {
+    mark(g.results);
+    mark(g.top3);
+    (g.sessions ?? []).forEach((x) => mark(x.results));
+  }
+  return games;
 }
