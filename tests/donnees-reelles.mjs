@@ -246,6 +246,39 @@ await check('Réservistes F1', async () => {
   ok('Réservistes F1', lines.join(' · ') || 'aucune séance avec classement');
 });
 
+// SONDE TEMPORAIRE : la LCF de bout en bout.
+await (async () => {
+  const log = (x) => console.log(`SONDE ${x}`);
+  const raw = async (u) => { try { const r = await fetch(u); return r.ok ? await r.json() : { _s: r.status }; } catch (e) { return { _e: errText(e) }; } };
+  const sb = await raw('https://site.api.espn.com/apis/site/v2/sports/football/cfl/scoreboard');
+  log(`scoreboard brut : ${JSON.stringify({ s: sb._s, n: sb.events?.length, season: sb.season, day: sb.day, cal: (sb.leagues?.[0]?.calendar ?? []).slice(-3) })}`.slice(0, 900));
+  for (const e of (sb.events ?? []).slice(0, 3)) log(`évt ${e.id} ${e.name} ${e.date} ${e.status?.type?.name} comps=${e.competitions?.[0]?.competitors?.map((c) => `${c.team?.abbreviation}:${c.team?.id}:${c.score}:${c.team?.logo ? 'logo' : 'sans'}`).join(' ')}`);
+  for (const d of [-7, -1, 0, 1, 3, 7, 10]) {
+    const dt = new Date(Date.now() + d * 864e5); const ymd = dt.toISOString().slice(0, 10).replace(/-/g, '');
+    const x = await raw(`https://site.api.espn.com/apis/site/v2/sports/football/cfl/scoreboard?dates=${ymd}`);
+    log(`jour ${ymd} : ${x._s ?? ''} ${(x.events ?? []).map((e) => `${e.shortName} ${e.status?.type?.name}`).join(', ') || 'aucun'}`);
+  }
+  try {
+    const games = await api.fetchScoreboard('cfl');
+    log(`app : ${games.length} matchs ${games.map((g) => `${g.away?.abbr}@${g.home?.abbr} ${g.state} logos=${!!g.away?.logo}/${!!g.home?.logo}`).join(', ')}`);
+  } catch (e) { log(`app fetchScoreboard ERREUR ${errText(e)}`); }
+  try {
+    const teams = await api.fetchTeams('cfl');
+    log(`équipes : ${teams.map((t) => `${t.abbr}:${t.id}:${t.logo ? 'logo' : 'SANS'}`).join(' ')}`);
+    const games = await api.fetchTeamGames('cfl', teams[0].id, { back: 30, ahead: 30 });
+    log(`calendrier ${teams[0].abbr} : ${games.length} matchs, ${games.slice(-3).map((g) => `${g.away?.abbr}@${g.home?.abbr} ${g.state} ${g.startsAt?.toISOString?.().slice(0, 10)}`).join(', ')}`);
+    const next = await api.fetchNextGames('cfl', teams.map((t) => t.id));
+    log(`prochains matchs : ${next.length} ${next.map((g) => `${g.away?.abbr}@${g.home?.abbr} ${g.startsAt?.toISOString?.().slice(0, 10)}`).join(', ')}`);
+    const last = games.filter((g) => g.state === 'post').at(-1);
+    if (last) {
+      const d = await api.fetchMatchDetail('cfl', last.id);
+      log(`détail ${last.id} : ${Object.keys(d ?? {}).filter((k) => d[k] && (!Array.isArray(d[k]) || d[k].length)).join(',')}`);
+    }
+    const st = await api.fetchStandingsTable('cfl');
+    log(`classement : ${st.length} groupes ${st.map((g) => `${g.name}:${g.rows.length}`).join(' ')}`);
+  } catch (e) { log(`app ERREUR ${errText(e)}`); }
+})().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
+
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.
 const scoresOk = rows.some(([st, area]) => st === '✅' && area.startsWith('Scores'));
