@@ -5,6 +5,7 @@ import { diskCache } from '../cache.js';
 import { autoFr } from '../translate.js';
 import { boardQuery, driverPhoto, getJson } from './core.js';
 import { fillLogos } from './logos.js';
+import { cflStandings } from '../cfl.js';
 import { normalizeCompetitor, sameDriver } from './scoreboard.js';
 
 export const GROUP_FR = [
@@ -56,6 +57,12 @@ export const STANDING_COLS = {
 export async function fetchStandingsTable(leagueId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || league.kind !== 'team') return [];
+  // LCF : calculé à partir des résultats de la saison (cfl.js).
+  if (league.source === 'cfl') {
+    const groups = await cflStandings();
+    for (const g of groups) await fillLogos(leagueId, g.rows);
+    return groups;
+  }
   const hit = standingsCache.get(leagueId);
   if (hit) return hit;
 

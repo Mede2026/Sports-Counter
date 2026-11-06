@@ -83,6 +83,9 @@ export function keyPlays(data) {
 export async function fetchMatchDetail(leagueId, eventId) {
   const league = LEAGUES_BY_ID[leagueId];
   if (!league || !eventId) throw new Error('match inconnu');
+  // LCF : pas de résumé détaillé (ESPN ne la suit plus) ; la fenêtre Match
+  // se contente du tableau des scores de la ligue.
+  if (league.source === 'cfl') throw new Error('résumé indisponible pour la LCF');
   const data = await getJson(`${league.path}/summary`, `?event=${encodeURIComponent(eventId)}`);
   const comp = data?.header?.competitions?.[0] ?? {};
   const status = comp?.status ?? {};

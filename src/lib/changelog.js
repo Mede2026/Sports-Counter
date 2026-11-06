@@ -1,6 +1,9 @@
 // Notes de mise à jour : quelques points d'une phrase par version.
 // À compléter à chaque nouvelle version (la plus récente en haut).
 export const CHANGELOG = {
+  '1.5.0': [
+    '🏈 LCF réparée : ESPN ne suit plus la LCF (son tableau était figé sur la Coupe Grey 2022). L’app lit maintenant le tableau des scores officiel de la ligue : tous les matchs de 2026, les séries (finales de division, 113e Coupe Grey), le pointage en direct avec le quart et le temps, et le classement par division. Tes équipes cochées restent cochées.',
+  ],
   '1.4.4': [
     '🏎️ F1 : en essais 1, les jeunes pilotes (souvent de F2) qui remplacent un titulaire sont marqués « réserviste », dans le widget et la fenêtre Match. Le règlement oblige chaque écurie à leur prêter sa voiture quelques fois par saison.',
   ],

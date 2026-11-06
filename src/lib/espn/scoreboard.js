@@ -11,6 +11,7 @@ import { autoFr } from '../translate.js';
 import { SHOT_STATS, assistNames, athletePhoto, boardQuery, byName, driverPhoto, getJson, headshotUrl, isScoring, readTeamsCache, safe, scoreText, scorerName, sportOfLeague, statOf, teamsFromCore, teamsFromDirectory, toTeam, writeTeamsCache, ymd } from './core.js';
 import { fillGameLogos, fillLogos, logoError } from './logos.js';
 import { fetchRaceBoard, fetchRaceRange } from '../races.js';
+import { cflBoard, cflRange, cflTeamGames } from '../cfl.js';
 
 /** Listes intégrées à l'app, pour les ligues dont on a une copie vérifiée. */
 export const BUNDLED_TEAMS = { nhl: NHL_TEAMS };
@@ -918,6 +919,8 @@ export async function fetchScoreboard(leagueId) {
   if (!league) return [];
   // Ski, biathlon, marathons : hors ESPN (races.js).
   if (league.kind === 'race') return fetchRaceBoard(leagueId);
+  // LCF : le tableau des scores de la ligue (cfl.js), ESPN ne la suit plus.
+  if (league.source === 'cfl') return fillGameLogos(leagueId, await cflBoard());
   const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
   const logo = league.logo || leagueLogo(data);
   return fillGameLogos(leagueId, (data?.events ?? []).flatMap((e) => normalizeEvents(e, leagueId, logo)));
@@ -935,6 +938,7 @@ export const dayCache = diskCache('days', DAY_TTL);
 export async function fetchDay(leagueId, offsetDays) {
   const league = LEAGUES_BY_ID[leagueId];
   if (league?.kind === 'race') return fetchRaceRange(leagueId, offsetDays, offsetDays);
+  if (league?.source === 'cfl') return fillGameLogos(leagueId, await cflRange(offsetDays, offsetDays));
   const date = ymd(offsetDays);
   const key = `${leagueId}:${date}`;
   const hit = dayCache.get(key);
@@ -984,6 +988,7 @@ export const WHOLE_SEASON = 9999; // jours : calendrier complet de la saison
  * l'app, on reconstitue autour d'aujourd'hui à partir des tableaux des scores.
  */
 export async function fetchTeamGames(leagueId, teamId, { back = 21, ahead = 30 } = {}) {
+  if (LEAGUES_BY_ID[leagueId]?.source === 'cfl') return fillGameLogos(leagueId, await cflTeamGames(teamId));
   const key = `${leagueId}:${teamId}`;
   const hit = teamGamesCache.get(key);
   if (hit && hit.back >= back && hit.ahead >= ahead) return hit.games;
@@ -1045,6 +1050,7 @@ export async function fetchF1Calendar(fromOffset, toOffset) {
 export async function fetchLeagueCalendar(leagueId, fromOffset, toOffset) {
   const league = LEAGUES_BY_ID[leagueId];
   if (league?.kind === 'race') return fetchRaceRange(leagueId, fromOffset, toOffset);
+  if (league?.source === 'cfl') return fillGameLogos(leagueId, await cflRange(fromOffset, toOffset));
   let events;
   let logo = league.logo ?? '';
   try {
@@ -1081,6 +1087,7 @@ const RANGE_CHUNK = 3;
  */
 export async function fetchLeagueRange(leagueId, fromOffset, toOffset) {
   if (LEAGUES_BY_ID[leagueId]?.kind === 'race') return fetchRaceRange(leagueId, fromOffset, toOffset);
+  if (LEAGUES_BY_ID[leagueId]?.source === 'cfl') return fillGameLogos(leagueId, await cflRange(fromOffset, toOffset));
   const chunks = [];
   for (let d = fromOffset; d <= toOffset; d += RANGE_CHUNK) chunks.push([d, Math.min(toOffset, d + RANGE_CHUNK - 1)]);
   const out = [];
@@ -1130,12 +1137,23 @@ export async function probeLeague(leagueId) {
     }
     return out;
   }
-  try {
-    const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
-    const n = (data?.events ?? []).length;
-    out.scores = { ok: true, text: n ? `${n} évènement${n > 1 ? 's' : ''}` : 'aucun aujourd’hui' };
-  } catch (err) {
-    out.scores = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
+  if (league.source === 'cfl') {
+    // LCF : le tableau des scores de la ligue, pas celui d'ESPN (figé en 2022).
+    try {
+      const n = (await cflRange(-3, 10)).length;
+      out.scores = { ok: true, text: n ? `${n} match${n > 1 ? 's' : ''} cette semaine et la prochaine` : 'aucun match ces jours-ci' };
+    } catch (err) {
+      out.scores = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
+    }
+  }
+  if (!out.scores) {
+    try {
+      const data = await getJson(`${league.path}/scoreboard`, boardQuery(league));
+      const n = (data?.events ?? []).length;
+      out.scores = { ok: true, text: n ? `${n} évènement${n > 1 ? 's' : ''}` : 'aucun aujourd’hui' };
+    } catch (err) {
+      out.scores = { ok: false, text: errText(err).split('\n').slice(0, 2).join(' · ') };
+    }
   }
   if (league.kind === 'team') {
     try {

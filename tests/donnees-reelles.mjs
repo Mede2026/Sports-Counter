@@ -246,23 +246,14 @@ await check('Réservistes F1', async () => {
   ok('Réservistes F1', lines.join(' · ') || 'aucune séance avec classement');
 });
 
-// SONDE TEMPORAIRE : structure du tableau des scores officiel de la LCF.
-await (async () => {
-  const log = (x) => console.log(`SONDE ${x}`);
-  const rounds = await (await fetch('https://cflscoreboard.cfl.ca/json/scoreboard/rounds.json')).json();
-  log(`${rounds.length} tours · clés tour : ${Object.keys(rounds[0]).join(',')}`);
-  log(`tours : ${rounds.map((r) => `${r.type}/${r.number}/${r.name}/${r.status}`).join(' | ')}`);
-  const all = rounds.flatMap((r) => r.tournaments ?? []);
-  const st = {}; for (const t of all) st[t.status] = (st[t.status] ?? 0) + 1;
-  log(`états des matchs : ${JSON.stringify(st)}`);
-  log(`clés match : ${Object.keys(all[0]).join(',')} · clés équipe : ${Object.keys(all[0].homeSquad).join(',')}`);
-  log(`équipes : ${[...new Map(all.map((t) => [t.homeSquad.id, `${t.homeSquad.shortName}=${t.homeSquad.name}#${t.homeSquad.id}`])).values()].join(' ')}`);
-  for (const r of rounds.slice(-4)) log(`TOUR ${JSON.stringify({ ...r, tournaments: undefined })} → ${JSON.stringify(r.tournaments).slice(0, 900)}`);
-  const anyGame = all.find((t) => t.status === 'complete');
-  for (const u of [`https://cflscoreboard.cfl.ca/json/scoreboard/tournament/${anyGame.id}.json`, `https://cflscoreboard.cfl.ca/json/tournament/${anyGame.id}.json`, 'https://cflscoreboard.cfl.ca/json/scoreboard/standings.json', 'https://cflscoreboard.cfl.ca/json/standings.json', 'https://cflscoreboard.cfl.ca/json/scoreboard/current.json']) {
-    try { const r = await fetch(u); const t = await r.text(); log(`${u} -> ${r.status} ${t.length}o ${t.slice(0, 500).replace(/\s+/g, ' ')}`); } catch (e) { log(`${u} -> ${errText(e)}`); }
-  }
-})().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
+// 10. LCF : tableau des scores officiel de la ligue (ESPN ne la suit plus).
+await check('LCF (ligue)', async () => {
+  const around = await api.fetchLeagueRange('cfl', -10, 10);
+  const groups = await api.fetchStandingsTable('cfl');
+  const show = (g) => `${g.away.abbr} ${g.away.score}–${g.home.score} ${g.home.abbr}${g.session ? ` (${g.session})` : ''} ${g.state}${g.home.logo ? '' : ' sans logo'}`;
+  const text = `${around.length} matchs (±10 j) : ${around.slice(-4).map(show).join(' · ')} · classement ${groups.map((x) => `${x.name} : ${x.rows.slice(0, 2).map((r) => `${r.abbr} ${r.stats.points}`).join(', ')}`).join(' / ')}`;
+  (around.length && groups.length ? ok : warn)('LCF (ligue)', text);
+});
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
 // l'app qui est en cause. On le signale sans bloquer la publication.

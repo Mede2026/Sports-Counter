@@ -19,6 +19,7 @@ const ROUTES = {
   ibu: 'https://biathlonresults.com/modules/sportapi/api/',
   wiki: 'https://en.wikipedia.org/w/api.php',
   vis: 'https://www.fivb.org/Vis2009/XmlRequest.asmx?Request=',
+  cfl: 'https://cflscoreboard.cfl.ca/json/scoreboard/',
 };
 
 // L'IBU et Wikipédia refusent les rafales (erreur 429) : au moins 0,7 s

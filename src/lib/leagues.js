@@ -20,7 +20,9 @@ export const LEAGUES = [
   { id: 'nba',  group: 'Basketball', label: 'NBA',                path: 'basketball/nba',        kind: 'team',  accent: '#ff7a45', short: 'NBA', teams: 30 },
   { id: 'wnba', group: 'Basketball', label: 'WNBA',               path: 'basketball/wnba',       kind: 'team',  accent: '#f58fd0', short: 'WNBA', teams: 15 },
   { id: 'nfl',  group: 'Football',   label: 'NFL',                path: 'football/nfl',          kind: 'team',  accent: '#7bd88f', short: 'NFL', teams: 32 },
-  { id: 'cfl',  group: 'Football',   label: 'LCF',                path: 'football/cfl',          kind: 'team',  accent: '#e84a4a', short: 'LCF', teams: 9,
+  // `source: 'cfl'` : les matchs viennent du tableau des scores de la ligue
+  // (cfl.js) ; ESPN ne la suit plus. La liste des équipes reste celle d'ESPN.
+  { id: 'cfl',  group: 'Football',   label: 'LCF',                path: 'football/cfl',          kind: 'team',  accent: '#e84a4a', short: 'LCF', teams: 9, source: 'cfl',
     // ESPN n'a pas les logos de la LCF : on les prend chez Wikipédia, sinon TheSportsDB.
     sportsDb: 'Canadian Football League', sportsDbId: 4405, wikiLogos: true },
   { id: 'ncaaf', group: 'Football',  label: 'Football universitaire', path: 'football/college-football', kind: 'team', accent: '#5fc4a8', short: 'NCAA', teams: 130,

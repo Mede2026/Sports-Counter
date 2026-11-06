@@ -1089,8 +1089,8 @@ async function fromScoreboard() {
   if (IS_DEMO) return demoEvents(true).find((e) => e.leagueId === current.league) ?? demoEvents()[0];
   const games = await fetchScoreboard(current.league);
   const hit = games.find((x) => x.id === current.event) ?? null;
-  // Une course ouverte depuis le calendrier peut être loin d'aujourd'hui.
-  if (!hit && LEAGUES_BY_ID[current.league]?.kind === 'race') {
+  // Une course (ou un match de la LCF) ouverte depuis le calendrier peut être loin d'aujourd'hui.
+  if (!hit && (LEAGUES_BY_ID[current.league]?.kind === 'race' || LEAGUES_BY_ID[current.league]?.source === 'cfl')) {
     return (await fetchLeagueRange(current.league, -60, 120)).find((x) => x.id === current.event) ?? null;
   }
   return hit;

@@ -101,7 +101,7 @@ const UPDATE_FIRST_CHECK: Duration = Duration::from_secs(20);
 const UPDATE_INTERVAL: Duration = Duration::from_secs(6 * 3600);
 
 /// Sites où un clic sur un match a le droit d'emmener.
-const ESPN_HOSTS: [&str; 10] = [
+const ESPN_HOSTS: [&str; 11] = [
     "www.espn.com",
     "espn.com",
     "www.espn.ca",
@@ -113,6 +113,7 @@ const ESPN_HOSTS: [&str; 10] = [
     "biathlonresults.com",
     "en.wikipedia.org",
     "en.volleyballworld.com",
+    "www.cfl.ca",
 ];
 
 /// Seuls ces caractères peuvent composer le chemin demandé par l'interface.
@@ -197,6 +198,9 @@ async fn relay_fetch(path: &str) -> Result<String, String> {
         // Volleyball international (VNL, championnats du monde) : le service de
         // données de la FIVB. `rest` est la demande XML, déjà encodée.
         format!("https://www.fivb.org/Vis2009/XmlRequest.asmx?Request={rest}")
+    } else if let Some(rest) = path.strip_prefix("cfl/") {
+        // LCF : le tableau des scores officiel de la ligue (ESPN ne la suit plus).
+        format!("https://cflscoreboard.cfl.ca/json/scoreboard/{rest}")
     } else if let Some(rest) = path.strip_prefix("tsdb/") {
         // Logos de secours, pour les ligues dont ESPN n'a pas les logos (LCF).
         format!("{SPORTSDB}/{rest}")
