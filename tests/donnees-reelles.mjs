@@ -246,25 +246,22 @@ await check('Réservistes F1', async () => {
   ok('Réservistes F1', lines.join(' · ') || 'aucune séance avec classement');
 });
 
-// SONDE TEMPORAIRE : sources de remplacement pour la LCF.
+// SONDE TEMPORAIRE : structure du tableau des scores officiel de la LCF.
 await (async () => {
   const log = (x) => console.log(`SONDE ${x}`);
-  const get = async (u, n = 700) => {
-    try { const r = await fetch(u); const t = await r.text(); log(`${u.slice(0, 150)}\n  -> ${r.status} ${r.headers.get('content-type')} ${t.length}o : ${t.slice(0, n).replace(/\s+/g, ' ')}`); return t; } catch (e) { log(`${u.slice(0, 120)} -> ${errText(e)}`); return ''; }
-  };
-  for (const u of [
-    'https://sports.core.api.espn.com/v2/sports/football/leagues/cfl/seasons/2026/types/2/events?limit=5',
-    'https://sports.core.api.espn.com/v2/sports/football/leagues/cfl/events?dates=20261101-20261120&limit=10',
-    'https://www.thesportsdb.com/api/v1/json/3/eventsnextleague.php?id=4405',
-    'https://www.thesportsdb.com/api/v1/json/3/eventspastleague.php?id=4405',
-    'https://www.thesportsdb.com/api/v1/json/3/eventsseason.php?id=4405&s=2026',
-    'https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l=4405&s=2026',
-    'https://cflscoreboard.cfl.ca/json/scoreboard/rounds.json',
-    'https://www.cfl.ca/schedule/',
-    'https://www.cfl.ca/wp-json/cfl/v1/schedule?season=2026',
-    'https://echo.cfl.ca/api/v1/games/2026',
-    'https://en.wikipedia.org/w/api.php?action=parse&page=113th_Grey_Cup&prop=wikitext&section=0&format=json&formatversion=2',
-  ]) await get(u);
+  const rounds = await (await fetch('https://cflscoreboard.cfl.ca/json/scoreboard/rounds.json')).json();
+  log(`${rounds.length} tours · clés tour : ${Object.keys(rounds[0]).join(',')}`);
+  log(`tours : ${rounds.map((r) => `${r.type}/${r.number}/${r.name}/${r.status}`).join(' | ')}`);
+  const all = rounds.flatMap((r) => r.tournaments ?? []);
+  const st = {}; for (const t of all) st[t.status] = (st[t.status] ?? 0) + 1;
+  log(`états des matchs : ${JSON.stringify(st)}`);
+  log(`clés match : ${Object.keys(all[0]).join(',')} · clés équipe : ${Object.keys(all[0].homeSquad).join(',')}`);
+  log(`équipes : ${[...new Map(all.map((t) => [t.homeSquad.id, `${t.homeSquad.shortName}=${t.homeSquad.name}#${t.homeSquad.id}`])).values()].join(' ')}`);
+  for (const r of rounds.slice(-4)) log(`TOUR ${JSON.stringify({ ...r, tournaments: undefined })} → ${JSON.stringify(r.tournaments).slice(0, 900)}`);
+  const anyGame = all.find((t) => t.status === 'complete');
+  for (const u of [`https://cflscoreboard.cfl.ca/json/scoreboard/tournament/${anyGame.id}.json`, `https://cflscoreboard.cfl.ca/json/tournament/${anyGame.id}.json`, 'https://cflscoreboard.cfl.ca/json/scoreboard/standings.json', 'https://cflscoreboard.cfl.ca/json/standings.json', 'https://cflscoreboard.cfl.ca/json/scoreboard/current.json']) {
+    try { const r = await fetch(u); const t = await r.text(); log(`${u} -> ${r.status} ${t.length}o ${t.slice(0, 500).replace(/\s+/g, ' ')}`); } catch (e) { log(`${u} -> ${errText(e)}`); }
+  }
 })().catch((e) => console.log(`SONDE plantée ${errText(e)}`));
 
 // ESPN injoignable depuis les machines de GitHub (tout refusé) : ce n'est pas
